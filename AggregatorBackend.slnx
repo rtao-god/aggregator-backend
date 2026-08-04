@@ -29,6 +29,11 @@
     <Project Path="src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
     <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />
   </Folder>
+  <Folder Name="/src/Analytics/">
+    <Project Path="src/Analytics/Analytics.Domain/Analytics.Domain.csproj" />
+    <Project Path="src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <Project Path="src/Analytics/Analytics.Application/Analytics.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
   </Folder>
@@ -50,5 +55,9 @@
     <Project Path="tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Analytics/">
+    <Project Path="tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj" />
+    <Project Path="tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj" />
   </Folder>
 </Solution>
