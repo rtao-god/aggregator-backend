@@ -50,6 +50,18 @@ public sealed class AnalyticsDomainInvariantTests
     }
 
     [Fact]
+    public void UnknownPlacementExposureIsRejected()
+    {
+        var exception = Assert.Throws<AnalyticsDomainException>(() =>
+            PlacementContext.Create(
+                (PlacementExposureKind)999,
+                placementId: null,
+                scopeKey: null));
+
+        Assert.Equal("ANALYTICS_PLACEMENT_EXPOSURE_INVALID", exception.Code);
+    }
+
+    [Fact]
     public void CampaignParametersRejectUnknownKeys()
     {
         var exception = Assert.Throws<AnalyticsDomainException>(() =>
