@@ -45,8 +45,8 @@ public sealed class IngestionBatchesController(
             return Ok(response);
         }
 
-        return CreatedAtAction(
-            nameof(GetAsync),
+        return CreatedAtRoute(
+            IngestionOperationIds.GetBatch,
             new { batchId = response.Batch.Id },
             response);
     }
