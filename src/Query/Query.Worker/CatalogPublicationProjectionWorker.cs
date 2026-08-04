@@ -81,10 +81,14 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
             autoAck: false,
             consumer,
             stoppingToken);
-        _logger.LogInformation(
-            "Query projection worker is consuming {RoutingKey} from {Queue}",
-            _options.RoutingKey,
-            _options.Queue);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation(
+                "Query projection worker is consuming {RoutingKey} from {Queue}",
+                _options.RoutingKey,
+                _options.Queue);
+        }
+
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
 
@@ -123,11 +127,14 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
                 payloadDigest,
                 CancellationToken.None);
             await channel.BasicAckAsync(eventArgs.DeliveryTag, multiple: false, CancellationToken.None);
-            _logger.LogInformation(
-                "Applied Catalog activation revision {ActivationRevision} as public read revision {PublicReadRevisionId}; replayed={Replayed}",
-                activation.ActivationRevision,
-                result.PublicReadRevision.Id,
-                result.Replayed);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    "Applied Catalog activation revision {ActivationRevision} as public read revision {PublicReadRevisionId}; replayed={Replayed}",
+                    activation.ActivationRevision,
+                    result.PublicReadRevision.Id,
+                    result.Replayed);
+            }
         }
         catch (Exception exception) when (exception is QueryProjectionException or JsonException or ArgumentException)
         {
