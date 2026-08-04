@@ -31,6 +31,8 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
         RejectUnknownQueryKeys(SearchQueryKeys);
         var result = await service.SearchAsync(
             catalogKey,
@@ -57,6 +59,9 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
         [FromQuery] string locale,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
         RejectUnknownQueryKeys(RouteQueryKeys);
         var absolutePath = $"/{path.TrimStart('/')}";
         var result = await service.GetByRouteAsync(
