@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ingestion.Collector.Application/Ingestion.Collector.Application.csproj" />
+    <ProjectReference Include="../Ingestion.Collector.Domain/Ingestion.Collector.Domain.csproj" />
+  </ItemGroup>
+</Project>
