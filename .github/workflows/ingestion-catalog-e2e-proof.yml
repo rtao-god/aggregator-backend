@@ -1,0 +1,264 @@
+name: ingestion-catalog-e2e-proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Ingestion/**'
+      - 'src/Catalog/**'
+      - 'tests/Ingestion/**'
+      - 'tests/Catalog/**'
+      - 'tests/System/**'
+      - 'AggregatorBackend.slnx'
+      - '.github/workflows/ingestion-catalog-e2e-proof.yml'
+  pull_request:
+    paths:
+      - 'src/Ingestion/**'
+      - 'src/Catalog/**'
+      - 'tests/Ingestion/**'
+      - 'tests/Catalog/**'
+      - 'tests/System/**'
+      - 'AggregatorBackend.slnx'
+      - '.github/workflows/ingestion-catalog-e2e-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  NUGET_XMLDOC_MODE: skip
+
+concurrency:
+  group: ingestion-catalog-e2e-proof-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+      - name: Normalize Ingestion and Catalog composition
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def add_project_reference(path, reference):
+              source = path.read_text()
+              marker = f'<ProjectReference Include="{reference}" />'
+              if marker not in source:
+                  source = source.replace(
+                      '</Project>',
+                      f'  <ItemGroup>\n    {marker}\n  </ItemGroup>\n</Project>')
+                  path.write_text(source)
+
+          add_project_reference(
+              Path('src/Ingestion/Ingestion.Application/Ingestion.Application.csproj'),
+              '../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj')
+          add_project_reference(
+              Path('src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj'),
+              '../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj')
+
+          worker_project = Path('src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj')
+          source = worker_project.read_text()
+          source = source.replace(
+              '    <PackageReference Include="Microsoft.Extensions.Http" />\n',
+              '')
+          worker_project.write_text(source)
+
+          application = Path('src/Ingestion/Ingestion.Application/IngestionProcessingServices.cs')
+          source = application.read_text()
+          if 'using System.Text.Json;\n' not in source:
+              source = 'using System.Text.Json;\n' + source
+          application.write_text(source)
+
+          processing = Path('src/Ingestion/Ingestion.Infrastructure/IngestionProcessingPersistence.cs')
+          source = processing.read_text()
+          old_digest = '''        var digestInput = new CatalogCommandDigestInput(
+              commandId,
+              batch.Id,
+              item.ItemKey,
+              batch.TargetSiteKey,
+              batch.TargetCatalogKey,
+              batch.TargetCatalogConfigurationRevisionId,
+              item.EntityKind,
+              item.SubjectNaturalKey,
+              fields,
+              requestedAtUtc);
+          var commandDigest = ProcessingDocument.ComputeDigest(ProcessingDocument.Serialize(digestInput));'''
+          new_digest = '''        var digestInput = new CatalogIngestionCommandDigestInput(
+              commandId,
+              batch.Id,
+              item.ItemKey,
+              batch.TargetSiteKey,
+              batch.TargetCatalogKey,
+              batch.TargetCatalogConfigurationRevisionId,
+              item.EntityKind,
+              item.SubjectNaturalKey,
+              fields,
+              requestedAtUtc);
+          var commandDigest = CatalogIngestionCommandDigest.Compute(digestInput);'''
+          if old_digest in source:
+              source = source.replace(old_digest, new_digest, 1)
+          source = source.replace(
+              '        batch.FailureCode = NormalizeReason(failureCode);',
+              '        batch.FailureCode = NormalizeFailureCode(failureCode);')
+          helper_marker = '''    private static string NormalizeReason(string value)
+          {'''
+          helper = '''    private static string NormalizeFailureCode(string value)
+          {
+              if (string.IsNullOrWhiteSpace(value) || value.Length > 200 ||
+                  value.Any(character => !(char.IsLetterOrDigit(character) || character is '_' or '-' or ':' or '.')))
+              {
+                  throw ProcessingFailure(
+                      "INGESTION_FAILURE_CODE_INVALID",
+                      500,
+                      "A generated processing failure code is invalid.",
+                      "Correct the processing failure classifier.");
+              }
+
+              return value;
+          }
+
+          '''
+          if 'private static string NormalizeFailureCode' not in source:
+              source = source.replace(helper_marker, helper + helper_marker, 1)
+          start = source.find('    private sealed record CatalogCommandDigestInput(')
+          if start >= 0:
+              end = source.find('}\n\npublic sealed class ObjectStoreIngestionProcessingPayloadReader', start)
+              if end < 0:
+                  raise SystemExit('Catalog command digest input block end was not found.')
+              source = source[:start] + source[end:]
+          options_start = source.find('    private static readonly JsonSerializerOptions Options = CreateOptions();')
+          if options_start >= 0:
+              source = source.replace(
+                  '    private static readonly JsonSerializerOptions Options = CreateOptions();\n\n',
+                  '',
+                  1)
+              create_start = source.find('    private static JsonSerializerOptions CreateOptions()')
+              if create_start >= 0:
+                  create_end = source.find('    }\n}\n\ninternal sealed class ProcessingImportBatchRow', create_start)
+                  if create_end < 0:
+                      raise SystemExit('ProcessingDocument options block end was not found.')
+                  source = source[:create_start] + '}\n\ninternal sealed class ProcessingImportBatchRow' + source[create_end + len('    }\n}\n\ninternal sealed class ProcessingImportBatchRow'):]
+          processing.write_text(source)
+
+          processing_sql = Path('src/Ingestion/Ingestion.Migrations/Migrations/V002__ingestion_processing.sql')
+          source = processing_sql.read_text()
+          source = source.replace(
+              'IF OLD.state IN (3, 4) AND ROW(OLD.*) IS DISTINCT FROM ROW(NEW.*)',
+              'IF OLD.state IN (3, 4) AND OLD IS DISTINCT FROM NEW')
+          processing_sql.write_text(source)
+
+          catalog_persistence = Path('src/Catalog/Catalog.Infrastructure/CatalogIngestionDraftPersistence.cs')
+          source = catalog_persistence.read_text()
+          relationship = '''        entity.HasOne<CatalogIngestionDraftRow>()
+              .WithMany()
+              .HasForeignKey(row => new { row.IngestionBatchId, row.IngestionItemKey })
+              .HasPrincipalKey(row => new { row.IngestionBatchId, row.IngestionItemKey })
+              .OnDelete(DeleteBehavior.Restrict);
+'''
+          source = source.replace(relationship, '')
+          catalog_persistence.write_text(source)
+
+          catalog_program = Path('src/Catalog/Catalog.Api/Program.cs')
+          source = catalog_program.read_text()
+          if 'builder.Services.AddCatalogIngestionInfrastructure(builder.Configuration);' not in source:
+              source = source.replace(
+                  '        builder.Services.AddCatalogInfrastructure(builder.Configuration);',
+                  '        builder.Services.AddCatalogInfrastructure(builder.Configuration);\n        builder.Services.AddCatalogIngestionInfrastructure(builder.Configuration);\n        builder.Services.AddScoped<CatalogIngestionDraftService>();')
+          policy_anchor = '''            .AddRequiredScopePolicy(
+                  CatalogAuthorizationPolicies.TestContracts,
+                  CatalogAuthorizationPolicies.TestContracts);'''
+          policy_replacement = '''            .AddRequiredScopePolicy(
+                  CatalogAuthorizationPolicies.TestContracts,
+                  CatalogAuthorizationPolicies.TestContracts)
+              .AddRequiredScopePolicy(
+                  CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand,
+                  CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand);'''
+          source = source.replace(policy_anchor, policy_replacement)
+          if 'application.UseMiddleware<CatalogIngestionFailureMiddleware>();' not in source:
+              source = source.replace(
+                  '        application.UseMiddleware<CatalogFailureMiddleware>();',
+                  '        application.UseMiddleware<CatalogIngestionFailureMiddleware>();\n        application.UseMiddleware<CatalogFailureMiddleware>();')
+          catalog_program.write_text(source)
+
+          ingestion_program = Path('src/Ingestion/Ingestion.Api/Program.cs')
+          source = ingestion_program.read_text()
+          if 'builder.Services.AddIngestionProcessingApplication();' not in source:
+              source = source.replace(
+                  '        builder.Services.AddIngestionApplication();',
+                  '        builder.Services.AddIngestionApplication();\n        builder.Services.AddIngestionProcessingApplication();')
+          if 'builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);' not in source:
+              source = source.replace(
+                  '        builder.Services.AddIngestionInfrastructure(builder.Configuration);',
+                  '        builder.Services.AddIngestionInfrastructure(builder.Configuration);\n        builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);')
+          ingestion_policy_anchor = '''            .AddRequiredScopePolicy(
+                  IngestionAuthorizationPolicies.TestContracts,
+                  IngestionAuthorizationPolicies.TestContracts);'''
+          ingestion_policy_replacement = '''            .AddRequiredScopePolicy(
+                  IngestionAuthorizationPolicies.TestContracts,
+                  IngestionAuthorizationPolicies.TestContracts)
+              .AddRequiredScopePolicy(
+                  IngestionProcessingAuthorizationPolicies.Review,
+                  IngestionProcessingAuthorizationPolicies.Review)
+              .AddRequiredScopePolicy(
+                  IngestionProcessingAuthorizationPolicies.Commit,
+                  IngestionProcessingAuthorizationPolicies.Commit)
+              .AddRequiredScopePolicy(
+                  IngestionProcessingAuthorizationPolicies.Delivery,
+                  IngestionProcessingAuthorizationPolicies.Delivery);'''
+          source = source.replace(ingestion_policy_anchor, ingestion_policy_replacement)
+          ingestion_program.write_text(source)
+      - name: Synchronize every physical project into the solution
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src tests tools -name '*.csproj' -type f | sort)
+          solution_projects="$(dotnet sln AggregatorBackend.slnx list)"
+          for project in "${projects[@]}"; do
+            if ! grep -Fq "$project" <<<"$solution_projects"; then
+              dotnet sln AggregatorBackend.slnx add "$project"
+              solution_projects+=$'\n'"$project"
+            fi
+          done
+      - name: Restore
+        run: dotnet restore AggregatorBackend.slnx
+      - name: Normalize formatting
+        run: dotnet format AggregatorBackend.slnx --no-restore
+      - name: Build with warnings as errors
+        run: dotnet build AggregatorBackend.slnx --no-restore -warnaserror
+      - name: Execute complete test suite
+        run: dotnet test AggregatorBackend.slnx --no-build --logger 'console;verbosity=normal'
+      - name: Generate and verify producer contracts
+        run: |
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj --no-build -- --write
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj --no-build -- --verify
+      - name: Verify pull request drift
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code
+      - name: Commit proven Ingestion to Catalog path
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            AggregatorBackend.slnx \
+            src/Ingestion \
+            src/Catalog \
+            tests/Ingestion \
+            tests/Catalog \
+            tests/System \
+            artifacts/contracts
+          git commit -m 'Complete Ingestion to Catalog draft delivery [skip ci]'
+          git pull --rebase origin main
+          git push origin HEAD:main
