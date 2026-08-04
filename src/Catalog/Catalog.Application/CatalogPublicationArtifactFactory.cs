@@ -7,26 +7,36 @@ internal static class CatalogPublicationArtifactFactory
 {
     public static CatalogPublicationArtifact Create(
         Guid publicationId,
-        CatalogKey catalogKey,
-        Guid configurationRevisionId,
+        ProductConfiguration configuration,
         long sequence,
         DateTimeOffset createdAtUtc,
         IReadOnlyList<PublicationSelectionState> selections)
     {
-        ArgumentNullException.ThrowIfNull(catalogKey);
+        if (publicationId == Guid.Empty)
+        {
+            throw new ArgumentException("Publication ID is required.", nameof(publicationId));
+        }
+
+        ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(selections);
 
         var listings = selections
             .OrderBy(selection => selection.Listing.Id)
             .Select(selection => CreateDocument(selection.Revision))
             .ToArray();
+        var supportedLocales = configuration.Site.SupportedLocales
+            .Select(locale => locale.Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
         return new CatalogPublicationArtifact(
             CatalogPublicationArtifactContract.Identity,
             CatalogPublicationArtifactContract.Revision,
             publicationId,
-            catalogKey.Value,
-            configurationRevisionId,
+            configuration.Catalog.Key.Value,
+            configuration.Site.DefaultLocale.Value,
+            supportedLocales,
+            configuration.RevisionId,
             sequence,
             createdAtUtc,
             listings);
