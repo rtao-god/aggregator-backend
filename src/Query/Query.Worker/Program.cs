@@ -84,6 +84,7 @@ var objectStoreOptions = new S3ObjectStoreOptions
 objectStoreOptions.Validate();
 
 builder.Services
+    .AddQueryApplication()
     .AddQueryDatabase(new QueryDatabaseOptions
     {
         ConnectionString = queryConnectionString,
@@ -112,7 +113,6 @@ var projectionStoreType = typeof(QueryDatabaseOptions).Assembly
         !type.IsInterface &&
         typeof(IQueryProjectionStore).IsAssignableFrom(type));
 builder.Services.AddScoped(typeof(IQueryProjectionStore), projectionStoreType);
-builder.Services.AddScoped<QueryProjectionService>();
 
 await builder.Build().RunAsync();
 
