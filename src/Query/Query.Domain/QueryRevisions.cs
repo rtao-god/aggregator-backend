@@ -103,7 +103,8 @@ public sealed record QueryOverlayRevision
         QueryOverlayKind kind,
         long sourceRevision,
         DateTimeOffset createdAtUtc,
-        string contentDigest)
+        string contentDigest,
+        int itemCount)
     {
         Id = id;
         CatalogKey = catalogKey;
@@ -111,7 +112,7 @@ public sealed record QueryOverlayRevision
         SourceRevision = sourceRevision;
         CreatedAtUtc = createdAtUtc;
         ContentDigest = contentDigest;
-        ItemCount = 0;
+        ItemCount = itemCount;
     }
 
     public Guid Id { get; }
@@ -148,7 +149,8 @@ public sealed record QueryOverlayRevision
             kind,
             sourceRevision,
             QueryContractRules.RequireUtc(createdAtUtc, nameof(createdAtUtc)),
-            QueryContractRules.RequireDigest(contentDigest, nameof(contentDigest)));
+            QueryContractRules.RequireDigest(contentDigest, nameof(contentDigest)),
+            0);
     }
 }
 
