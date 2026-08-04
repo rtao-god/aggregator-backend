@@ -3,7 +3,7 @@ namespace Platform.Persistence;
 /// <summary>Owns access to current UTC time for application and infrastructure code.</summary>
 public interface IUtcClock
 {
-    DateTimeOffset GetUtcNow();
+    public DateTimeOffset GetUtcNow();
 }
 
 public sealed class SystemUtcClock : IUtcClock
@@ -14,7 +14,7 @@ public sealed class SystemUtcClock : IUtcClock
 /// <summary>Owns application-side UUIDv7 generation for business identifiers.</summary>
 public interface IBusinessIdFactory
 {
-    Guid Create();
+    public Guid Create();
 }
 
 public sealed class UuidV7BusinessIdFactory : IBusinessIdFactory
