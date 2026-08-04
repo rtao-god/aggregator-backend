@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,18 +21,15 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.UseEnvironment("Testing");
-        builder.ConfigureAppConfiguration((_, configuration) =>
-            configuration.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:Catalog"] =
-                    "Host=127.0.0.1;Port=1;Database=catalog;Username=test;Password=test;Timeout=1;Command Timeout=1",
-                ["Catalog:ObjectStorage:ServiceUrl"] = "http://127.0.0.1:1",
-                ["Catalog:ObjectStorage:BucketName"] = "catalog-test",
-                ["Catalog:ObjectStorage:AccessKey"] = "test-access",
-                ["Catalog:ObjectStorage:SecretKey"] = "test-secret",
-                ["Authentication:Authority"] = "https://issuer.test",
-                ["Authentication:RequireHttpsMetadata"] = "false",
-            }));
+        builder.UseSetting(
+            "ConnectionStrings:Catalog",
+            "Host=127.0.0.1;Port=1;Database=catalog;Username=test;Password=test;Timeout=1;Command Timeout=1");
+        builder.UseSetting("Catalog:ObjectStorage:ServiceUrl", "http://127.0.0.1:1");
+        builder.UseSetting("Catalog:ObjectStorage:BucketName", "catalog-test");
+        builder.UseSetting("Catalog:ObjectStorage:AccessKey", "test-access");
+        builder.UseSetting("Catalog:ObjectStorage:SecretKey", "test-secret");
+        builder.UseSetting("Authentication:Authority", "https://issuer.test");
+        builder.UseSetting("Authentication:RequireHttpsMetadata", "false");
         builder.ConfigureTestServices(services =>
         {
             services
