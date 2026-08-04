@@ -242,7 +242,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
 
     private static void ValidateKey(string key)
     {
-        if (string.IsNullOrWhiteSpace(key) || key.StartsWith("/", StringComparison.Ordinal) || key.Contains("..", StringComparison.Ordinal) || key.Contains('\\'))
+        if (string.IsNullOrWhiteSpace(key) || key[0] == '/' || key.Contains("..", StringComparison.Ordinal) || key.Contains('\\'))
         {
             throw new ArgumentException("Object key must be relative and traversal-free.", nameof(key));
         }
