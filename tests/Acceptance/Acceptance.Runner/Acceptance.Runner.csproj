@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <ProjectReference Include="../../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+  </ItemGroup>
+</Project>
