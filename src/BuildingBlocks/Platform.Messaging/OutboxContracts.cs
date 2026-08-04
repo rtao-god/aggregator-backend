@@ -14,7 +14,7 @@ public sealed record OutboxMessage(
 /// <summary>Publishes one exact outbox message without changing its domain meaning.</summary>
 public interface IIntegrationEventPublisher
 {
-    Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken);
+    public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken);
 }
 
 /// <summary>Owner-specific settings for leasing and dispatching a PostgreSQL outbox.</summary>
