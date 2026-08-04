@@ -7,6 +7,7 @@
     <ProjectReference Include="../Ingestion.Application/Ingestion.Application.csproj" />
     <ProjectReference Include="../Ingestion.Contracts/Ingestion.Contracts.csproj" />
     <ProjectReference Include="../Ingestion.Domain/Ingestion.Domain.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj" />
   </ItemGroup>
 </Project>
