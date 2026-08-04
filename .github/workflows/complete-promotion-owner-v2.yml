@@ -1,4 +1,4 @@
-name: Finalize Promotion owner proof
+name: Consolidate canonical Promotion owner
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
   prove-commit:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with:
@@ -34,66 +34,32 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
-      - name: Enforce the Promotion response owner boundary
+      - name: Remove the parallel campaign owner and align the test boundary
         shell: python
         run: |
           from pathlib import Path
 
-          path = Path('src/Promotion/Promotion.Application/PromotionCampaignServices.cs')
-          content = path.read_text(encoding='utf-8')
-          old = (
-              "    public static PromotionCampaignResponse ToResponse(\n"
-              "        PromotionCampaignSnapshot campaign,\n"
-              "        bool replayed) =>\n"
-              "        new(\n"
-              "            campaign.Id,\n"
-              "            campaign.ProductRevisionId,\n"
-              "            campaign.EntitlementId,\n"
-              "            campaign.ListingId,\n"
-              "            campaign.CatalogKey,\n"
-              "            campaign.PlacementKey,\n"
-              "            campaign.CapacityUnits,\n"
-              "            campaign.StartsAtUtc,\n"
-              "            campaign.EndsAtUtc,\n"
-              "            ToContract(campaign.State),\n"
-              "            campaign.AggregateRevision,\n"
-              "            campaign.LastChangedAtUtc,\n"
-              "            campaign.SuspensionReason,\n"
-              "            \"sponsored\",\n"
-              "            replayed);\n"
-          )
-          new = (
-              "    public static PromotionCampaignResponse ToResponse(\n"
-              "        PromotionCampaignSnapshot campaign,\n"
-              "        bool replayed)\n"
-              "    {\n"
-              "        ArgumentNullException.ThrowIfNull(campaign);\n"
-              "        return new PromotionCampaignResponse(\n"
-              "            campaign.Id,\n"
-              "            campaign.ProductRevisionId,\n"
-              "            campaign.EntitlementId,\n"
-              "            campaign.ListingId,\n"
-              "            campaign.CatalogKey,\n"
-              "            campaign.PlacementKey,\n"
-              "            campaign.CapacityUnits,\n"
-              "            campaign.StartsAtUtc,\n"
-              "            campaign.EndsAtUtc,\n"
-              "            ToContract(campaign.State),\n"
-              "            campaign.AggregateRevision,\n"
-              "            campaign.LastChangedAtUtc,\n"
-              "            campaign.SuspensionReason,\n"
-              "            \"sponsored\",\n"
-              "            replayed);\n"
-              "    }\n"
-          )
-          if content.count(old) != 1:
-              raise RuntimeError('Expected exactly one PromotionCampaignMapper.ToResponse owner anchor.')
-          path.write_text(content.replace(old, new), encoding='utf-8', newline='\n')
+          obsolete = [
+              'src/Promotion/Promotion.Contracts/PromotionCampaignContracts.cs',
+              'src/Promotion/Promotion.Domain/PromotionCampaign.cs',
+              'src/Promotion/Promotion.Application/PromotionCampaignServices.cs',
+              'src/Promotion/Promotion.Infrastructure/PromotionRuntimePersistence.cs',
+              'src/Promotion/Promotion.Api/PromotionCampaignsController.cs',
+              'src/Promotion/Promotion.Migrations/Migrations/V001__promotion_runtime.sql',
+              'tests/Promotion/Promotion.Runtime.Tests/Promotion.Runtime.Tests.csproj',
+              'tests/Promotion/Promotion.Runtime.Tests/PromotionRuntimeTests.cs',
+              'tests/Promotion/Promotion.Runtime.Tests/GlobalUsings.cs',
+          ]
+          for relative in obsolete:
+              path = Path(relative)
+              if not path.exists():
+                  raise RuntimeError(f'Expected obsolete Promotion owner path is missing: {relative}')
+              path.unlink()
 
           overlay_factory_path = Path(
               'tests/Promotion/Promotion.Overlay.Api.Tests/PromotionOverlayApiFactory.cs')
           overlay_factory = overlay_factory_path.read_text(encoding='utf-8')
-          overlay_old = (
+          old = (
               '    {\n'
               '        cancellationToken.ThrowIfCancellationRequested();\n'
               '        Assert.Null(expectedCurrentOverlayId);\n'
@@ -101,7 +67,7 @@ jobs:
               '        Assert.Equal(64, outboxMessage.PayloadDigest.Length);\n'
               '        Publication = publication ?? throw new ArgumentNullException(nameof(publication));\n'
           )
-          overlay_new = (
+          new = (
               '    {\n'
               '        cancellationToken.ThrowIfCancellationRequested();\n'
               '        ArgumentNullException.ThrowIfNull(publication);\n'
@@ -112,13 +78,122 @@ jobs:
               '        Assert.Equal(64, outboxMessage.PayloadDigest.Length);\n'
               '        Publication = publication;\n'
           )
-          if overlay_factory.count(overlay_old) != 1:
+          if overlay_factory.count(old) != 1:
               raise RuntimeError(
                   'Expected exactly one RecordingPromotionOverlayStore.CommitAsync test-boundary anchor.')
           overlay_factory_path.write_text(
-              overlay_factory.replace(overlay_old, overlay_new),
+              overlay_factory.replace(old, new),
               encoding='utf-8',
               newline='\n')
+
+          removed_solution_reference = 0
+          project_line = (
+              '    <Project Path="tests/Promotion/Promotion.Runtime.Tests/'
+              'Promotion.Runtime.Tests.csproj" />\n')
+          for relative in [
+              'AggregatorBackend.slnx',
+              'AggregatorBackend.All.slnx',
+              'AggregatorBackend.Runtime.slnx',
+          ]:
+              path = Path(relative)
+              content = path.read_text(encoding='utf-8')
+              count = content.count(project_line)
+              removed_solution_reference += count
+              if count:
+                  path.write_text(
+                      content.replace(project_line, ''),
+                      encoding='utf-8',
+                      newline='\n')
+          if removed_solution_reference != 1:
+              raise RuntimeError(
+                  'Expected exactly one active Promotion.Runtime.Tests solution reference, '
+                  f'actual {removed_solution_reference}.')
+
+          Path('.codex/modules/promotion.md').write_text(
+              '''# Promotion module
+
+          ## Owner
+
+          Promotion is the canonical owner of product definitions, manual entitlements, listing eligibility projections, sponsored placement revisions and schedules, capacity slots, activation/expiry state, audit reasons, and producer events consumed by Query. Promotion never owns Catalog facts, organic rank, payment processing, verification badges, or public Listing content.
+
+          ## Projects
+
+          - `Promotion.Domain`: immutable product and sponsored-placement revisions, entitlement lifecycle, local eligibility projection, half-open UTC windows, hard expiry, scope validation, and capacity-overlap semantics.
+          - `Promotion.Contracts`: explicit admin API contracts plus entitlement and sponsored-placement integration events.
+          - `Promotion.Application`: one canonical `PromotionCommandIdentity`, idempotent owner commands, deterministic request/revision digests, eligibility checks, capacity checks, exact contract mapping, and transactional outbox effects.
+          - `Promotion.Infrastructure`: Promotion-only PostgreSQL persistence, local Catalog eligibility projection, atomic idempotency/outbox transactions, overlap enforcement, scheduling, and readiness.
+          - `Promotion.Api`: authenticated product, entitlement, placement and calendar command/read endpoints with scoped policies, request limits, rate limits, typed errors, and read-only health.
+          - `Promotion.Worker`: bounded schedule transitions plus dispatch of already committed outbox messages; it never migrates or changes Catalog content.
+          - `Promotion.Migrations`: one-shot schema owner; runtime hosts never apply DDL.
+          - `Promotion.Overlay.*`: producer-side immutable overlay publication boundary and transport proof. Query remains the owner of the public read projection and organic/sponsored composition.
+
+          There is no separate `PromotionCampaign` aggregate, campaign database, campaign command ledger, or `/campaigns` API. The product contract is already owned by `PromotionProduct`, `PromotionEntitlement`, and `SponsoredPlacement`; retaining a second campaign lifecycle would duplicate schedule, capacity, idempotency and sponsored-read meaning.
+
+          ## API boundary
+
+          - Audience: `aggregator-promotion`.
+          - Listing management scope: `promotion.manage-listing`.
+          - Catalog placement/product scope: `promotion.manage-catalog`.
+          - Read scope: `promotion.read`.
+          - Development contract-document scope: `promotion.test-contracts`.
+          - Every mutating command requires one exact `Idempotency-Key` and an authenticated internal `actor_id` mapping.
+          - Product, entitlement, placement and placement-calendar reads remain read-only.
+          - Numeric enum tokens and undeclared JSON members are rejected by the active wire contract.
+          - `/health/live` and `/health/ready` are anonymous read-only probes; they never migrate, activate, expire or repair Promotion state.
+
+          ## Active owner flow
+
+          ```text
+          Catalog eligibility event
+          → Promotion-local listing eligibility projection
+          → immutable Promotion product revision
+          → listing-scoped manual entitlement with exact UTC window
+          → immutable sponsored placement revision for catalog/scope/locale/slot
+          → overlap/capacity validation
+          → aggregate + idempotency result + outbox in one transaction
+          → bounded worker activation/expiry transition
+          → promotion.placement.changed
+          → Query builds an immutable promotion overlay
+          → Query creates a new PublicReadRevision while organic rank remains unchanged
+          ```
+
+          ## Invariants
+
+          - Promotion product configuration is generic data; no Berlin or recording-studio product type exists in core code.
+          - Product and placement revisions are immutable. Aggregate pointers advance only through optimistic-concurrency commands.
+          - Entitlements are listing-scoped and come only from `manual_contract`, `manual_trial`, or `administrative_grant`; payment/card/invoice fields do not exist.
+          - Archived, unpublished, blocking-disputed, wrong-scope, or insufficiently verified listings fail closed through the local Catalog projection.
+          - Promotion never changes Listing title, category, verification, source quality, editorial completeness, or organic rank.
+          - Every schedule is UTC and half-open. Query receives `hard_expiry_at_utc` and must not show a placement at or after that bound even if an end event is delayed.
+          - Capacity conflicts use exact catalog, scope, locale intersection, capacity slot and overlapping UTC window.
+          - Same idempotency scope/key with another request digest is a conflict.
+          - Placement events contain only producer-owned presentation metadata and identities; no Catalog document is copied into the event.
+          - Read endpoints do not activate, expire, repair or rebuild state.
+
+          ## Proof
+
+          - Domain tests cover immutable revisions, contact prerequisites, entitlement terminal states, listing eligibility, hard expiry and capacity overlap semantics.
+          - Application tests cover exact command replay, outbox separation, missing eligibility fail-closed behavior and capacity conflict before persistence.
+          - Infrastructure tests inspect Promotion PostgreSQL ownership, optimistic concurrency, immutable revision rows, command-result identity and overlap constraints.
+          - API tests cover anonymous denial, missing actor mapping, required idempotency, numeric-enum rejection, undeclared-field rejection, exact create/replay identity, authorized read and anonymous liveness.
+          - Worker tests cover strict bounded options and schedule/outbox composition.
+          - Overlay tests cover producer contract mapping and explicit sponsored presentation without changing organic ranking.
+          - Real PostgreSQL/RabbitMQ delivery and Query overlay end-to-end proof remain owned by integration stages and are not inferred from in-memory API proof.
+          '''.replace('          ', ''),
+              encoding='utf-8',
+              newline='\n')
+
+      - name: Prove the duplicate campaign owner is unreachable
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' --include='*.sql' \
+            -E 'PromotionCampaign|PromotionRuntimeDbContext|PromotionCampaignService|CreatePromotionCampaignRequest|promotion\.campaign|promotion_operations\.command_result' \
+            src/Promotion tests/Promotion; then
+            echo 'A duplicate Promotion campaign owner remains reachable.' >&2
+            exit 1
+          fi
+          test ! -d tests/Promotion/Promotion.Runtime.Tests || \
+            test -z "$(find tests/Promotion/Promotion.Runtime.Tests -type f -print -quit)"
 
       - name: Restore Promotion owner graph
         shell: bash
@@ -128,6 +203,7 @@ jobs:
           for project in "${projects[@]}"; do
             dotnet restore "$project"
           done
+          dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
 
       - name: Format and verify Promotion owner graph
         shell: bash
@@ -155,13 +231,21 @@ jobs:
               --logger 'console;verbosity=normal' /m:1 /nr:false
           done
 
-      - name: Commit proven Promotion guard and remove one-shot workflows
+      - name: Prove architecture boundary
+        shell: bash
+        run: |
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-restore -warnaserror --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Commit proven Promotion consolidation and remove one-shot workflows
         shell: bash
         run: |
           git fetch origin main:refs/remotes/origin/main
           base=$(git rev-parse origin/main)
           if [ "$base" != "$(git rev-parse HEAD)" ]; then
-            affected=$(git diff --name-only HEAD..origin/main -- src/Promotion tests/Promotion)
+            affected=$(git diff --name-only HEAD..origin/main -- \
+              src/Promotion tests/Promotion .codex/modules/promotion.md \
+              AggregatorBackend.slnx AggregatorBackend.All.slnx AggregatorBackend.Runtime.slnx)
             test -z "$affected" || {
               printf 'Promotion owner changed during proof:\n%s\n' "$affected" >&2
               exit 1
@@ -174,6 +258,10 @@ jobs:
           paths=(
             src/Promotion
             tests/Promotion
+            .codex/modules/promotion.md
+            AggregatorBackend.slnx
+            AggregatorBackend.All.slnx
+            AggregatorBackend.Runtime.slnx
             .github/workflows/fix-promotion-campaign-owner.yml
             .github/workflows/complete-promotion-owner.yml
             .github/workflows/complete-promotion-owner-v2.yml
@@ -190,7 +278,7 @@ jobs:
           export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
           export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
           export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-          commit=$(printf '%s\n' 'Validate Promotion campaign response owner boundary' | git commit-tree "$tree" -p "$base")
+          commit=$(printf '%s\n' 'Remove duplicate Promotion campaign owner' | git commit-tree "$tree" -p "$base")
           git push origin "$commit:refs/heads/main"
 
       - name: Publish connector-readable status
