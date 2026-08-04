@@ -1,0 +1,30 @@
+services:
+  query-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Query/Query.Worker/Query.Worker.csproj
+        ENTRY_DLL: Query.Worker.dll
+    environment:
+      ConnectionStrings__Query: Host=query-db;Port=5432;Database=query;Username=query_owner;Password=${QUERY_DB_PASSWORD:-query-local-password}
+      Query__Worker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
+      Query__Worker__Exchange: aggregator.events
+      Query__Worker__Queue: query.catalog-publication-projection
+      Query__Worker__RoutingKey: catalog.publication.activated
+      Query__Worker__PrefetchCount: "8"
+      Query__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Query__ObjectStorage__Region: us-east-1
+      Query__ObjectStorage__Bucket: aggregator
+      Query__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      Query__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+      Query__ObjectStorage__ForcePathStyle: "true"
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [backend]
