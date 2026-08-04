@@ -106,6 +106,66 @@ jobs:
               overlay_store,
               encoding='utf-8',
               newline='\n')
+
+          worker_options_path = Path(
+              'src/Promotion/Promotion.Overlay.Worker/PromotionOverlayWorkerOptions.cs')
+          worker_options = worker_options_path.read_text(encoding='utf-8')
+          old_poll_guard = (
+              '        if (PollInterval is < TimeSpan.FromMilliseconds(100) or > TimeSpan.FromMinutes(1))\n'
+              '        {\n'
+          )
+          new_poll_guard = (
+              '        if (PollInterval < TimeSpan.FromMilliseconds(100) ||\n'
+              '            PollInterval > TimeSpan.FromMinutes(1))\n'
+              '        {\n'
+          )
+          if worker_options.count(old_poll_guard) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay poll-interval guard.')
+          worker_options = worker_options.replace(old_poll_guard, new_poll_guard)
+
+          old_worker_lease_guard = (
+              '        if (LeaseDuration is < TimeSpan.FromSeconds(5) or > TimeSpan.FromMinutes(5))\n'
+              '        {\n'
+          )
+          new_worker_lease_guard = (
+              '        if (LeaseDuration < TimeSpan.FromSeconds(5) ||\n'
+              '            LeaseDuration > TimeSpan.FromMinutes(5))\n'
+              '        {\n'
+          )
+          if worker_options.count(old_worker_lease_guard) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay worker lease-duration guard.')
+          worker_options_path.write_text(
+              worker_options.replace(old_worker_lease_guard, new_worker_lease_guard),
+              encoding='utf-8',
+              newline='\n')
+
+          outbox_worker_path = Path(
+              'src/Promotion/Promotion.Overlay.Worker/PromotionOverlayOutboxWorker.cs')
+          outbox_worker = outbox_worker_path.read_text(encoding='utf-8')
+          old_information_log = (
+              '                _logger.LogInformation(\n'
+              '                    "Dispatched Promotion overlay event {EventId} after {DeliveryAttempts} attempt(s)",\n'
+              '                    lease.EventId,\n'
+              '                    lease.DeliveryAttempts);\n'
+          )
+          new_information_log = (
+              '                if (_logger.IsEnabled(LogLevel.Information))\n'
+              '                {\n'
+              '                    _logger.LogInformation(\n'
+              '                        "Dispatched Promotion overlay event {EventId} after {DeliveryAttempts} attempt(s)",\n'
+              '                        lease.EventId,\n'
+              '                        lease.DeliveryAttempts);\n'
+              '                }\n'
+          )
+          if outbox_worker.count(old_information_log) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay dispatch information log.')
+          outbox_worker_path.write_text(
+              outbox_worker.replace(old_information_log, new_information_log),
+              encoding='utf-8',
+              newline='\n')
           BOOTSTRAP
 
       - name: Prove the duplicate campaign owner is unreachable
