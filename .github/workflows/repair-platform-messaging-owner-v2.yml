@@ -52,50 +52,14 @@ jobs:
           path = Path('tests/Architecture.Tests/RepositorySecurityRulesTests.cs')
           content = path.read_text(encoding='utf-8')
 
-          def replace_exact(old: str, new: str, expected: int = 1) -> None:
-              global content
-              actual = content.count(old)
-              if actual != expected:
-                  raise RuntimeError(
-                      f'Unexpected RepositorySecurityRulesTests anchor count: expected {expected}, actual {actual}.')
-              content = content.replace(old, new)
-
-          old_test = '''    [Fact]
-          public void CommandControllersRequireExplicitAuthorization()
-          {
-              var failures = new List<string>();
-              foreach (var file in EnumerateSourceFiles("src", "*.Controller.cs", "*Controller.cs"))
-              {
-                  var source = File.ReadAllText(file);
-                  if (!source.Contains("[ApiController]", StringComparison.Ordinal) ||
-                      !source.Contains("ControllerBase", StringComparison.Ordinal))
-                  {
-                      continue;
-                  }
-
-                  var hasMutation = MutationAttributeRegex().IsMatch(source);
-                  if (!hasMutation)
-                  {
-                      continue;
-                  }
-
-                  var classAuthorization = HasAuthorizationBeforeControllerDeclaration(source);
-                  foreach (Match mutation in MutationMethodRegex().Matches(source))
-                  {
-                      var prefixStart = Math.Max(0, mutation.Index - 1200);
-                      var prefix = source[prefixStart..mutation.Index];
-                      if (!classAuthorization && !AuthorizationAttributeRegex().IsMatch(prefix))
-                      {
-                          failures.Add(
-                              $"{Relative(file)} contains a mutating endpoint without an explicit [Authorize] policy near offset {mutation.Index}.");
-                      }
-                  }
-              }
-
-              Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
-          }
-          '''.replace('          ', '')
-          new_test = '''    [Fact]
+          test_start = content.index(
+              '    [Fact]\n'
+              '    public void CommandControllersRequireExplicitAuthorization()')
+          test_end = content.index(
+              '\n\n    [Fact]\n'
+              '    public void ApiAndWorkerStartupNeverOwnBusinessMigrations()',
+              test_start)
+          new_tests = '''    [Fact]
           public void MutatingEndpointsRequireExplicitAccessDeclaration()
           {
               var failures = new List<string>();
@@ -165,22 +129,31 @@ jobs:
                   FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
               Assert.Contains("UnprotectedController", failure, StringComparison.Ordinal);
           }
-          '''.replace('          ', '')
-          replace_exact(old_test, new_test)
 
-          old_helper = '''    private static bool HasAuthorizationBeforeControllerDeclaration(string source)
+          [Fact]
+          public void AccessScannerRejectsBareAuthorizeAttribute()
           {
-              var declaration = ControllerDeclarationRegex().Match(source);
-              if (!declaration.Success)
-              {
-                  return false;
-              }
+              const string source = """
+                  [ApiController]
+                  [Authorize]
+                  public sealed class BareAuthorizeController : ControllerBase
+                  {
+                      [HttpPost]
+                      public void Create() { }
+                  }
+                  """;
 
-              var prefixStart = Math.Max(0, declaration.Index - 2000);
-              return AuthorizationAttributeRegex().IsMatch(source[prefixStart..declaration.Index]);
+              Assert.Single(FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
           }
-          '''.replace('          ', '')
-          new_helper = '''    private static IReadOnlyList<string> FindMutatingEndpointsWithoutAccessDeclaration(
+          '''
+          content = content[:test_start] + new_tests + content[test_end:]
+
+          helper_start = content.index(
+              '    private static bool HasAuthorizationBeforeControllerDeclaration(')
+          helper_end = content.index(
+              '\n\n    private static IEnumerable<string> EnumerateSourceFiles(',
+              helper_start)
+          new_helpers = '''    private static IReadOnlyList<string> FindMutatingEndpointsWithoutAccessDeclaration(
               string source,
               string sourceIdentity)
           {
@@ -245,21 +218,15 @@ jobs:
           private static bool HasExplicitAccessDeclaration(string source) =>
               AuthorizationAttributeRegex().IsMatch(source) ||
               AllowAnonymousAttributeRegex().IsMatch(source);
-          '''.replace('          ', '')
-          replace_exact(old_helper, new_helper)
+          '''
+          content = content[:helper_start] + new_helpers + content[helper_end:]
 
-          old_regexes = '''    [GeneratedRegex(@"\\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\\([^\\]]*\\))?\\]", RegexOptions.CultureInvariant)]
-          private static partial Regex MutationAttributeRegex();
-
-          [GeneratedRegex(@"\\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\\([^\\]]*\\))?\\][\\s\\S]{0,1800}?\\b(?:public|internal)\\s+(?:async\\s+)?", RegexOptions.CultureInvariant)]
-          private static partial Regex MutationMethodRegex();
-
-          [GeneratedRegex(@"\\b(?:public|internal)\\s+(?:(?:sealed|abstract|partial)\\s+)*class\\s+\\w*Controller\\b", RegexOptions.CultureInvariant)]
-          private static partial Regex ControllerDeclarationRegex();
-
-          [GeneratedRegex(@"\\[Authorize(?:Attribute)?\\s*\\([^\\]]*(?:Policy\\s*=|policy\\s*:)[^\\]]+\\)\\]", RegexOptions.CultureInvariant)]
-          private static partial Regex AuthorizationAttributeRegex();
-          '''.replace('          ', '')
+          mutation_method_name = content.index(
+              '    private static partial Regex MutationAttributeRegex();')
+          regex_start = content.rfind('    [GeneratedRegex', 0, mutation_method_name)
+          regex_end = content.index(
+              '    [GeneratedRegex(@"(?im)(?<name>password',
+              mutation_method_name)
           new_regexes = '''    [GeneratedRegex(@"\\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\\([^\\]]*\\))?\\]", RegexOptions.CultureInvariant)]
           private static partial Regex MutationAttributeRegex();
 
@@ -274,9 +241,9 @@ jobs:
 
           [GeneratedRegex(@"\\[AllowAnonymous(?:Attribute)?\\s*\\]", RegexOptions.CultureInvariant)]
           private static partial Regex AllowAnonymousAttributeRegex();
-          '''.replace('          ', '')
-          replace_exact(old_regexes, new_regexes)
 
+          '''
+          content = content[:regex_start] + new_regexes + content[regex_end:]
           path.write_text(content, encoding='utf-8', newline='\n')
           PY
 
