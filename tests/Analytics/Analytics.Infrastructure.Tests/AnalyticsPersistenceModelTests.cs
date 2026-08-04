@@ -13,10 +13,18 @@ public sealed class AnalyticsPersistenceModelTests
         using var context = CreateContext();
         var model = context.GetService<IDesignTimeModel>().Model;
         var interactionEvent = FindTable(model, "events", "interaction_event");
+        var campaignParameter = FindTable(
+            model,
+            "events",
+            "interaction_event_campaign_parameter");
 
         Assert.Contains(
             interactionEvent.GetIndexes(),
             index => index.IsUnique &&
+                string.Equals(
+                    index.GetDatabaseName(),
+                    "ux_analytics_interaction_event_semantic_key",
+                    StringComparison.Ordinal) &&
                 index.Properties.Select(property => property.Name)
                     .SequenceEqual(["ClientEventId", "EventKind"]));
         var checkNames = interactionEvent.GetCheckConstraints()
@@ -26,6 +34,8 @@ public sealed class AnalyticsPersistenceModelTests
         Assert.Contains("ck_analytics_interaction_event_placement_shape", checkNames);
         Assert.Contains("ck_analytics_interaction_event_time_bounds", checkNames);
         Assert.Contains("ck_analytics_interaction_event_digest", checkNames);
+        var campaignForeignKey = Assert.Single(campaignParameter.GetForeignKeys());
+        Assert.Equal(DeleteBehavior.Restrict, campaignForeignKey.DeleteBehavior);
     }
 
     [Fact]
