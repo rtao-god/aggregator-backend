@@ -25,7 +25,7 @@ public sealed record PublicListingDocument(
     IReadOnlyList<PublicLocalizedText> Names,
     IReadOnlyList<PublicLocalizedText> Descriptions,
     IReadOnlyList<string> CategoryKeys,
-    IReadOnlyList<PublicAttribute> Attributes,
+    IReadOnlyList<PublicAttributeValue> Attributes,
     PublicGeography Geography,
     IReadOnlyList<PublicContact> Contacts,
     IReadOnlyList<PublicMedia> Media,
@@ -39,7 +39,7 @@ public sealed record PublicLocalizedText(
     MissingValueReasonContract? MissingReason,
     Guid? AssertionId);
 
-public sealed record PublicAttribute(
+public sealed record PublicAttributeValue(
     string AttributeKey,
     FieldValueStateContract State,
     TypedValueContract? Value,

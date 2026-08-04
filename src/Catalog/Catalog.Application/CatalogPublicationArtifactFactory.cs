@@ -62,7 +62,7 @@ internal static class CatalogPublicationArtifactFactory
             content.Categories.Select(category => category.CategoryKey.Value).Order(StringComparer.Ordinal).ToArray(),
             content.Attributes.Values
                 .OrderBy(value => value.Key.Value, StringComparer.Ordinal)
-                .Select(value => new PublicAttribute(
+                .Select(value => new PublicAttributeValue(
                     value.Key.Value,
                     (FieldValueStateContract)value.State,
                     value.Value is null
