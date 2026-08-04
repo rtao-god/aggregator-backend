@@ -1,0 +1,45 @@
+name: Continue after analyzer-safe architecture proof
+
+on:
+  workflow_run:
+    workflows: ["Finalize analyzer-safe architecture proof"]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-owner-proofs:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Dispatch remaining owner proofs from latest main
+        uses: actions/github-script@v9
+        with:
+          script: |
+            for (const workflow_id of [
+              'consolidate-ingestion-owner-v4.yml',
+              'complete-promotion-owner-v2.yml'
+            ]) {
+              try {
+                await github.rest.actions.getWorkflow({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id
+                });
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id,
+                  ref: 'main'
+                });
+                core.info(`Dispatched ${workflow_id}`);
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`${workflow_id} was already removed after a proven commit.`);
+                  continue;
+                }
+                throw error;
+              }
+            }
