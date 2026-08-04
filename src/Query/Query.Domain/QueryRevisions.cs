@@ -111,6 +111,7 @@ public sealed record QueryOverlayRevision
         SourceRevision = sourceRevision;
         CreatedAtUtc = createdAtUtc;
         ContentDigest = contentDigest;
+        ItemCount = 0;
     }
 
     public Guid Id { get; }
@@ -125,7 +126,7 @@ public sealed record QueryOverlayRevision
 
     public string ContentDigest { get; }
 
-    public int ItemCount => 0;
+    public int ItemCount { get; }
 
     public static QueryOverlayRevision CreateEmpty(
         Guid id,
