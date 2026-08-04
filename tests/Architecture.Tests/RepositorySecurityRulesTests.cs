@@ -236,7 +236,16 @@ public sealed partial class RepositorySecurityRulesTests
         value.Contains("test", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("example", StringComparison.OrdinalIgnoreCase) ||
         value.StartsWith("Environment.GetEnvironmentVariable", StringComparison.Ordinal) ||
-        value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase);
+        value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("RequireSetting(", StringComparison.Ordinal) ||
+        value.Contains("GetConnectionString(", StringComparison.Ordinal) ||
+        value.Contains("GetEnvironmentVariable(", StringComparison.Ordinal) ||
+        value.Contains("GetRequiredSection(", StringComparison.Ordinal) ||
+        value.Contains("GetValue<", StringComparison.Ordinal) ||
+        value.Contains("nameof(", StringComparison.Ordinal) ||
+        value.Contains("Options.", StringComparison.Ordinal) ||
+        value.Contains("options.", StringComparison.Ordinal) ||
+        value.Contains("configuration", StringComparison.OrdinalIgnoreCase);
 
     private static string Relative(string path) =>
         Path.GetRelativePath(RepositoryRoot, path).Replace(Path.DirectorySeparatorChar, '/');

@@ -1,4 +1,5 @@
 using Aggregator.Analytics.Application;
+using Aggregator.Analytics.Domain;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -97,5 +98,20 @@ public sealed class RecordingAnalyticsRuntimeStore : IAnalyticsRuntimeStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(Ready);
+    }
+
+    public Task<AnalyticsObservationWriteResult> RecordAsync(AnalyticsObservation observation, string requestDigest, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<IReadOnlyList<AnalyticsDailyMetric>> ReadMetricsAsync(string catalogKey, Guid publicReadRevisionId, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<int> AggregatePendingAsync(int maximumObservationCount, DateTimeOffset calculatedAtUtc, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
     }
 }

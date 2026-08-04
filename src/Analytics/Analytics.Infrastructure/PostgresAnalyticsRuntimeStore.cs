@@ -1,6 +1,7 @@
 using System.Data;
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Contracts;
+using Aggregator.Analytics.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
@@ -260,5 +261,20 @@ public sealed class PostgresAnalyticsRuntimeStore(NpgsqlDataSource dataSource) :
         command.Parameters.AddWithValue("leads", NpgsqlDbType.Bigint, leadIncrement);
         command.Parameters.AddWithValue("updated_at_utc", NpgsqlDbType.TimestampTz, updatedAtUtc);
         _ = await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public Task<AnalyticsObservationWriteResult> RecordAsync(AnalyticsObservation observation, string requestDigest, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<IReadOnlyList<AnalyticsDailyMetric>> ReadMetricsAsync(string catalogKey, Guid publicReadRevisionId, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<int> AggregatePendingAsync(int maximumObservationCount, DateTimeOffset calculatedAtUtc, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
     }
 }

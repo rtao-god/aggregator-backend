@@ -6,4 +6,7 @@
     <ProjectReference Include="../Ingestion.Contracts/Ingestion.Contracts.csproj" />
     <ProjectReference Include="../Ingestion.Domain/Ingestion.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+  </ItemGroup>
 </Project>

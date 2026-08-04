@@ -136,7 +136,7 @@ public sealed class PromotionRuntimeTests
             "promotion-test",
             CancellationToken.None);
 
-        var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
+        var exception = await Assert.ThrowsAsync<PromotionCampaignApplicationException>(() =>
             service.CreateAsync(
                 request with { ListingId = Guid.CreateVersion7() },
                 "capacity-second",
@@ -317,7 +317,7 @@ public sealed class PromotionRuntimeTests
                 .Sum(existing => existing.CapacityUnits);
             if (reserved + campaign.CapacityUnits > placementCapacityLimit)
             {
-                throw new PromotionApplicationException(
+                throw new PromotionCampaignApplicationException(
                     "Promotion.Capacity",
                     "PROMOTION_PLACEMENT_CAPACITY_EXCEEDED",
                     409,
@@ -359,7 +359,7 @@ public sealed class PromotionRuntimeTests
             var current = _campaigns[campaign.Id];
             if (current.AggregateRevision != expectedStoredAggregateRevision)
             {
-                throw new PromotionApplicationException(
+                throw new PromotionCampaignApplicationException(
                     "Promotion.Campaigns",
                     "PROMOTION_REVISION_CONFLICT",
                     409,
@@ -429,7 +429,7 @@ public sealed class PromotionRuntimeTests
 
             if (!string.Equals(command.Digest, identity.RequestDigest, StringComparison.Ordinal))
             {
-                throw new PromotionApplicationException(
+                throw new PromotionCampaignApplicationException(
                     "Promotion.Commands",
                     "PROMOTION_IDEMPOTENCY_DIGEST_CONFLICT",
                     409,

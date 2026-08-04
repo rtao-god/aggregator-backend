@@ -12,7 +12,7 @@ public enum AnalyticsObservationKind
 }
 
 /// <summary>One immutable, privacy-bounded interaction accepted by the Analytics owner.</summary>
-public sealed record AnalyticsObservation
+public sealed partial record AnalyticsObservation
 {
     private AnalyticsObservation(
         Guid id,

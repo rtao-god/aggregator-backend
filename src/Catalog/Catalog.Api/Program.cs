@@ -40,6 +40,8 @@ public partial class Program
         builder.Services.AddOwnerProblemDetails();
         builder.Services.AddCatalogApplication();
         builder.Services.AddCatalogInfrastructure(builder.Configuration);
+        builder.Services.AddCatalogIngestionInfrastructure(builder.Configuration);
+        builder.Services.AddScoped<CatalogIngestionDraftService>();
         builder.Services.AddPlatformObservability(builder.Configuration, "catalog-command-api");
         builder.Services.AddRateLimiter(options =>
             options.AddFixedWindowLimiter(
@@ -76,11 +78,15 @@ public partial class Program
                 CatalogAuthorizationPolicies.VerifyClaim)
             .AddRequiredScopePolicy(
                 CatalogAuthorizationPolicies.TestContracts,
-                CatalogAuthorizationPolicies.TestContracts);
+                CatalogAuthorizationPolicies.TestContracts)
+            .AddRequiredScopePolicy(
+                CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand,
+                CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand);
 
         var application = builder.Build();
         application.UseOwnerProblemDetails();
         application.UseStatusCodePages(CatalogAuthorizationStatusCodeWriter.WriteAsync);
+        application.UseMiddleware<CatalogIngestionFailureMiddleware>();
         application.UseMiddleware<CatalogFailureMiddleware>();
         application.UseRateLimiter();
         application.UseAuthentication();

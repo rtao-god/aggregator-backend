@@ -78,7 +78,7 @@ public sealed class PromotionOverlayApiFactory : WebApplicationFactory<Program>
         ILoggerFactory logger,
         UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string Scheme = "PromotionOverlayApiTest";
+        public new const string Scheme = "PromotionOverlayApiTest";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {

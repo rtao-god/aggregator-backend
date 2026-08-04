@@ -35,7 +35,7 @@ public sealed record PromotionCommandIdentity(string Scope, string Key, string R
     {
         if (string.IsNullOrWhiteSpace(scope) || scope.Length > 150)
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Commands",
                 "PROMOTION_COMMAND_SCOPE_INVALID",
                 500,
@@ -45,7 +45,7 @@ public sealed record PromotionCommandIdentity(string Scope, string Key, string R
 
         if (string.IsNullOrWhiteSpace(key) || key.Length > 200 || key.Any(char.IsControl))
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Commands",
                 "PROMOTION_IDEMPOTENCY_KEY_INVALID",
                 400,
@@ -62,7 +62,7 @@ public sealed record PromotionCommandIdentity(string Scope, string Key, string R
         if (digest is not { Length: 64 } ||
             digest.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Commands",
                 "PROMOTION_REQUEST_DIGEST_INVALID",
                 500,
@@ -442,14 +442,14 @@ public sealed class PromotionCampaignService(
             catalogKey,
             placementKey,
             cancellationToken)
-        ?? throw new PromotionApplicationException(
+        ?? throw new PromotionCampaignApplicationException(
             "Promotion.Eligibility",
             "PROMOTION_ELIGIBILITY_PROJECTION_MISSING",
             409,
             "Promotion cannot prove the exact product, entitlement, listing and placement eligibility projection.",
             "Wait for the producer events to reach Promotion and retry with the exact identities.");
 
-    private static PromotionApplicationException NotFound(Guid campaignId) =>
+    private static PromotionCampaignApplicationException NotFound(Guid campaignId) =>
         new(
             "Promotion.Campaigns",
             "PROMOTION_CAMPAIGN_NOT_FOUND",
@@ -457,7 +457,7 @@ public sealed class PromotionCampaignService(
             $"Promotion campaign '{campaignId:D}' was not found.",
             "Use the exact campaign identity returned by creation.");
 
-    private static PromotionApplicationException ContractFailure(string code, string detail) =>
+    private static PromotionCampaignApplicationException ContractFailure(string code, string detail) =>
         new(
             "Promotion.Contracts",
             code,
@@ -481,7 +481,7 @@ public sealed class CompleteExpiredPromotionCampaignsService(
     {
         if (limit is < 1 or > 1_000)
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Worker",
                 "PROMOTION_COMPLETION_LIMIT_INVALID",
                 500,
@@ -563,7 +563,7 @@ public static class PromotionCampaignMapper
         PromotionCampaignState.Suspended => PromotionCampaignStateContract.Suspended,
         PromotionCampaignState.Completed => PromotionCampaignStateContract.Completed,
         PromotionCampaignState.Cancelled => PromotionCampaignStateContract.Cancelled,
-        _ => throw new PromotionApplicationException(
+        _ => throw new PromotionCampaignApplicationException(
             "Promotion.Persistence",
             "PROMOTION_CAMPAIGN_STATE_UNSUPPORTED",
             500,
@@ -589,9 +589,9 @@ public static class PromotionRequestHash
 
 public sealed record PromotionTransitionHashInput<TRequest>(Guid CampaignId, TRequest Request);
 
-public sealed class PromotionApplicationException : InvalidOperationException
+public sealed class PromotionCampaignApplicationException : InvalidOperationException
 {
-    public PromotionApplicationException(
+    public PromotionCampaignApplicationException(
         string owner,
         string code,
         int statusCode,

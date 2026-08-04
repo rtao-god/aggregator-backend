@@ -300,7 +300,7 @@ public sealed class IngestionProcessingTests
                 LastChangedAtUtc = completedAtUtc,
             };
             ValidationResult = new IngestionProcessingSnapshot(updated, decisions);
-            return Task.FromResult(ValidationResult);
+            return Task.FromResult(ValidationResult!);
         }
 
         public Task FailValidationAsync(

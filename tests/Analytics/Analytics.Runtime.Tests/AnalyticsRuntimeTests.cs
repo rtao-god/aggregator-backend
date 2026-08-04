@@ -91,7 +91,7 @@ public sealed class AnalyticsRuntimeTests
     [Fact]
     public async Task MetricResponseOrderingIsDeterministic()
     {
-        var revisionId = Guid.CreateVersion7();
+        var revisionId = Guid.Parse("019b9b00-0000-7000-8000-000000000102");
         var firstListingId = Guid.Parse("019b9b00-0000-7000-8000-000000000001");
         var secondListingId = Guid.Parse("019b9b00-0000-7000-8000-000000000002");
         var store = new InMemoryRuntimeStore
@@ -270,6 +270,21 @@ public sealed class AnalyticsRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Math.Min(maximumObservationCount, _observations.Count));
+        }
+
+        public Task<AnalyticsInteractionRegistration> RegisterAsync(AnalyticsInteractionRecord interaction, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<AnalyticsListingMetricsSnapshot?> ReadListingMetricsAsync(string catalogKey, Guid listingId, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<bool> CheckReadinessAsync(CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
         }
     }
 }

@@ -234,7 +234,7 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
             ?? 0;
         if (reservedUnits + campaign.CapacityUnits > placementCapacityLimit)
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Capacity",
                 "PROMOTION_PLACEMENT_CAPACITY_EXCEEDED",
                 409,
@@ -401,8 +401,9 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
         string placementKey,
         DateTimeOffset effectiveAtUtc,
         int limit,
-        CancellationToken cancellationToken) =>
-        await dbContext.Campaigns
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Campaigns
             .AsNoTracking()
             .Where(row =>
                 row.CatalogKey == catalogKey &&
@@ -413,14 +414,16 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
             .OrderBy(row => row.StartsAtUtc)
             .ThenBy(row => row.Id)
             .Take(limit)
-            .Select(row => ToSnapshot(row))
             .ToArrayAsync(cancellationToken);
+        return rows.Select(ToSnapshot).ToArray();
+    }
 
     public async Task<IReadOnlyList<PromotionCampaignSnapshot>> ReadExpiredAsync(
         DateTimeOffset effectiveAtUtc,
         int limit,
-        CancellationToken cancellationToken) =>
-        await dbContext.Campaigns
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Campaigns
             .AsNoTracking()
             .Where(row =>
                 (row.State == (int)PromotionCampaignState.Active ||
@@ -429,8 +432,9 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
             .OrderBy(row => row.EndsAtUtc)
             .ThenBy(row => row.Id)
             .Take(limit)
-            .Select(row => ToSnapshot(row))
             .ToArrayAsync(cancellationToken);
+        return rows.Select(ToSnapshot).ToArray();
+    }
 
     public Task<PromotionCampaignSnapshot?> ReadCommandResultAsync(
         PromotionCommandIdentity identity,
@@ -456,7 +460,7 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
 
         if (!string.Equals(command.RequestDigest, identity.RequestDigest, StringComparison.Ordinal))
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Commands",
                 "PROMOTION_IDEMPOTENCY_DIGEST_CONFLICT",
                 409,
@@ -592,7 +596,7 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
         }
     }
 
-    private static PromotionApplicationException RevisionConflict(
+    private static PromotionCampaignApplicationException RevisionConflict(
         Guid campaignId,
         long expectedRevision,
         long? actualRevision,
@@ -611,7 +615,7 @@ public sealed class EfPromotionCampaignStore(PromotionRuntimeDbContext dbContext
             },
             innerException);
 
-    private static PromotionApplicationException PersistenceFailure(
+    private static PromotionCampaignApplicationException PersistenceFailure(
         string code,
         int statusCode,
         string detail,
@@ -752,7 +756,7 @@ internal static class PromotionDocument
         return options;
     }
 
-    private static PromotionApplicationException PersistenceFailure(
+    private static PromotionCampaignApplicationException PersistenceFailure(
         string code,
         string detail,
         Exception? innerException = null) =>

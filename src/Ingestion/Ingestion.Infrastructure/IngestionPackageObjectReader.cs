@@ -87,7 +87,7 @@ public sealed class IngestionPackageObjectReader(IObjectStore objectStore)
             objectKey.Length > 1024 ||
             objectKey.Contains("..", StringComparison.Ordinal) ||
             objectKey.Contains('\\') ||
-            objectKey.EndsWith("/", StringComparison.Ordinal))
+            objectKey.EndsWith('/'))
         {
             throw new IngestionPackageIntegrityException(
                 "INGESTION_PAYLOAD_OBJECT_KEY_INVALID",

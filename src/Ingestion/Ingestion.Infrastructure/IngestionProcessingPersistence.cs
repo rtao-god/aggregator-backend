@@ -300,7 +300,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
         }
 
         await AdvanceAsync(batch, ImportBatchState.IntegrityChecking, failedAtUtc, cancellationToken);
-        batch.FailureCode = NormalizeReason(failureCode);
+        batch.FailureCode = NormalizeFailureCode(failureCode);
         await AdvanceAsync(batch, ImportBatchState.IntegrityFailed, failedAtUtc, cancellationToken);
         var job = await dbContext.ValidationJobs.SingleAsync(row => row.BatchId == batch.Id, cancellationToken);
         job.State = 4;
@@ -805,7 +805,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
                 field.EvidenceDigest,
                 field.UsagePolicy))
             .ToArray();
-        var digestInput = new CatalogCommandDigestInput(
+        var digestInput = new CatalogIngestionCommandDigestInput(
             commandId,
             batch.Id,
             item.ItemKey,
@@ -816,7 +816,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
             item.SubjectNaturalKey,
             fields,
             requestedAtUtc);
-        var commandDigest = ProcessingDocument.ComputeDigest(ProcessingDocument.Serialize(digestInput));
+        var commandDigest = CatalogIngestionCommandDigest.Compute(digestInput);
         return new CatalogIngestionUpsertDraftCommand(
             commandId,
             batch.Id,
@@ -834,21 +834,21 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
 
     private static CatalogDraftValueKindContract MapValueKind(
         IngestionCandidateFieldValueKindContract value) => value switch
-    {
-        IngestionCandidateFieldValueKindContract.Text => CatalogDraftValueKindContract.Text,
-        IngestionCandidateFieldValueKindContract.Integer => CatalogDraftValueKindContract.Integer,
-        IngestionCandidateFieldValueKindContract.Decimal => CatalogDraftValueKindContract.Decimal,
-        IngestionCandidateFieldValueKindContract.Boolean => CatalogDraftValueKindContract.Boolean,
-        IngestionCandidateFieldValueKindContract.Date => CatalogDraftValueKindContract.Date,
-        IngestionCandidateFieldValueKindContract.DateTime => CatalogDraftValueKindContract.DateTime,
-        IngestionCandidateFieldValueKindContract.Uri => CatalogDraftValueKindContract.Uri,
-        IngestionCandidateFieldValueKindContract.ExternalReference => CatalogDraftValueKindContract.ExternalReference,
-        _ => throw ProcessingFailure(
-            "INGESTION_FIELD_KIND_UNSUPPORTED",
-            500,
-            "A validated candidate field kind cannot be mapped to Catalog.",
-            "Correct the producer contract mapping."),
-    };
+        {
+            IngestionCandidateFieldValueKindContract.Text => CatalogDraftValueKindContract.Text,
+            IngestionCandidateFieldValueKindContract.Integer => CatalogDraftValueKindContract.Integer,
+            IngestionCandidateFieldValueKindContract.Decimal => CatalogDraftValueKindContract.Decimal,
+            IngestionCandidateFieldValueKindContract.Boolean => CatalogDraftValueKindContract.Boolean,
+            IngestionCandidateFieldValueKindContract.Date => CatalogDraftValueKindContract.Date,
+            IngestionCandidateFieldValueKindContract.DateTime => CatalogDraftValueKindContract.DateTime,
+            IngestionCandidateFieldValueKindContract.Uri => CatalogDraftValueKindContract.Uri,
+            IngestionCandidateFieldValueKindContract.ExternalReference => CatalogDraftValueKindContract.ExternalReference,
+            _ => throw ProcessingFailure(
+                "INGESTION_FIELD_KIND_UNSUPPORTED",
+                500,
+                "A validated candidate field kind cannot be mapped to Catalog.",
+                "Correct the producer contract mapping."),
+        };
 
     private static IngestionCatalogDeliveryDto ToDeliveryDto(
         Guid deliveryId,
@@ -944,6 +944,21 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
             row.ReviewRequiredItemCount,
             row.RejectedItemCount,
             row.FailureCode);
+
+    private static string NormalizeFailureCode(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 200 ||
+            value.Any(character => !(char.IsLetterOrDigit(character) || character is '_' or '-' or ':' or '.')))
+        {
+            throw ProcessingFailure(
+                "INGESTION_FAILURE_CODE_INVALID",
+                500,
+                "A generated processing failure code is invalid.",
+                "Correct the processing failure classifier.");
+        }
+
+        return value;
+    }
 
     private static string NormalizeReason(string value)
     {

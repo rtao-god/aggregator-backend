@@ -228,23 +228,22 @@ string GenerateQueueSource() =>
                     FROM {identifiers.QualifiedTable} AS batch
                     LEFT JOIN operations.validation_work AS work
                         ON work.batch_id = batch.{identifiers.IdColumn}
-                    WHERE batch.{identifiers.StateColumn} = @uploaded_state
-                      AND (work.completed_at_utc IS NULL)
-                      AND (work.lease_expires_at_utc IS NULL OR work.lease_expires_at_utc <= @now_utc)
-                      AND COALESCE(work.attempt_count, 0) < @maximum_attempts
-                    ORDER BY batch.{identifiers.RegisteredAtColumn}, batch.{identifiers.IdColumn}
-                    FOR UPDATE OF batch SKIP LOCKED
+                    WHERE batch.{ identifiers.StateColumn } = @uploaded_state
+                      AND(work.completed_at_utc IS NULL)
+                      AND(work.lease_expires_at_utc IS NULL OR work.lease_expires_at_utc <= @now_utc)
+< @maximum_attempts
+                    ORDER BY batch.{identifiers.RegisteredAtColumn}, batch.{ identifiers.IdColumn}
+FOR UPDATE OF batch SKIP LOCKED
                     LIMIT 1
                 )
                 INSERT INTO operations.validation_work
                     (batch_id, lease_token, leased_by, lease_expires_at_utc, attempt_count, last_error,
-                     last_failed_at_utc, completed_at_utc)
+ last_failed_at_utc, completed_at_utc)
                 SELECT candidate.{identifiers.IdColumn}, @lease_token, @leased_by, @lease_expires_at_utc,
                        COALESCE(existing.attempt_count, 0), existing.last_error, existing.last_failed_at_utc, NULL
                 FROM candidate
                 LEFT JOIN operations.validation_work AS existing
                     ON existing.batch_id = candidate.{identifiers.IdColumn}
-                ON CONFLICT (batch_id)
                 DO UPDATE SET
                     lease_token = EXCLUDED.lease_token,
                     leased_by = EXCLUDED.leased_by,
@@ -254,236 +253,123 @@ string GenerateQueueSource() =>
                        OR operations.validation_work.lease_expires_at_utc <= @now_utc)
                   AND operations.validation_work.attempt_count < @maximum_attempts
                 RETURNING batch_id, attempt_count;
-                """;
+""";
             command.Parameters.AddWithValue("uploaded_state", NpgsqlDbType.Integer, (int)ImportBatchState.Uploaded);
-            command.Parameters.AddWithValue("now_utc", NpgsqlDbType.TimestampTz, nowUtc);
-            command.Parameters.AddWithValue("maximum_attempts", NpgsqlDbType.Integer, maximumAttempts);
-            command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, leaseToken);
-            command.Parameters.AddWithValue("leased_by", NpgsqlDbType.Text, workerIdentity.Trim());
-            command.Parameters.AddWithValue("lease_expires_at_utc", NpgsqlDbType.TimestampTz, leaseExpiresAtUtc);
-            Guid? batchId = null;
-            var attemptCount = 0;
-            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-            {
-                if (await reader.ReadAsync(cancellationToken))
-                {
-                    batchId = reader.GetGuid(0);
-                    attemptCount = reader.GetInt32(1);
-                }
-            }
+command.Parameters.AddWithValue("now_utc", NpgsqlDbType.TimestampTz, nowUtc);
+command.Parameters.AddWithValue("maximum_attempts", NpgsqlDbType.Integer, maximumAttempts);
+command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, leaseToken);
+command.Parameters.AddWithValue("leased_by", NpgsqlDbType.Text, workerIdentity.Trim());
+command.Parameters.AddWithValue("lease_expires_at_utc", NpgsqlDbType.TimestampTz, leaseExpiresAtUtc);
+Guid? batchId = null;
+var attemptCount = 0;
+await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+{
+    if (await reader.ReadAsync(cancellationToken))
+    {
+        batchId = reader.GetGuid(0);
+        attemptCount = reader.GetInt32(1);
+    }
+}
 
-            await transaction.CommitAsync(cancellationToken);
-            if (batchId is null)
-            {
-                return null;
-            }
+await transaction.CommitAsync(cancellationToken);
+if (batchId is null)
+{
+    return null;
+}
 
-            var snapshot = await batchRepository.ReadAsync(ImportBatchId.Create(batchId.Value), cancellationToken)
-                ?? throw Failure(
-                    "INGESTION_VALIDATION_BATCH_DISAPPEARED",
-                    $"Leased import batch '{batchId}' disappeared before validation.",
-                    "Restore the batch row or clear its validation work record through an owner migration.");
-            return new IngestionValidationLease(
-                batchId.Value,
-                leaseToken,
-                attemptCount,
-                leaseExpiresAtUtc,
-                snapshot);
+var snapshot = await batchRepository.ReadAsync(ImportBatchId.Create(batchId.Value), cancellationToken)
+    ?? throw Failure(
+        "INGESTION_VALIDATION_BATCH_DISAPPEARED",
+        $"Leased import batch '{batchId}' disappeared before validation.",
+        "Restore the batch row or clear its validation work record through an owner migration.");
+return new IngestionValidationLease(
+    batchId.Value,
+    leaseToken,
+    attemptCount,
+    leaseExpiresAtUtc,
+    snapshot);
         }
 
-        public async Task CompleteAsync(
-            IngestionValidationLease lease,
-            ImportBatch batch,
-            IReadOnlyList<IngestionDecisionDocument> decisions,
-            DateTimeOffset completedAtUtc,
-            CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(lease);
-            ArgumentNullException.ThrowIfNull(batch);
-            ArgumentNullException.ThrowIfNull(decisions);
-            RequireUtc(completedAtUtc, nameof(completedAtUtc));
-            if (batch.Id.Value != lease.BatchId)
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_BATCH_IDENTITY_MISMATCH",
-                    "Validation completion aggregate belongs to another import batch.",
-                    "Reload the exact leased batch before persisting decisions.");
-            }
+private void EnsureLease(
+    Guid batchId,
+    IngestionValidationLease lease,
+    DateTimeOffset nowUtc,
+    CancellationToken cancellationToken)
+{
+    cancellationToken.ThrowIfCancellationRequested();
+    if (batchId != lease.BatchId || lease.LeaseExpiresAtUtc <= nowUtc)
+    {
+        throw Failure(
+            "INGESTION_VALIDATION_STALE_LEASE",
+            "Validation completion was produced by an expired or mismatched lease.",
+            "Discard the result and reacquire the exact import batch.");
+    }
+}
 
-            if (decisions.Count != batch.AcceptedItemCount + batch.ReviewRequiredItemCount + batch.RejectedItemCount)
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_DECISION_COUNT_MISMATCH",
-                    "Persisted decision count does not match the validated aggregate counts.",
-                    "Persist one explicit decision for every validated item.");
-            }
+private static void EnsureAggregateRevision(
+    ImportBatchRow row,
+    IngestionValidationLease lease,
+    ImportBatch batch)
+{
+    if (row.AggregateRevision != lease.Snapshot.AggregateRevision ||
+        batch.AggregateRevision <= row.AggregateRevision)
+    {
+        throw Failure(
+            "INGESTION_VALIDATION_REVISION_CONFLICT",
+            "Import batch changed while validation was in progress or validation produced no domain transition.",
+            "Reload and validate the current aggregate revision.");
+    }
+}
 
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
-                cancellationToken);
-            var row = await dbContext.Batches.SingleOrDefaultAsync(
-                candidate => candidate.Id == lease.BatchId,
-                cancellationToken)
-                ?? throw Failure(
-                    "INGESTION_VALIDATION_BATCH_NOT_FOUND",
-                    $"Import batch '{lease.BatchId}' was not found while completing validation.",
-                    "Restore the exact batch before retrying validation.");
-            EnsureLease(row.Id, lease, completedAtUtc, cancellationToken);
-            EnsureAggregateRevision(row, lease, batch);
-            Apply(row, batch);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await InsertDecisionsAsync(lease.BatchId, decisions, completedAtUtc, transaction, cancellationToken);
-            await MarkCompletedAsync(lease, completedAtUtc, transaction, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
+private static void Apply(ImportBatchRow row, ImportBatch batch)
+{
+    row.LastChangedAtUtc = batch.LastChangedAtUtc;
+    row.State = (int)batch.State;
+    row.AggregateRevision = batch.AggregateRevision;
+    row.AcceptedItemCount = batch.AcceptedItemCount;
+    row.ReviewRequiredItemCount = batch.ReviewRequiredItemCount;
+    row.RejectedItemCount = batch.RejectedItemCount;
+    row.FailureCode = batch.FailureCode;
+}
 
-        public async Task<int> RecordFailureAsync(
-            IngestionValidationLease lease,
-            string error,
-            DateTimeOffset failedAtUtc,
-            CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(lease);
-            ArgumentException.ThrowIfNullOrWhiteSpace(error);
-            RequireUtc(failedAtUtc, nameof(failedAtUtc));
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
-                cancellationToken);
-            var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
-            await using var command = connection.CreateCommand();
-            command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
-            command.CommandText = """
-                UPDATE operations.validation_work
-                SET attempt_count = attempt_count + 1,
-                    last_error = @last_error,
-                    last_failed_at_utc = @failed_at_utc,
-                    lease_token = NULL,
-                    leased_by = NULL,
-                    lease_expires_at_utc = NULL
-                WHERE batch_id = @batch_id
-                  AND lease_token = @lease_token
-                  AND completed_at_utc IS NULL
-                RETURNING attempt_count;
-                """;
-            command.Parameters.AddWithValue("last_error", NpgsqlDbType.Text, error.Trim()[..Math.Min(error.Trim().Length, 4000)]);
-            command.Parameters.AddWithValue("failed_at_utc", NpgsqlDbType.TimestampTz, failedAtUtc);
-            command.Parameters.AddWithValue("batch_id", NpgsqlDbType.Uuid, lease.BatchId);
-            command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, lease.LeaseToken);
-            var result = await command.ExecuteScalarAsync(cancellationToken)
-                ?? throw Failure(
-                    "INGESTION_VALIDATION_STALE_LEASE",
-                    "Validation failure cannot be recorded because the lease is no longer current.",
-                    "Discard the stale worker result and reacquire the batch.");
-            await transaction.CommitAsync(cancellationToken);
-            return Convert.ToInt32(result, CultureInfo.InvariantCulture);
-        }
-
-        public async Task CompleteTerminalFailureAsync(
-            IngestionValidationLease lease,
-            ImportBatch batch,
-            DateTimeOffset completedAtUtc,
-            CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(lease);
-            ArgumentNullException.ThrowIfNull(batch);
-            RequireUtc(completedAtUtc, nameof(completedAtUtc));
-            await using var transaction = await dbContext.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable,
-                cancellationToken);
-            var row = await dbContext.Batches.SingleOrDefaultAsync(
-                candidate => candidate.Id == lease.BatchId,
-                cancellationToken)
-                ?? throw Failure(
-                    "INGESTION_VALIDATION_BATCH_NOT_FOUND",
-                    $"Import batch '{lease.BatchId}' was not found while recording terminal validation failure.",
-                    "Restore the exact batch before retrying validation.");
-            EnsureAggregateRevision(row, lease, batch);
-            Apply(row, batch);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await MarkCompletedAsync(lease, completedAtUtc, transaction, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-        }
-
-        private void EnsureLease(
-            Guid batchId,
-            IngestionValidationLease lease,
-            DateTimeOffset nowUtc,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (batchId != lease.BatchId || lease.LeaseExpiresAtUtc <= nowUtc)
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_STALE_LEASE",
-                    "Validation completion was produced by an expired or mismatched lease.",
-                    "Discard the result and reacquire the exact import batch.");
-            }
-        }
-
-        private static void EnsureAggregateRevision(
-            ImportBatchRow row,
-            IngestionValidationLease lease,
-            ImportBatch batch)
-        {
-            if (row.AggregateRevision != lease.Snapshot.AggregateRevision ||
-                batch.AggregateRevision <= row.AggregateRevision)
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_REVISION_CONFLICT",
-                    "Import batch changed while validation was in progress or validation produced no domain transition.",
-                    "Reload and validate the current aggregate revision.");
-            }
-        }
-
-        private static void Apply(ImportBatchRow row, ImportBatch batch)
-        {
-            row.LastChangedAtUtc = batch.LastChangedAtUtc;
-            row.State = (int)batch.State;
-            row.AggregateRevision = batch.AggregateRevision;
-            row.AcceptedItemCount = batch.AcceptedItemCount;
-            row.ReviewRequiredItemCount = batch.ReviewRequiredItemCount;
-            row.RejectedItemCount = batch.RejectedItemCount;
-            row.FailureCode = batch.FailureCode;
-        }
-
-        private async Task InsertDecisionsAsync(
-            Guid batchId,
-            IReadOnlyList<IngestionDecisionDocument> decisions,
-            DateTimeOffset recordedAtUtc,
-            Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
-            CancellationToken cancellationToken)
-        {
-            var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
-            foreach (var decision in decisions.OrderBy(item => item.Ordinal))
-            {
-                await using var command = connection.CreateCommand();
-                command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
-                command.CommandText = """
+private async Task InsertDecisionsAsync(
+    Guid batchId,
+    IReadOnlyList<IngestionDecisionDocument> decisions,
+    DateTimeOffset recordedAtUtc,
+    Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+    CancellationToken cancellationToken)
+{
+    var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
+    foreach (var decision in decisions.OrderBy(item => item.Ordinal))
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
+        command.CommandText = """
                     INSERT INTO batches.item_decision
                         (batch_id, ordinal, item_key, decision_json, decision_digest, recorded_at_utc)
                     VALUES
                         (@batch_id, @ordinal, @item_key, @decision_json::jsonb, @decision_digest, @recorded_at_utc);
                     """;
-                command.Parameters.AddWithValue("batch_id", NpgsqlDbType.Uuid, batchId);
-                command.Parameters.AddWithValue("ordinal", NpgsqlDbType.Integer, decision.Ordinal);
-                command.Parameters.AddWithValue("item_key", NpgsqlDbType.Text, decision.ItemKey);
-                command.Parameters.AddWithValue("decision_json", NpgsqlDbType.Text, decision.CanonicalJson);
-                command.Parameters.AddWithValue("decision_digest", NpgsqlDbType.Char, decision.ContentDigest);
-                command.Parameters.AddWithValue("recorded_at_utc", NpgsqlDbType.TimestampTz, recordedAtUtc);
-                await command.ExecuteNonQueryAsync(cancellationToken);
-            }
-        }
+        command.Parameters.AddWithValue("batch_id", NpgsqlDbType.Uuid, batchId);
+        command.Parameters.AddWithValue("ordinal", NpgsqlDbType.Integer, decision.Ordinal);
+        command.Parameters.AddWithValue("item_key", NpgsqlDbType.Text, decision.ItemKey);
+        command.Parameters.AddWithValue("decision_json", NpgsqlDbType.Text, decision.CanonicalJson);
+        command.Parameters.AddWithValue("decision_digest", NpgsqlDbType.Char, decision.ContentDigest);
+        command.Parameters.AddWithValue("recorded_at_utc", NpgsqlDbType.TimestampTz, recordedAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+}
 
-        private async Task MarkCompletedAsync(
-            IngestionValidationLease lease,
-            DateTimeOffset completedAtUtc,
-            Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
-            CancellationToken cancellationToken)
-        {
-            var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
-            await using var command = connection.CreateCommand();
-            command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
-            command.CommandText = """
+private async Task MarkCompletedAsync(
+    IngestionValidationLease lease,
+    DateTimeOffset completedAtUtc,
+    Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+    CancellationToken cancellationToken)
+{
+    var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
+    await using var command = connection.CreateCommand();
+    command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
+    command.CommandText = """
                 UPDATE operations.validation_work
                 SET completed_at_utc = @completed_at_utc,
                     lease_token = NULL,
@@ -493,72 +379,51 @@ string GenerateQueueSource() =>
                   AND lease_token = @lease_token
                   AND completed_at_utc IS NULL;
                 """;
-            command.Parameters.AddWithValue("completed_at_utc", NpgsqlDbType.TimestampTz, completedAtUtc);
-            command.Parameters.AddWithValue("batch_id", NpgsqlDbType.Uuid, lease.BatchId);
-            command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, lease.LeaseToken);
-            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_STALE_LEASE",
-                    "Validation completion cannot advance a stale work lease.",
-                    "Discard the stale worker result and reacquire the batch.");
-            }
-        }
+    command.Parameters.AddWithValue("completed_at_utc", NpgsqlDbType.TimestampTz, completedAtUtc);
+    command.Parameters.AddWithValue("batch_id", NpgsqlDbType.Uuid, lease.BatchId);
+    command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, lease.LeaseToken);
+    if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+    {
+        throw Failure(
+            "INGESTION_VALIDATION_STALE_LEASE",
+            "Validation completion cannot advance a stale work lease.",
+            "Discard the stale worker result and reacquire the batch.");
+    }
+}
 
-        private BatchStoreIdentifiers BatchIdentifiers()
-        {
-            var entity = dbContext.Model.FindEntityType(typeof(ImportBatchRow))
-                ?? throw Failure(
-                    "INGESTION_VALIDATION_MODEL_MISSING",
-                    "Import batch persistence model is unavailable.",
-                    "Restore the Ingestion EF owner model before starting the worker.");
-            var tableName = entity.GetTableName()
-                ?? throw Failure("INGESTION_VALIDATION_TABLE_MISSING", "Import batch table is not mapped.",
-                    "Restore the Ingestion EF owner model.");
-            var schema = entity.GetSchema()
-                ?? throw Failure("INGESTION_VALIDATION_SCHEMA_MISSING", "Import batch schema is not mapped.",
-                    "Restore the Ingestion EF owner model.");
-            var store = StoreObjectIdentifier.Table(tableName, schema);
-            return new BatchStoreIdentifiers(
-                $"{Quote(schema)}.{Quote(tableName)}",
-                Quote(entity.FindProperty(nameof(ImportBatchRow.Id))!.GetColumnName(store)!),
-                Quote(entity.FindProperty(nameof(ImportBatchRow.State))!.GetColumnName(store)!),
-                Quote(entity.FindProperty(nameof(ImportBatchRow.RegisteredAtUtc))!.GetColumnName(store)!));
-        }
+private static string Quote(string identifier)
+{
+    if (string.IsNullOrWhiteSpace(identifier) ||
+        identifier.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '_')))
+    {
+        throw Failure(
+            "INGESTION_VALIDATION_IDENTIFIER_INVALID",
+            "Ingestion persistence metadata contains an unsafe SQL identifier.",
+            "Correct the owner EF mapping before executing validation work.");
+    }
 
-        private static string Quote(string identifier)
-        {
-            if (string.IsNullOrWhiteSpace(identifier) ||
-                identifier.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '_')))
-            {
-                throw Failure(
-                    "INGESTION_VALIDATION_IDENTIFIER_INVALID",
-                    "Ingestion persistence metadata contains an unsafe SQL identifier.",
-                    "Correct the owner EF mapping before executing validation work.");
-            }
+    return $"\"{identifier}\"";
+}
 
-            return $"\"{identifier}\"";
-        }
+private static void RequireUtc(DateTimeOffset value, string parameterName)
+{
+    if (value.Offset != TimeSpan.Zero)
+    {
+        throw new ArgumentException("Timestamp must be UTC.", parameterName);
+    }
+}
 
-        private static void RequireUtc(DateTimeOffset value, string parameterName)
-        {
-            if (value.Offset != TimeSpan.Zero)
-            {
-                throw new ArgumentException("Timestamp must be UTC.", parameterName);
-            }
-        }
+private static IngestionApplicationException Failure(
+    string code,
+    string message,
+    string requiredAction) =>
+    new("Ingestion.ValidationPersistence", code, 500, message, requiredAction);
 
-        private static IngestionApplicationException Failure(
-            string code,
-            string message,
-            string requiredAction) =>
-            new("Ingestion.ValidationPersistence", code, 500, message, requiredAction);
-
-        private sealed record BatchStoreIdentifiers(
-            string QualifiedTable,
-            string IdColumn,
-            string StateColumn,
-            string RegisteredAtColumn);
+private sealed record BatchStoreIdentifiers(
+    string QualifiedTable,
+    string IdColumn,
+    string StateColumn,
+    string RegisteredAtColumn);
     }
     """ + Environment.NewLine;
 
@@ -760,7 +625,7 @@ string GenerateValidationService(
                     batch.{{failMethod.Name}}(
                         {{failureArguments}});
                     await queue.CompleteTerminalFailureAsync(
-                        lease with {{ AttemptCount = attempts }},
+                        lease with {{AttemptCount = attempts}},
                         batch,
                         failedAtUtc,
                         cancellationToken);
@@ -1076,5 +941,3 @@ static DirectoryInfo FindRepositoryRoot(string start)
     }
     throw Failure("Repository root was not found.");
 }
-
-static InvalidOperationException Failure(string message) => new(message);

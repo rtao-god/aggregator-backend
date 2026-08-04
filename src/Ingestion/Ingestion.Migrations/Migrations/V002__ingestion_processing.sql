@@ -226,7 +226,7 @@ BEGIN
             USING ERRCODE = '55000';
     END IF;
 
-    IF OLD.state IN (3, 4) AND ROW(OLD.*) IS DISTINCT FROM ROW(NEW.*)
+    IF OLD.state IN (3, 4) AND OLD IS DISTINCT FROM NEW
     THEN
         RAISE EXCEPTION 'terminal Ingestion Catalog delivery may not change'
             USING ERRCODE = '55000';

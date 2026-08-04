@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Aggregator.Catalog.Contracts;
 using Aggregator.Ingestion.Contracts;
 using Aggregator.Ingestion.Domain;
@@ -682,6 +683,7 @@ public static class IngestionProcessingApplicationExtensions
     public static IServiceCollection AddIngestionProcessingApplication(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<ValidateIngestionPackageService>();
         services.AddScoped<ReviewIngestionPackageService>();
         services.AddScoped<CommitIngestionPackageService>();

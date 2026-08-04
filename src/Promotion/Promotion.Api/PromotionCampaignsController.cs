@@ -140,7 +140,7 @@ public sealed class PromotionCampaignsController(PromotionCampaignService servic
             values.Count != 1 ||
             string.IsNullOrWhiteSpace(values[0]))
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Commands",
                 "PROMOTION_IDEMPOTENCY_KEY_REQUIRED",
                 StatusCodes.Status400BadRequest,
@@ -157,7 +157,7 @@ public sealed class PromotionCampaignsController(PromotionCampaignService servic
         var subject = principal.FindFirstValue("sub");
         if (string.IsNullOrWhiteSpace(subject) || subject.Length > 200)
         {
-            throw new PromotionApplicationException(
+            throw new PromotionCampaignApplicationException(
                 "Promotion.Access",
                 "PROMOTION_CALLER_IDENTITY_REQUIRED",
                 StatusCodes.Status403Forbidden,

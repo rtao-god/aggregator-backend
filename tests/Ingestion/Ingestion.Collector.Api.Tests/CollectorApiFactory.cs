@@ -79,7 +79,7 @@ public sealed class CollectorApiFactory : WebApplicationFactory<Program>
         ILoggerFactory logger,
         UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string Scheme = "CollectorApiTest";
+        public new const string Scheme = "CollectorApiTest";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {

@@ -1,5 +1,6 @@
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Contracts;
+using Aggregator.Analytics.Domain;
 
 namespace Analytics.Application.Tests;
 
@@ -130,6 +131,21 @@ public sealed class AnalyticsRuntimeServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(true);
+        }
+
+        public Task<AnalyticsObservationWriteResult> RecordAsync(AnalyticsObservation observation, string requestDigest, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<IReadOnlyList<AnalyticsDailyMetric>> ReadMetricsAsync(string catalogKey, Guid publicReadRevisionId, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<int> AggregatePendingAsync(int maximumObservationCount, DateTimeOffset calculatedAtUtc, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
         }
     }
 }

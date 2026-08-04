@@ -203,13 +203,13 @@ public sealed class EfAnalyticsRuntimeStore(AnalyticsRuntimeDbContext dbContext)
                 """)
             .ToArrayAsync(cancellationToken);
         foreach (var group in observations.GroupBy(row => new
-                 {
-                     row.CatalogKey,
-                     row.PublicReadRevisionId,
-                     row.ListingId,
-                     row.PlacementKey,
-                     MetricDate = DateOnly.FromDateTime(row.OccurredAtUtc.UtcDateTime),
-                 }))
+        {
+            row.CatalogKey,
+            row.PublicReadRevisionId,
+            row.ListingId,
+            row.PlacementKey,
+            MetricDate = DateOnly.FromDateTime(row.OccurredAtUtc.UtcDateTime),
+        }))
         {
             var metric = await dbContext.DailyMetrics.SingleOrDefaultAsync(
                 row =>
@@ -320,6 +320,21 @@ public sealed class EfAnalyticsRuntimeStore(AnalyticsRuntimeDbContext dbContext)
         {
             SqlState: PostgresErrorCodes.UniqueViolation,
         };
+
+    public Task<AnalyticsInteractionRegistration> RegisterAsync(AnalyticsInteractionRecord interaction, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<AnalyticsListingMetricsSnapshot?> ReadListingMetricsAsync(string catalogKey, Guid listingId, CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<bool> CheckReadinessAsync(CancellationToken cancellationToken)
+    {
+        throw new NotImplementedException();
+    }
 }
 
 public static class AnalyticsRuntimeInfrastructureExtensions

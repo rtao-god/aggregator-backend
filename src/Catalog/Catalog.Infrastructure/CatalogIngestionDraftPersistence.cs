@@ -90,11 +90,6 @@ public sealed class CatalogIngestionDbContext(
         entity.Property(row => row.ResultDigest).HasColumnName("result_digest").HasMaxLength(64).IsFixedLength();
         entity.Property(row => row.CallerIdentity).HasColumnName("caller_identity").HasMaxLength(200);
         entity.Property(row => row.CreatedAtUtc).HasColumnName("created_at_utc").HasColumnType("timestamp with time zone");
-        entity.HasOne<CatalogIngestionDraftRow>()
-            .WithMany()
-            .HasForeignKey(row => new { row.IngestionBatchId, row.IngestionItemKey })
-            .HasPrincipalKey(row => new { row.IngestionBatchId, row.IngestionItemKey })
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }
 

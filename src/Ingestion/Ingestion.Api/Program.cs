@@ -40,6 +40,7 @@ public partial class Program
         builder.Services.AddOwnerProblemDetails();
         builder.Services.AddIngestionApplication();
         builder.Services.AddIngestionInfrastructure(builder.Configuration);
+        builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(builder.Configuration, "ingestion-api");
         builder.Services.AddRateLimiter(options =>
             options.AddFixedWindowLimiter(
@@ -64,7 +65,16 @@ public partial class Program
                 IngestionAuthorizationPolicies.Read)
             .AddRequiredScopePolicy(
                 IngestionAuthorizationPolicies.TestContracts,
-                IngestionAuthorizationPolicies.TestContracts);
+                IngestionAuthorizationPolicies.TestContracts)
+            .AddRequiredScopePolicy(
+                IngestionProcessingAuthorizationPolicies.Review,
+                IngestionProcessingAuthorizationPolicies.Review)
+            .AddRequiredScopePolicy(
+                IngestionProcessingAuthorizationPolicies.Commit,
+                IngestionProcessingAuthorizationPolicies.Commit)
+            .AddRequiredScopePolicy(
+                IngestionProcessingAuthorizationPolicies.Delivery,
+                IngestionProcessingAuthorizationPolicies.Delivery);
 
         var application = builder.Build();
         application.UseOwnerProblemDetails();

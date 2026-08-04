@@ -292,8 +292,7 @@ static string GenerateAggregationService(
           var aggregate = DailyListingMetrics.{instanceFactory!.Name}(
                 {string.Join(",\n                ", instanceFactory.GetParameters().Select(MapFactoryParameter))});
           foreach (var interaction in group.OrderBy(item => item.{occurredProperty.Name}))
-          {{
-              _ = aggregate.{accumulator!.Name}(interaction);
+          {{_ = aggregate.{accumulator!.Name}(interaction);
           }}
           """;
     return $$"""

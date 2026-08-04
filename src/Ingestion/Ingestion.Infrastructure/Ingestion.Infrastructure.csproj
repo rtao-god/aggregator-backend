@@ -10,4 +10,7 @@
     <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+  </ItemGroup>
 </Project>

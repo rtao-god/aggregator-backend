@@ -18,7 +18,7 @@ CREATE TABLE promotion_projection.eligibility
     CONSTRAINT pk_promotion_eligibility PRIMARY KEY
         (product_revision_id, entitlement_id, listing_id, catalog_key, placement_key),
     CONSTRAINT ck_promotion_eligibility_product_id CHECK (product_revision_id <> '00000000-0000-0000-0000-000000000000'::uuid),
-    CONSTRAINT ck_promotion_eligibility_entitlement_id CHECK (entitlement_id <> '00000000-0000-0000-8000-000000000000'::uuid OR entitlement_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CONSTRAINT ck_promotion_eligibility_entitlement_id CHECK (entitlement_id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CONSTRAINT ck_promotion_eligibility_listing_id CHECK (listing_id <> '00000000-0000-0000-0000-000000000000'::uuid),
     CONSTRAINT ck_promotion_eligibility_catalog_key CHECK (catalog_key ~ '^[a-z][a-z0-9-]{0,95}$'),
     CONSTRAINT ck_promotion_eligibility_placement_key CHECK (placement_key ~ '^[a-z][a-z0-9-]{0,95}$'),
