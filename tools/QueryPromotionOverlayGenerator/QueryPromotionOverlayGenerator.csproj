@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Query/Query.Domain/Query.Domain.csproj" />
+    <ProjectReference Include="../../src/Query/Query.Application/Query.Application.csproj" />
+    <ProjectReference Include="../../src/Query/Query.Infrastructure/Query.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+  </ItemGroup>
+</Project>
