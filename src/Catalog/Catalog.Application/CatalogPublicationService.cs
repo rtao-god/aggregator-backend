@@ -9,13 +9,22 @@ public sealed class CatalogPublicationService(
     ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
+    /// <summary>Starts a new correlation root for a direct application or operator command.</summary>
+    public Task<CatalogPublicationResponse> PublishAsync(
+        CreateCatalogPublicationRequest request,
+        CatalogActor actor,
+        CancellationToken cancellationToken) =>
+        PublishAsync(request, actor, CatalogEventContext.StartRoot(), cancellationToken);
+
     public async Task<CatalogPublicationResponse> PublishAsync(
         CreateCatalogPublicationRequest request,
         CatalogActor actor,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(eventContext);
         ArgumentNullException.ThrowIfNull(request.Selections);
         if (request.Selections.Count == 0)
         {
@@ -139,12 +148,13 @@ public sealed class CatalogPublicationService(
             PublicationActivationKindContract.Publication,
             previousPublicationId,
             createdAtUtc);
-        var outboxMessage = new CatalogOutboxMessage(
+        var outboxMessage = CatalogOutboxMessageFactory.Create(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.PublicationActivated,
-            EventRevision: 1,
-            CatalogCanonicalJson.SerializeEvent(integrationEvent),
-            createdAtUtc);
+            CatalogIntegrationEventContracts.PublicationActivated,
+            integrationEvent,
+            createdAtUtc,
+            eventContext);
 
         await repository.CommitPublicationAsync(
             publication,
@@ -155,15 +165,25 @@ public sealed class CatalogPublicationService(
         return CatalogContractMapper.ToResponse(publication, isCurrent: true);
     }
 
+    /// <summary>Starts a new correlation root for a direct application or operator rollback command.</summary>
+    public Task<CatalogPublicationResponse> RollbackAsync(
+        string catalogKeyValue,
+        RollbackPublicationRequest request,
+        CatalogActor actor,
+        CancellationToken cancellationToken) =>
+        RollbackAsync(catalogKeyValue, request, actor, CatalogEventContext.StartRoot(), cancellationToken);
+
     public async Task<CatalogPublicationResponse> RollbackAsync(
         string catalogKeyValue,
         RollbackPublicationRequest request,
         CatalogActor actor,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogKeyValue);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(eventContext);
         var catalogKey = CatalogKey.Create(catalogKeyValue);
         if (request.TargetPublicationId == request.ExpectedCurrentPublicationId)
         {
@@ -207,12 +227,13 @@ public sealed class CatalogPublicationService(
             PublicationActivationKindContract.Rollback,
             currentPublicationId,
             activatedAtUtc);
-        var outboxMessage = new CatalogOutboxMessage(
+        var outboxMessage = CatalogOutboxMessageFactory.Create(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.PublicationActivated,
-            EventRevision: 1,
-            CatalogCanonicalJson.SerializeEvent(integrationEvent),
-            activatedAtUtc);
+            CatalogIntegrationEventContracts.PublicationActivated,
+            integrationEvent,
+            activatedAtUtc,
+            eventContext);
 
         await repository.ActivateExistingPublicationAsync(
             target,
