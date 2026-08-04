@@ -1,0 +1,566 @@
+name: aggregator-backend
+
+x-database-health: &database-health
+  interval: 5s
+  timeout: 5s
+  retries: 30
+  start_period: 10s
+
+x-api-health: &api-health
+  test: ["CMD", "dotnet", "/health/HealthProbe.dll", "http://127.0.0.1:8080/health/ready"]
+  interval: 10s
+  timeout: 7s
+  retries: 30
+  start_period: 20s
+
+x-host-security: &host-security
+  read_only: true
+  init: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+
+services:
+  catalog-db:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD is required}
+      CONTEXT_DB: ${CATALOG_DB:?CATALOG_DB is required}
+      CONTEXT_MIGRATOR_USER: ${CATALOG_MIGRATOR_USER:?CATALOG_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${CATALOG_MIGRATOR_PASSWORD:?CATALOG_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${CATALOG_APP_USER:?CATALOG_APP_USER is required}
+      CONTEXT_APP_PASSWORD: ${CATALOG_APP_PASSWORD:?CATALOG_APP_PASSWORD is required}
+    volumes:
+      - catalog-db-data:/var/lib/postgresql/data
+      - ./postgres/init-context.sh:/docker-entrypoint-initdb.d/10-context.sh:ro
+    healthcheck:
+      <<: *database-health
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+    networks: [backend]
+
+  query-db:
+    image: ${POSTGIS_IMAGE:-postgis/postgis:17-3.5-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD is required}
+      CONTEXT_DB: ${QUERY_DB:?QUERY_DB is required}
+      CONTEXT_MIGRATOR_USER: ${QUERY_MIGRATOR_USER:?QUERY_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${QUERY_MIGRATOR_PASSWORD:?QUERY_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${QUERY_APP_USER:?QUERY_APP_USER is required}
+      CONTEXT_APP_PASSWORD: ${QUERY_APP_PASSWORD:?QUERY_APP_PASSWORD is required}
+    volumes:
+      - query-db-data:/var/lib/postgresql/data
+      - ./postgres/init-context.sh:/docker-entrypoint-initdb.d/10-context.sh:ro
+    healthcheck:
+      <<: *database-health
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+    networks: [backend]
+
+  ingestion-db:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD is required}
+      CONTEXT_DB: ${INGESTION_DB:?INGESTION_DB is required}
+      CONTEXT_MIGRATOR_USER: ${INGESTION_MIGRATOR_USER:?INGESTION_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${INGESTION_MIGRATOR_PASSWORD:?INGESTION_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${INGESTION_APP_USER:?INGESTION_APP_USER is required}
+      CONTEXT_APP_PASSWORD: ${INGESTION_APP_PASSWORD:?INGESTION_APP_PASSWORD is required}
+    volumes:
+      - ingestion-db-data:/var/lib/postgresql/data
+      - ./postgres/init-context.sh:/docker-entrypoint-initdb.d/10-context.sh:ro
+    healthcheck:
+      <<: *database-health
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+    networks: [backend]
+
+  analytics-db:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD is required}
+      CONTEXT_DB: ${ANALYTICS_DB:?ANALYTICS_DB is required}
+      CONTEXT_MIGRATOR_USER: ${ANALYTICS_MIGRATOR_USER:?ANALYTICS_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${ANALYTICS_MIGRATOR_PASSWORD:?ANALYTICS_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${ANALYTICS_APP_USER:?ANALYTICS_APP_USER is required}
+      CONTEXT_APP_PASSWORD: ${ANALYTICS_APP_PASSWORD:?ANALYTICS_APP_PASSWORD is required}
+    volumes:
+      - analytics-db-data:/var/lib/postgresql/data
+      - ./postgres/init-context.sh:/docker-entrypoint-initdb.d/10-context.sh:ro
+    healthcheck:
+      <<: *database-health
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+    networks: [backend]
+
+  promotion-db:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:?POSTGRES_BOOTSTRAP_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?POSTGRES_BOOTSTRAP_PASSWORD is required}
+      CONTEXT_DB: ${PROMOTION_DB:?PROMOTION_DB is required}
+      CONTEXT_MIGRATOR_USER: ${PROMOTION_MIGRATOR_USER:?PROMOTION_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${PROMOTION_MIGRATOR_PASSWORD:?PROMOTION_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${PROMOTION_APP_USER:?PROMOTION_APP_USER is required}
+      CONTEXT_APP_PASSWORD: ${PROMOTION_APP_PASSWORD:?PROMOTION_APP_PASSWORD is required}
+    volumes:
+      - promotion-db-data:/var/lib/postgresql/data
+      - ./postgres/init-context.sh:/docker-entrypoint-initdb.d/10-context.sh:ro
+    healthcheck:
+      <<: *database-health
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d postgres"]
+    networks: [backend]
+
+  message-broker:
+    image: ${RABBITMQ_IMAGE:?RABBITMQ_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    networks: [backend]
+
+  object-storage:
+    image: ${MINIO_IMAGE:?MINIO_IMAGE is required}
+    restart: unless-stopped
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    networks: [backend]
+
+  object-storage-init:
+    image: ${MINIO_MC_IMAGE:?MINIO_MC_IMAGE is required}
+    restart: "no"
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_CATALOG_BUCKET: ${MINIO_CATALOG_BUCKET:?MINIO_CATALOG_BUCKET is required}
+      MINIO_INGESTION_BUCKET: ${MINIO_INGESTION_BUCKET:?MINIO_INGESTION_BUCKET is required}
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      mc alias set local http://object-storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+      mc mb --ignore-existing "local/$$MINIO_CATALOG_BUCKET"
+      mc mb --ignore-existing "local/$$MINIO_INGESTION_BUCKET"
+      mc anonymous set none "local/$$MINIO_CATALOG_BUCKET"
+      mc anonymous set none "local/$$MINIO_INGESTION_BUCKET"
+    networks: [backend]
+
+  catalog-migrations:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj
+    restart: "no"
+    environment:
+      APP_DLL: Catalog.Migrations.dll
+      CATALOG_MIGRATOR_CONNECTION_STRING: Host=catalog-db;Port=5432;Database=${CATALOG_DB};Username=${CATALOG_MIGRATOR_USER};Password=${CATALOG_MIGRATOR_PASSWORD};SSL Mode=Disable
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    networks: [backend]
+
+  query-migrations:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Query/Query.Migrations/Query.Migrations.csproj
+    restart: "no"
+    environment:
+      APP_DLL: Query.Migrations.dll
+      QUERY_MIGRATOR_CONNECTION_STRING: Host=query-db;Port=5432;Database=${QUERY_DB};Username=${QUERY_MIGRATOR_USER};Password=${QUERY_MIGRATOR_PASSWORD};SSL Mode=Disable
+    depends_on:
+      query-db:
+        condition: service_healthy
+    networks: [backend]
+
+  ingestion-migrations:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj
+    restart: "no"
+    environment:
+      APP_DLL: Ingestion.Migrations.dll
+      INGESTION_MIGRATOR_CONNECTION_STRING: Host=ingestion-db;Port=5432;Database=${INGESTION_DB};Username=${INGESTION_MIGRATOR_USER};Password=${INGESTION_MIGRATOR_PASSWORD};SSL Mode=Disable
+    depends_on:
+      ingestion-db:
+        condition: service_healthy
+    networks: [backend]
+
+  analytics-migrations:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj
+    restart: "no"
+    environment:
+      APP_DLL: Analytics.Migrations.dll
+      ANALYTICS_MIGRATOR_CONNECTION_STRING: Host=analytics-db;Port=5432;Database=${ANALYTICS_DB};Username=${ANALYTICS_MIGRATOR_USER};Password=${ANALYTICS_MIGRATOR_PASSWORD};SSL Mode=Disable
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    networks: [backend]
+
+  promotion-migrations:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj
+    restart: "no"
+    environment:
+      APP_DLL: Promotion.Migrations.dll
+      PROMOTION_MIGRATOR_CONNECTION_STRING: Host=promotion-db;Port=5432;Database=${PROMOTION_DB};Username=${PROMOTION_MIGRATOR_USER};Password=${PROMOTION_MIGRATOR_PASSWORD};SSL Mode=Disable
+    depends_on:
+      promotion-db:
+        condition: service_healthy
+    networks: [backend]
+
+  catalog-api:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Catalog/Catalog.Api/Catalog.Api.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Catalog.Api.dll
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Catalog: Host=catalog-db;Port=5432;Database=${CATALOG_DB};Username=${CATALOG_APP_USER};Password=${CATALOG_APP_PASSWORD};SSL Mode=Disable;Maximum Pool Size=100
+      Catalog__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Catalog__ObjectStorage__BucketName: ${MINIO_CATALOG_BUCKET}
+      Catalog__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Catalog__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Catalog__ObjectStorage__ForcePathStyle: "true"
+      Authentication__Authority: ${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}
+      Authentication__RequireHttpsMetadata: ${OIDC_REQUIRE_HTTPS_METADATA:-true}
+    depends_on:
+      catalog-migrations:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${CATALOG_API_PORT:-7101}:8080"
+    healthcheck: *api-health
+    networks: [backend]
+
+  query-api:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Query/Query.Api/Query.Api.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Query.Api.dll
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Query: Host=query-db;Port=5432;Database=${QUERY_DB};Username=${QUERY_APP_USER};Password=${QUERY_APP_PASSWORD};SSL Mode=Disable;Maximum Pool Size=200
+      Query__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Query__ObjectStorage__Region: us-east-1
+      Query__ObjectStorage__Bucket: ${MINIO_CATALOG_BUCKET}
+      Query__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Query__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Query__ObjectStorage__ForcePathStyle: "true"
+      Authentication__Authority: ${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}
+      Authentication__RequireHttpsMetadata: ${OIDC_REQUIRE_HTTPS_METADATA:-true}
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${QUERY_API_PORT:-7102}:8080"
+    healthcheck: *api-health
+    networks: [backend]
+
+  ingestion-api:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Ingestion.Api.dll
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Ingestion: Host=ingestion-db;Port=5432;Database=${INGESTION_DB};Username=${INGESTION_APP_USER};Password=${INGESTION_APP_PASSWORD};SSL Mode=Disable;Maximum Pool Size=100
+      Ingestion__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Ingestion__ObjectStorage__Region: us-east-1
+      Ingestion__ObjectStorage__Bucket: ${MINIO_INGESTION_BUCKET}
+      Ingestion__ObjectStorage__BucketName: ${MINIO_INGESTION_BUCKET}
+      Ingestion__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Ingestion__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Ingestion__ObjectStorage__ForcePathStyle: "true"
+      Authentication__Authority: ${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}
+      Authentication__RequireHttpsMetadata: ${OIDC_REQUIRE_HTTPS_METADATA:-true}
+    depends_on:
+      ingestion-migrations:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${INGESTION_API_PORT:-7103}:8080"
+    healthcheck: *api-health
+    networks: [backend]
+
+  analytics-api:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Analytics/Analytics.Api/Analytics.Api.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Analytics.Api.dll
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Analytics: Host=analytics-db;Port=5432;Database=${ANALYTICS_DB};Username=${ANALYTICS_APP_USER};Password=${ANALYTICS_APP_PASSWORD};SSL Mode=Disable;Maximum Pool Size=100
+      Authentication__Authority: ${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}
+      Authentication__RequireHttpsMetadata: ${OIDC_REQUIRE_HTTPS_METADATA:-true}
+    depends_on:
+      analytics-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${ANALYTICS_API_PORT:-7104}:8080"
+    healthcheck: *api-health
+    networks: [backend]
+
+  promotion-api:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Promotion/Promotion.Api/Promotion.Api.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Promotion.Api.dll
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=${PROMOTION_DB};Username=${PROMOTION_APP_USER};Password=${PROMOTION_APP_PASSWORD};SSL Mode=Disable;Maximum Pool Size=100
+      Authentication__Authority: ${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}
+      Authentication__RequireHttpsMetadata: ${OIDC_REQUIRE_HTTPS_METADATA:-true}
+    depends_on:
+      promotion-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${PROMOTION_API_PORT:-7105}:8080"
+    healthcheck: *api-health
+    networks: [backend]
+
+  catalog-worker:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Catalog/Catalog.Worker/Catalog.Worker.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Catalog.Worker.dll
+      ConnectionStrings__Catalog: Host=catalog-db;Port=5432;Database=${CATALOG_DB};Username=${CATALOG_APP_USER};Password=${CATALOG_APP_PASSWORD};SSL Mode=Disable
+      Catalog__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Catalog__ObjectStorage__BucketName: ${MINIO_CATALOG_BUCKET}
+      Catalog__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Catalog__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Catalog__ObjectStorage__ForcePathStyle: "true"
+      Catalog__Worker__BrokerUri: ${RABBITMQ_BROKER_URI:?RABBITMQ_BROKER_URI is required}
+      Catalog__Worker__Exchange: aggregator.events
+      Catalog__Worker__BatchSize: "100"
+    depends_on:
+      catalog-migrations:
+        condition: service_completed_successfully
+      message-broker:
+        condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  query-worker:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Query/Query.Worker/Query.Worker.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Query.Worker.dll
+      ConnectionStrings__Query: Host=query-db;Port=5432;Database=${QUERY_DB};Username=${QUERY_APP_USER};Password=${QUERY_APP_PASSWORD};SSL Mode=Disable
+      Query__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Query__ObjectStorage__Region: us-east-1
+      Query__ObjectStorage__Bucket: ${MINIO_CATALOG_BUCKET}
+      Query__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Query__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Query__ObjectStorage__ForcePathStyle: "true"
+      Query__PublicationWorker__BrokerUri: ${RABBITMQ_BROKER_URI:?RABBITMQ_BROKER_URI is required}
+      Query__PublicationWorker__Exchange: aggregator.events
+      Query__PublicationWorker__RoutingKey: catalog.publication-activated
+      Query__PublicationWorker__Queue: query.catalog-publication
+      Query__PublicationWorker__DeadLetterExchange: aggregator.dead-letter
+      Query__PublicationWorker__DeadLetterRoutingKey: query.catalog-publication.failed
+      Query__PublicationWorker__PrefetchCount: "16"
+      Query__PublicationWorker__MaximumDeliveryAttempts: "5"
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+      message-broker:
+        condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  ingestion-worker:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Ingestion.Worker.dll
+      ConnectionStrings__Ingestion: Host=ingestion-db;Port=5432;Database=${INGESTION_DB};Username=${INGESTION_APP_USER};Password=${INGESTION_APP_PASSWORD};SSL Mode=Disable
+      Ingestion__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Ingestion__ObjectStorage__Region: us-east-1
+      Ingestion__ObjectStorage__Bucket: ${MINIO_INGESTION_BUCKET}
+      Ingestion__ObjectStorage__BucketName: ${MINIO_INGESTION_BUCKET}
+      Ingestion__ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
+      Ingestion__ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      Ingestion__ObjectStorage__ForcePathStyle: "true"
+      Ingestion__ProcessingWorker__CatalogCommandBaseAddress: http://catalog-api:8080/
+      Ingestion__ProcessingWorker__CatalogBearerToken: ${INGESTION_CATALOG_BEARER_TOKEN:?INGESTION_CATALOG_BEARER_TOKEN is required}
+      Ingestion__ProcessingWorker__DeliveryBatchSize: "100"
+      Ingestion__ProcessingWorker__ValidationLease: 00:05:00
+      Ingestion__ProcessingWorker__DeliveryLease: 00:02:00
+    depends_on:
+      ingestion-migrations:
+        condition: service_completed_successfully
+      catalog-api:
+        condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  analytics-worker:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Analytics/Analytics.Worker/Analytics.Worker.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Analytics.Worker.dll
+      ConnectionStrings__Analytics: Host=analytics-db;Port=5432;Database=${ANALYTICS_DB};Username=${ANALYTICS_APP_USER};Password=${ANALYTICS_APP_PASSWORD};SSL Mode=Disable
+      Analytics__Worker__AggregationBatchSize: "1000"
+      Analytics__Worker__PollInterval: 00:00:02
+      Analytics__Worker__FailureDelay: 00:00:10
+    depends_on:
+      analytics-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  promotion-worker:
+    <<: *host-security
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.host
+      args:
+        DOTNET_SDK_IMAGE: ${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}
+        DOTNET_RUNTIME_IMAGE: ${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}
+        PROJECT: src/Promotion/Promotion.Worker/Promotion.Worker.csproj
+    restart: unless-stopped
+    environment:
+      APP_DLL: Promotion.Worker.dll
+      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=${PROMOTION_DB};Username=${PROMOTION_APP_USER};Password=${PROMOTION_APP_PASSWORD};SSL Mode=Disable
+      Promotion__Worker__CompletionBatchSize: "200"
+      Promotion__Worker__PollInterval: 00:00:05
+      Promotion__Worker__FailureDelay: 00:00:15
+    depends_on:
+      promotion-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+networks:
+  backend:
+    driver: bridge
+    internal: true
+
+volumes:
+  catalog-db-data:
+  query-db-data:
+  ingestion-db-data:
+  analytics-db-data:
+  promotion-db-data:
+  rabbitmq-data:
+  minio-data:
