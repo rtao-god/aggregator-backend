@@ -337,8 +337,8 @@ public sealed class CatalogIngestionDraftService(ICatalogIngestionDraftStore sto
         if (outcome.State is CatalogIngestionOutcomeStateContract.DraftCreated or
             CatalogIngestionOutcomeStateContract.DraftUpdated)
         {
-            if (outcome.ListingId is null or { } && outcome.ListingId == Guid.Empty ||
-                outcome.ListingRevisionId is null or { } && outcome.ListingRevisionId == Guid.Empty ||
+            if (outcome.ListingId is not Guid listingId || listingId == Guid.Empty ||
+                outcome.ListingRevisionId is not Guid revisionId || revisionId == Guid.Empty ||
                 outcome.FailureCode is not null ||
                 outcome.FailureDetail is not null)
             {
