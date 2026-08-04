@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Query/Query.Application/Query.Application.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+  </ItemGroup>
+</Project>
