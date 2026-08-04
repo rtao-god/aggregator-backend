@@ -1,6 +1,6 @@
 namespace Aggregator.Analytics.Application;
 
-public sealed class AnalyticsCommandException : Exception
+public class AnalyticsCommandException : Exception
 {
     public AnalyticsCommandException(
         string owner,
