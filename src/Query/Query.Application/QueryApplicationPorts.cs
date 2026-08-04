@@ -34,9 +34,40 @@ public sealed record QueryProjectionActivation(
     QueryOverlayRevision SafetyOverlay,
     PublicReadRevision PublicReadRevision);
 
-public sealed record QueryProjectionActivationResult(
-    PublicReadRevision PublicReadRevision,
-    bool Replayed);
+public enum QueryProjectionActivationDisposition
+{
+    Activated = 1,
+    Replayed = 2,
+    IgnoredStale = 3,
+}
+
+public sealed record QueryProjectionActivationResult
+{
+    public QueryProjectionActivationResult(
+        PublicReadRevision publicReadRevision,
+        QueryProjectionActivationDisposition disposition)
+    {
+        PublicReadRevision = publicReadRevision ?? throw new ArgumentNullException(nameof(publicReadRevision));
+        Disposition = disposition;
+    }
+
+    public QueryProjectionActivationResult(PublicReadRevision publicReadRevision, bool replayed)
+        : this(
+            publicReadRevision,
+            replayed
+                ? QueryProjectionActivationDisposition.Replayed
+                : QueryProjectionActivationDisposition.Activated)
+    {
+    }
+
+    public PublicReadRevision PublicReadRevision { get; }
+
+    public QueryProjectionActivationDisposition Disposition { get; }
+
+    public bool Replayed => Disposition == QueryProjectionActivationDisposition.Replayed;
+
+    public bool IgnoredStale => Disposition == QueryProjectionActivationDisposition.IgnoredStale;
+}
 
 public interface IQueryProjectionStore
 {
