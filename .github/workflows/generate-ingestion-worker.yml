@@ -1,0 +1,87 @@
+name: generate-ingestion-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "tools/IngestionWorkerGenerator/**"
+      - "tools/completion/normalize_ingestion_worker_generator.py"
+      - "src/Ingestion/Ingestion.Domain/**"
+      - "src/Ingestion/Ingestion.Contracts/**"
+      - "src/Ingestion/Ingestion.Application/**"
+      - "src/Ingestion/Ingestion.Infrastructure/**"
+      - ".github/workflows/generate-ingestion-worker.yml"
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: generate-ingestion-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+      - name: Normalize lease and system-actor semantics
+        run: python3 tools/completion/normalize_ingestion_worker_generator.py
+      - name: Format and compile generator
+        run: |
+          dotnet format tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj
+          dotnet build tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj -warnaserror
+      - name: Generate validation worker, queue and immutable decision migration
+        run: dotnet run --project tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj --no-build
+      - name: Format generated owner projects
+        run: |
+          dotnet format src/Ingestion/Ingestion.Application/Ingestion.Application.csproj
+          dotnet format src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj
+          dotnet format src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
+          dotnet format tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj
+      - name: Compile generated owner path
+        run: |
+          dotnet build src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj -warnaserror
+          dotnet build src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj -warnaserror
+          dotnet test tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj
+      - name: Commit generated owner path
+        run: |
+          if git diff --quiet -- tools/IngestionWorkerGenerator src/Ingestion/Ingestion.Application/IngestionValidationContracts.cs src/Ingestion/Ingestion.Infrastructure/IngestionValidationQueue.cs src/Ingestion/Ingestion.Worker tests/Ingestion/Ingestion.Worker.Tests src/Ingestion/Ingestion.Migrations/Migrations/V002__ingestion_validation_work_and_decisions.sql docs/generated/ingestion-worker-generation.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/IngestionWorkerGenerator \
+            src/Ingestion/Ingestion.Application/IngestionValidationContracts.cs \
+            src/Ingestion/Ingestion.Infrastructure/IngestionValidationQueue.cs \
+            src/Ingestion/Ingestion.Worker \
+            tests/Ingestion/Ingestion.Worker.Tests \
+            src/Ingestion/Ingestion.Migrations/Migrations/V002__ingestion_validation_work_and_decisions.sql \
+            docs/generated/ingestion-worker-generation.md
+          git commit -m "Generate leased Ingestion validation worker"
+          git push origin HEAD:main
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Ingestion worker generation: ${process.env.JOB_STATUS}`,
+              context: 'ci/ingestion-worker-generation'
+            });
