@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Aggregator.Promotion.Contracts;
+using Aggregator.Query.Application;
 using Aggregator.Query.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -97,6 +98,21 @@ public sealed class SponsoredListingsController(
                 });
         }
 
+        if (response.SourcePublicReadRevisionId != publicReadRevisionId)
+        {
+            throw Failure(
+                "QUERY_SPONSORED_REVISION_MISMATCH",
+                StatusCodes.Status503ServiceUnavailable,
+                "Sponsored projection belongs to another public read revision.",
+                "Rebuild the Promotion overlay for the exact requested public read revision.",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["requestedPublicReadRevisionId"] = publicReadRevisionId,
+                    ["actualPublicReadRevisionId"] = response.SourcePublicReadRevisionId,
+                    ["overlayId"] = response.OverlayId,
+                });
+        }
+
         var etag = ComputeEtag(
             publicReadRevisionId,
             response.OverlayId,
@@ -104,10 +120,7 @@ public sealed class SponsoredListingsController(
         Response.Headers.ETag = etag;
         Response.Headers.CacheControl = "public, max-age=30, stale-while-revalidate=120";
         Response.Headers["X-Public-Read-Revision-Id"] = publicReadRevisionId.ToString("D");
-        if (response.OverlayId is { } overlayId)
-        {
-            Response.Headers["X-Promotion-Overlay-Id"] = overlayId.ToString("D");
-        }
+        Response.Headers["X-Promotion-Overlay-Id"] = response.OverlayId.ToString("D");
 
         if (Request.Headers.TryGetValue("If-None-Match", out var values) &&
             values.Any(value => string.Equals(value, etag, StringComparison.Ordinal)))
@@ -143,11 +156,11 @@ public sealed class SponsoredListingsController(
 
     private static string ComputeEtag(
         Guid publicReadRevisionId,
-        Guid? overlayId,
+        Guid overlayId,
         string locale)
     {
         var bytes = Encoding.UTF8.GetBytes(
-            $"{publicReadRevisionId:N}\n{overlayId?.ToString("N") ?? "absent"}\n{locale}");
+            $"{publicReadRevisionId:N}\n{overlayId:N}\n{locale}");
         return $"\"{Convert.ToHexStringLower(SHA256.HashData(bytes))}\"";
     }
 
