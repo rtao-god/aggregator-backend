@@ -1,0 +1,175 @@
+name: Prove Promotion mapper owner guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-promotion-mapper-null-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: fix-promotion-mapper-null-guard
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Add the public Promotion mapper guard
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/Promotion/Promotion.Application/PromotionCampaignServices.cs')
+          content = path.read_text(encoding='utf-8')
+          old = (
+              '    public static PromotionCampaignResponse ToResponse(\n'
+              '        PromotionCampaignSnapshot campaign,\n'
+              '        bool replayed) =>\n'
+              '        new(\n'
+              '            campaign.Id,\n'
+              '            campaign.ProductRevisionId,\n'
+              '            campaign.EntitlementId,\n'
+              '            campaign.ListingId,\n'
+              '            campaign.CatalogKey,\n'
+              '            campaign.PlacementKey,\n'
+              '            campaign.CapacityUnits,\n'
+              '            campaign.StartsAtUtc,\n'
+              '            campaign.EndsAtUtc,\n'
+              '            ToContract(campaign.State),\n'
+              '            campaign.AggregateRevision,\n'
+              '            campaign.LastChangedAtUtc,\n'
+              '            campaign.SuspensionReason,\n'
+              '            "sponsored",\n'
+              '            replayed);\n'
+          )
+          new = (
+              '    public static PromotionCampaignResponse ToResponse(\n'
+              '        PromotionCampaignSnapshot campaign,\n'
+              '        bool replayed)\n'
+              '    {\n'
+              '        ArgumentNullException.ThrowIfNull(campaign);\n'
+              '        return new PromotionCampaignResponse(\n'
+              '            campaign.Id,\n'
+              '            campaign.ProductRevisionId,\n'
+              '            campaign.EntitlementId,\n'
+              '            campaign.ListingId,\n'
+              '            campaign.CatalogKey,\n'
+              '            campaign.PlacementKey,\n'
+              '            campaign.CapacityUnits,\n'
+              '            campaign.StartsAtUtc,\n'
+              '            campaign.EndsAtUtc,\n'
+              '            ToContract(campaign.State),\n'
+              '            campaign.AggregateRevision,\n'
+              '            campaign.LastChangedAtUtc,\n'
+              '            campaign.SuspensionReason,\n'
+              '            "sponsored",\n'
+              '            replayed);\n'
+              '    }\n'
+          )
+          if content.count(old) != 1:
+              raise RuntimeError(
+                  'Expected exactly one canonical PromotionCampaignMapper.ToResponse anchor.')
+          path.write_text(content.replace(old, new), encoding='utf-8', newline='\n')
+
+      - name: Restore Promotion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Promotion tests/Promotion -name '*.csproj' -type f | sort)
+          test "${#projects[@]}" -gt 0
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Verify Promotion application formatting and analyzers
+        shell: bash
+        run: |
+          dotnet format src/Promotion/Promotion.Application/Promotion.Application.csproj \
+            --verify-no-changes --no-restore
+
+      - name: Build Promotion production graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Promotion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
+
+      - name: Test Promotion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find tests/Promotion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger 'console;verbosity=normal' /m:1 /nr:false
+          done
+
+      - name: Commit proven mapper guard and remove this workflow
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- \
+              src/Promotion/Promotion.Application/PromotionCampaignServices.cs)
+            test -z "$affected" || {
+              printf 'Promotion mapper changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm .github/workflows/fix-promotion-mapper-null-guard.yml
+          paths=(
+            src/Promotion/Promotion.Application/PromotionCampaignServices.cs
+            .github/workflows/fix-promotion-mapper-null-guard.yml
+          )
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Validate Promotion campaign response owner boundary' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Promotion mapper owner proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/promotion-mapper'
+            });
