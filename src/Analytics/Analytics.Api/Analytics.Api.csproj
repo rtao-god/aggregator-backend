@@ -8,5 +8,7 @@
     <ProjectReference Include="../Analytics.Application/Analytics.Application.csproj" />
     <ProjectReference Include="../Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.Security/Platform.Security.csproj" />
   </ItemGroup>
 </Project>
