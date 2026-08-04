@@ -75,10 +75,13 @@ public sealed class PromotionOverlayOutboxWorker : BackgroundService, IAsyncDisp
                     lease.LeaseToken,
                     _timeProvider.GetUtcNow(),
                     stoppingToken);
-                _logger.LogInformation(
-                    "Dispatched Promotion overlay event {EventId} after {DeliveryAttempts} attempt(s)",
-                    lease.EventId,
-                    lease.DeliveryAttempts);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation(
+                        "Dispatched Promotion overlay event {EventId} after {DeliveryAttempts} attempt(s)",
+                        lease.EventId,
+                        lease.DeliveryAttempts);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

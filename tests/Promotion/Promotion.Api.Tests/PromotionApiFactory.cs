@@ -381,7 +381,7 @@ public sealed class PromotionApiFactory : WebApplicationFactory<Program>
 
             if (!string.Equals(existing.RequestDigest, identity.RequestDigest, StringComparison.Ordinal))
             {
-                throw new PromotionCampaignApplicationException(
+                throw new PromotionApplicationException(
                     "Promotion.Commands",
                     "PROMOTION_IDEMPOTENCY_CONFLICT",
                     409,

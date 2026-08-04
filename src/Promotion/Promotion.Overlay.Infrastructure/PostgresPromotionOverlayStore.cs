@@ -497,7 +497,7 @@ public interface IPromotionOverlayOutboxStore
     public Task MarkFailedAsync(
         Guid eventId,
         Guid leaseToken,
-        string error,
+        string failureMessage,
         DateTimeOffset failedAtUtc,
         int maximumAttempts,
         CancellationToken cancellationToken);
@@ -519,7 +519,8 @@ public sealed class PostgresPromotionOverlayOutboxStore : IPromotionOverlayOutbo
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workerId);
-        if (leaseDuration is < TimeSpan.FromSeconds(5) or > TimeSpan.FromMinutes(5))
+        if (leaseDuration < TimeSpan.FromSeconds(5) ||
+            leaseDuration > TimeSpan.FromMinutes(5))
         {
             throw new ArgumentOutOfRangeException(nameof(leaseDuration));
         }
@@ -618,12 +619,12 @@ public sealed class PostgresPromotionOverlayOutboxStore : IPromotionOverlayOutbo
     public async Task MarkFailedAsync(
         Guid eventId,
         Guid leaseToken,
-        string error,
+        string failureMessage,
         DateTimeOffset failedAtUtc,
         int maximumAttempts,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(error);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
         await using var command = _dataSource.CreateCommand("""
             UPDATE promotion.overlay_outbox
             SET last_error = left(@last_error, 2000),
@@ -645,7 +646,10 @@ public sealed class PostgresPromotionOverlayOutboxStore : IPromotionOverlayOutbo
             """);
         command.Parameters.AddWithValue("event_id", NpgsqlDbType.Uuid, eventId);
         command.Parameters.AddWithValue("lease_token", NpgsqlDbType.Uuid, leaseToken);
-        command.Parameters.AddWithValue("last_error", NpgsqlDbType.Varchar, error);
+        command.Parameters.AddWithValue(
+            "last_error",
+            NpgsqlDbType.Varchar,
+            failureMessage);
         command.Parameters.AddWithValue("maximum_attempts", NpgsqlDbType.Integer, maximumAttempts);
         command.Parameters.AddWithValue("failed_at_utc", NpgsqlDbType.TimestampTz, failedAtUtc);
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);

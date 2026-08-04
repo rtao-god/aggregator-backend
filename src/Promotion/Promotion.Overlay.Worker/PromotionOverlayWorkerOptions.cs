@@ -29,12 +29,14 @@ public sealed record PromotionOverlayWorkerOptions
             throw new InvalidOperationException("Promotion overlay exchange and worker ID are required.");
         }
 
-        if (PollInterval is < TimeSpan.FromMilliseconds(100) or > TimeSpan.FromMinutes(1))
+        if (PollInterval < TimeSpan.FromMilliseconds(100) ||
+            PollInterval > TimeSpan.FromMinutes(1))
         {
             throw new InvalidOperationException("Promotion overlay poll interval must be between 100 ms and one minute.");
         }
 
-        if (LeaseDuration is < TimeSpan.FromSeconds(5) or > TimeSpan.FromMinutes(5))
+        if (LeaseDuration < TimeSpan.FromSeconds(5) ||
+            LeaseDuration > TimeSpan.FromMinutes(5))
         {
             throw new InvalidOperationException("Promotion overlay lease duration must be between five seconds and five minutes.");
         }

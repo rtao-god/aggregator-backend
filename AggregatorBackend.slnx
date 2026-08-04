@@ -116,7 +116,6 @@
     <Project Path="tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Overlay.Api.Tests/Promotion.Overlay.Api.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Overlay.Application.Tests/Promotion.Overlay.Application.Tests.csproj" />
-    <Project Path="tests/Promotion/Promotion.Runtime.Tests/Promotion.Runtime.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Query/">

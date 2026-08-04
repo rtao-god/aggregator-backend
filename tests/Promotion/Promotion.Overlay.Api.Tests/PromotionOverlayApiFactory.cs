@@ -124,10 +124,13 @@ public sealed class RecordingPromotionOverlayStore : IPromotionOverlayStore
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(commandDigest);
+        ArgumentNullException.ThrowIfNull(outboxMessage);
         Assert.Null(expectedCurrentOverlayId);
         Assert.Equal(64, commandDigest.Length);
         Assert.Equal(64, outboxMessage.PayloadDigest.Length);
-        Publication = publication ?? throw new ArgumentNullException(nameof(publication));
+        Publication = publication;
         return Task.FromResult(new PromotionOverlayCommitResult(publication, Replayed: false));
     }
 }
