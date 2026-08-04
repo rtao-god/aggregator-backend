@@ -285,7 +285,7 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                 RequireOwnedValues(localizations, core.ListingId, "localizations"),
                 RequireOwnedValues(categories, core.ListingId, "categories"),
                 attributes.GetValueOrDefault(core.ListingId) ?? [],
-                RequireOwnedValue(geographies, core.ListingId, "geography"),
+                RequireGeography(geographies, core.ListingId),
                 contacts.GetValueOrDefault(core.ListingId) ?? [],
                 media.GetValueOrDefault(core.ListingId) ?? [],
                 core.SourceContentDigest,
@@ -376,7 +376,9 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         var values = new Dictionary<Guid, List<QueryAttributeDocument>>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            var valueKind = reader.IsDBNull(3) ? null : MapValueKind(reader.GetString(3));
+            QueryValueKind? valueKind = reader.IsDBNull(3)
+                ? null
+                : MapValueKind(reader.GetString(3));
             Add(values, reader.GetGuid(0), new QueryAttributeDocument(
                 reader.GetString(1),
                 MapFieldState(reader.GetString(2)),
@@ -559,16 +561,15 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         return owned;
     }
 
-    private static T RequireOwnedValue<T>(
-        IReadOnlyDictionary<Guid, T> values,
-        Guid listingId,
-        string valueKind)
+    private static QueryGeographyDocument RequireGeography(
+        Dictionary<Guid, QueryGeographyDocument> values,
+        Guid listingId)
     {
         if (!values.TryGetValue(listingId, out var owned))
         {
             throw StoreFailure(
                 "QUERY_DOCUMENT_COMPONENT_MISSING",
-                $"Listing '{listingId}' has no persisted {valueKind} row.",
+                $"Listing '{listingId}' has no persisted geography row.",
                 "Rebuild the Query projection from the sealed Catalog publication.");
         }
 
