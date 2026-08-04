@@ -1,30 +1,30 @@
-using Aggregator.Query.Application;
-using Aggregator.Query.Infrastructure;
 using Aggregator.Query.Worker;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Query.Worker.Tests;
 
 public sealed class QueryPublicationWorkerTests
 {
     [Fact]
-    public void ValidWorkerOptionsAreAccepted()
+    public void ValidPublicationWorkerOptionsAreAccepted()
     {
-        var options = CreateOptions();
+        var options = CreatePublicationOptions();
 
         options.Validate();
 
         Assert.Equal((ushort)16, options.PrefetchCount);
-        Assert.Equal(5, options.MaximumDeliveryAttempts);
+        Assert.Equal("catalog.publication.activated", options.RoutingKey);
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(101)]
-    public void UnsafeDeliveryLimitIsRejected(int maximumDeliveryAttempts)
+    [InlineData((ushort)0)]
+    [InlineData((ushort)257)]
+    public void UnsafePublicationPrefetchIsRejected(ushort prefetchCount)
     {
-        var options = CreateOptions() with
+        var options = CreatePublicationOptions() with
         {
-            MaximumDeliveryAttempts = maximumDeliveryAttempts,
+            PrefetchCount = prefetchCount,
         };
 
         Assert.Throws<InvalidOperationException>(options.Validate);
@@ -33,9 +33,9 @@ public sealed class QueryPublicationWorkerTests
     [Theory]
     [InlineData("https://rabbitmq.example")]
     [InlineData("file:///tmp/rabbitmq")]
-    public void NonAmqpBrokerIsRejected(string brokerUri)
+    public void NonAmqpPublicationBrokerIsRejected(string brokerUri)
     {
-        var options = CreateOptions() with
+        var options = CreatePublicationOptions() with
         {
             BrokerUri = new Uri(brokerUri),
         };
@@ -44,30 +44,43 @@ public sealed class QueryPublicationWorkerTests
     }
 
     [Fact]
-    public void GeneratedAdapterIsTheOnlyRegisteredPublicationHandlerImplementation()
+    public void ActiveCompositionRegistersOnlyTheCurrentPublicationAndPromotionWorkers()
     {
-        Assert.True(typeof(IQueryCatalogPublicationHandler)
-            .IsAssignableFrom(typeof(GeneratedCatalogPublicationProjectionAdapter)));
-        var publicMethods = typeof(GeneratedCatalogPublicationProjectionAdapter)
-            .GetMethods()
-            .Where(method => method.DeclaringType == typeof(GeneratedCatalogPublicationProjectionAdapter))
-            .Select(method => method.Name)
+        var services = new ServiceCollection();
+
+        services.AddQueryWorker(
+            CreatePublicationOptions(),
+            CreatePromotionOptions());
+
+        var hostedWorkerTypes = services
+            .Where(descriptor => descriptor.ServiceType == typeof(IHostedService))
+            .Select(descriptor => descriptor.ImplementationType)
+            .Where(type => type is not null)
             .ToArray();
-        Assert.Equal(["HandleAsync"], publicMethods);
+        Assert.Equal(
+            [typeof(CatalogPublicationProjectionWorker), typeof(PromotionOverlayProjectionWorker)],
+            hostedWorkerTypes);
     }
 
-    private static QueryPublicationWorkerOptions CreateOptions() =>
+    private static QueryWorkerOptions CreatePublicationOptions() =>
         new()
         {
             BrokerUri = new Uri("amqp://guest:guest@localhost:5672/"),
             Exchange = "aggregator.events",
-            RoutingKey = "catalog.publication-activated",
-            Queue = "query.catalog-publication",
-            DeadLetterExchange = "aggregator.dead-letter",
-            DeadLetterRoutingKey = "query.catalog-publication.failed",
+            RoutingKey = "catalog.publication.activated",
+            Queue = "query.catalog-publication-projection",
             PrefetchCount = 16,
-            MaximumDeliveryAttempts = 5,
-            MaximumMessageBytes = 8 * 1024 * 1024,
-            RecoveryInterval = TimeSpan.FromSeconds(10),
+        };
+
+    private static QueryPromotionWorkerOptions CreatePromotionOptions() =>
+        new()
+        {
+            BrokerUri = new Uri("amqp://guest:guest@localhost:5672/"),
+            Exchange = "aggregator.events",
+            Queue = "query.promotion-overlay-projection",
+            DeadLetterExchange = "aggregator.dead-letter",
+            DeadLetterQueue = "query.promotion-overlay-projection.dead-letter",
+            RoutingKey = "promotion.overlay.activated",
+            PrefetchCount = 8,
         };
 }
