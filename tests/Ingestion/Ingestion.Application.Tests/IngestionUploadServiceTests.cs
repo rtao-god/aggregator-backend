@@ -62,7 +62,7 @@ public sealed class IngestionUploadServiceTests
         var result = await service.PrepareAsync(
             new PrepareIngestionUploadCommand(
                 resultSnapshot.Id.Value,
-                expectedAggregateRevision: 1,
+                ExpectedAggregateRevision: 1,
                 "prepare-upload",
                 "collector-service"),
             CancellationToken.None);
@@ -94,7 +94,7 @@ public sealed class IngestionUploadServiceTests
         var result = await service.CompleteAsync(
             new CompleteIngestionUploadCommand(
                 resultSnapshot.Id.Value,
-                expectedAggregateRevision: 2,
+                ExpectedAggregateRevision: 2,
                 "complete-upload",
                 "collector-service"),
             CancellationToken.None);
@@ -123,7 +123,7 @@ public sealed class IngestionUploadServiceTests
             service.CompleteAsync(
                 new CompleteIngestionUploadCommand(
                     snapshot.Id.Value,
-                    expectedAggregateRevision: 1,
+                    ExpectedAggregateRevision: 1,
                     "complete-upload",
                     "collector-service"),
                 CancellationToken.None));
