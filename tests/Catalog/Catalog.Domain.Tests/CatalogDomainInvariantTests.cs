@@ -43,7 +43,8 @@ public sealed class CatalogDomainInvariantTests
                 [nameAssertion, categoryAssertion, geographyAssertion],
                 configuration));
 
-        Assert.Contains("not allowed for public use", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("name:de-DE", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(UsagePolicy.ResearchOnly), exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
