@@ -230,7 +230,7 @@ public sealed partial class RepositorySecurityRulesTests
         string.IsNullOrWhiteSpace(value) ||
         value.Contains("${", StringComparison.Ordinal) ||
         value.Contains("{{", StringComparison.Ordinal) ||
-        value.Contains("<", StringComparison.Ordinal) ||
+        value.Contains('<') ||
         value.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("REQUIRED", StringComparison.OrdinalIgnoreCase) ||
         value.Contains("test", StringComparison.OrdinalIgnoreCase) ||
