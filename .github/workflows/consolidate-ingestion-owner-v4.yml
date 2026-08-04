@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/consolidate-ingestion-owner-v4.yml'
+      - 'tests/Architecture.Tests/**'
   workflow_dispatch:
 
 permissions:
