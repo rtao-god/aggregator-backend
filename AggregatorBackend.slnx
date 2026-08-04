@@ -21,5 +21,6 @@
   <Folder Name="/tests/Catalog/">
     <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
   </Folder>
 </Solution>

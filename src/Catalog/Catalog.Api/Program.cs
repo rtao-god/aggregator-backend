@@ -1,16 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.RateLimiting;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Infrastructure;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 using Platform.Observability;
 using Platform.ProblemDetails;
 using Platform.Security;
 
 namespace Aggregator.Catalog.Api;
 
-public static class Program
+public partial class Program
 {
     public static void Main(string[] args)
     {
@@ -30,8 +29,12 @@ public static class Program
             {
                 options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
                 options.JsonSerializerOptions.Converters.Add(
-                    new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+                    new JsonStringEnumConverter(
+                        JsonNamingPolicy.CamelCase,
+                        allowIntegerValues: false));
             });
+        builder.Services.Configure<ApiBehaviorOptions>(options =>
+            options.InvalidModelStateResponseFactory = CatalogModelStateProblemFactory.Create);
         builder.Services.AddOpenApi("catalog-command");
         builder.Services.AddOwnerProblemDetails();
         builder.Services.AddCatalogApplication();
