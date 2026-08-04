@@ -31,15 +31,23 @@ public sealed class IngestionPersistenceModelTests
     }
 
     [Fact]
-    public void IdempotencyResultIsOwnedByScopeAndKey()
+    public void IdempotencyResultIsOwnedByScopeKeyAndVerifiedDocument()
     {
         using var context = CreateContext();
-        var command = FindTable(context.Model, "operations", "command_idempotency");
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var command = FindTable(model, "operations", "command_idempotency");
         var primaryKey = Assert.Single(command.GetKeys(), key => key.IsPrimaryKey());
 
         Assert.Equal(
             ["Scope", "Key"],
             primaryKey.Properties.Select(property => property.Name).ToArray());
+        Assert.Equal("bytea", command.FindProperty("ResultDocument")?.GetColumnType());
+        Assert.Equal(64, command.FindProperty("ResultDigest")?.GetMaxLength());
+        var checkNames = command.GetCheckConstraints()
+            .Select(check => check.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("ck_command_idempotency_result_document", checkNames);
+        Assert.Contains("ck_command_idempotency_result_digest", checkNames);
         var batchForeignKey = Assert.Single(command.GetForeignKeys());
         Assert.Equal(DeleteBehavior.Restrict, batchForeignKey.DeleteBehavior);
     }
