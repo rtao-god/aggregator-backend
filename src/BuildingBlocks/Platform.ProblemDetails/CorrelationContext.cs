@@ -6,7 +6,7 @@ namespace Platform.ProblemDetails;
 /// <summary>Provides the validated correlation identity for the current execution flow.</summary>
 public interface ICorrelationContextAccessor
 {
-    string? CorrelationId { get; set; }
+    public string? CorrelationId { get; set; }
 }
 
 internal sealed class CorrelationContextAccessor : ICorrelationContextAccessor
