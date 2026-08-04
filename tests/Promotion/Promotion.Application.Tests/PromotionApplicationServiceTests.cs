@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Aggregator.Promotion.Application;
 using Aggregator.Promotion.Contracts;
 using Aggregator.Promotion.Domain;
@@ -503,7 +504,7 @@ public sealed class PromotionApplicationServiceTests
 
         private bool TryReplay<TAggregate>(
             PromotionCommandIdentity identity,
-            out TAggregate? aggregate)
+            [NotNullWhen(true)] out TAggregate? aggregate)
             where TAggregate : class
         {
             if (!_commands.TryGetValue((identity.Scope, identity.Key), out var existing))
