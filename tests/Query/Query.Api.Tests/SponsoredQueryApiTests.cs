@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Aggregator.Promotion.Contracts;
 
 namespace Query.Api.Tests;
@@ -44,7 +45,7 @@ public sealed class SponsoredQueryApiTests
     }
 
     [Fact]
-    public async Task RevisionWithoutMatchingOverlayReturnsExplicitEmptySponsoredSlice()
+    public async Task RevisionWithoutMatchingOverlayReturnsTypedUnavailable()
     {
         using var factory = new SponsoredQueryApiFactory();
         using var client = factory.CreateClient();
@@ -52,12 +53,35 @@ public sealed class SponsoredQueryApiTests
 
         using var response = await client.GetAsync(
             $"/api/catalog-query/catalogs/berlin-recording-services/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=en-GB");
+        using var body = await ReadJsonAsync(response);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<SponsoredListingSearchResponse>();
-        Assert.NotNull(body);
-        Assert.Null(body.OverlayId);
-        Assert.Empty(body.Sponsored);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(
+            "QUERY_SPONSORED_OVERLAY_UNAVAILABLE",
+            body.RootElement.GetProperty("code").GetString());
+        Assert.Equal(1, factory.Store.ReadCount);
+    }
+
+    [Fact]
+    public async Task OverlayFromAnotherRevisionReturnsTypedUnavailable()
+    {
+        using var factory = new SponsoredQueryApiFactory();
+        var requestedRevisionId = Guid.Parse("0198fd00-0000-7000-8000-000000000011");
+        var actualRevisionId = Guid.Parse("0198fd00-0000-7000-8000-000000000012");
+        factory.Store.Response = new SponsoredListingSearchResponse(
+            Guid.Parse("0198fd00-0000-7000-8000-000000000013"),
+            actualRevisionId,
+            Array.Empty<SponsoredListingResponse>());
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            $"/api/catalog-query/catalogs/berlin-recording-services/sponsored?publicReadRevisionId={requestedRevisionId:D}&locale=en-GB");
+        using var body = await ReadJsonAsync(response);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(
+            "QUERY_SPONSORED_REVISION_MISMATCH",
+            body.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -79,9 +103,14 @@ public sealed class SponsoredQueryApiTests
     {
         using var factory = new SponsoredQueryApiFactory();
         var publicReadRevisionId = Guid.Parse("0198fd00-0000-7000-8000-000000000030");
+        factory.Store.Response = new SponsoredListingSearchResponse(
+            Guid.Parse("0198fd00-0000-7000-8000-000000000031"),
+            publicReadRevisionId,
+            Array.Empty<SponsoredListingResponse>());
         using var client = factory.CreateClient();
         using var first = await client.GetAsync(
             $"/api/catalog-query/catalogs/berlin-recording-services/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=de-DE");
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.NotNull(first.Headers.ETag);
 
         using var request = new HttpRequestMessage(
@@ -91,5 +120,11 @@ public sealed class SponsoredQueryApiTests
         using var second = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.NotModified, second.StatusCode);
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
+    {
+        var stream = await response.Content.ReadAsStreamAsync();
+        return await JsonDocument.ParseAsync(stream);
     }
 }
