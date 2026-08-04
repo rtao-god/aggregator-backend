@@ -20,6 +20,7 @@ internal static class IngestionContractRules
 {
     public static string RequireText(string value, string parameterName, int maximumLength = 500)
     {
+        ArgumentNullException.ThrowIfNull(value);
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new IngestionDomainException("INGESTION_TEXT_REQUIRED", $"'{parameterName}' must be non-empty.");
@@ -37,6 +38,7 @@ internal static class IngestionContractRules
 
     public static string RequireProductKey(string value, string parameterName)
     {
+        ArgumentNullException.ThrowIfNull(value);
         RequireText(value, parameterName, 96);
         if (!char.IsAsciiLetter(value[0]) || char.IsUpper(value[0]))
         {
@@ -60,6 +62,7 @@ internal static class IngestionContractRules
 
     public static string RequireSemanticKey(string value, string parameterName)
     {
+        ArgumentNullException.ThrowIfNull(value);
         RequireText(value, parameterName, 200);
         if (value.Any(char.IsControl))
         {
@@ -73,6 +76,7 @@ internal static class IngestionContractRules
 
     public static string RequireDigest(string value, string parameterName)
     {
+        ArgumentNullException.ThrowIfNull(value);
         RequireText(value, parameterName, 64);
         if (value.Length != 64 || value.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
         {
