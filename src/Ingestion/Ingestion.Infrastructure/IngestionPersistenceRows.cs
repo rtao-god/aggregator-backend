@@ -128,6 +128,10 @@ internal sealed class IngestionCommandRow
 
     public Guid BatchId { get; set; }
 
+    public byte[] ResultDocument { get; set; } = [];
+
+    public string ResultDigest { get; set; } = string.Empty;
+
     public string CallerServiceIdentity { get; set; } = string.Empty;
 
     public DateTimeOffset CreatedAtUtc { get; set; }
