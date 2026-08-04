@@ -7,6 +7,7 @@ on:
       - '.github/workflows/materialize-catalog-media.yml'
       - 'tools/completion/generate_catalog_media_core.py'
       - 'tools/completion/harden_catalog_media_generated.py'
+      - 'tools/completion/finalize_catalog_media_generation.py'
       - 'tools/completion/write_catalog_media_deployment.py'
       - 'tools/CatalogMediaRuntimeGenerator/**'
   workflow_dispatch:
@@ -42,6 +43,7 @@ jobs:
         run: |
           python3 tools/completion/generate_catalog_media_core.py
           python3 tools/completion/harden_catalog_media_generated.py
+          python3 tools/completion/finalize_catalog_media_generation.py
 
       - name: Generate Catalog media runtime and deployment artifacts
         run: |
