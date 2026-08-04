@@ -76,10 +76,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(expectedSha256);
         ValidateDigest(expectedSha256);
-        if (expectedSize < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(expectedSize));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(expectedSize);
 
         if (string.IsNullOrWhiteSpace(contentType))
         {
@@ -130,6 +127,8 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
             throw new InvalidDataException($"Stored object '{key}' has no owner SHA-256 metadata.");
         }
 
+        var lastModified = response.LastModified
+            ?? throw new InvalidDataException($"Stored object '{key}' has no last-modified timestamp.");
         ValidateDigest(digest);
         return new StoredObjectDescriptor(
             key,
@@ -137,7 +136,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
             digest,
             response.Headers.ContentType ?? "application/octet-stream",
             response.ETag?.Trim('"') ?? string.Empty,
-            response.LastModified.ToUniversalTime());
+            new DateTimeOffset(DateTime.SpecifyKind(lastModified, DateTimeKind.Utc)));
     }
 
     public async Task<Stream> OpenReadVerifiedAsync(
