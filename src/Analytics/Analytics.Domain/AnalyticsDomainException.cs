@@ -12,7 +12,8 @@ public sealed class AnalyticsDomainException : Exception
     public string Code { get; }
 }
 
-internal static class AnalyticsDomainRules
+/// <summary>Owns canonical validation for identities, keys, timestamps, and content digests used by Analytics.</summary>
+public static class AnalyticsDomainRules
 {
     public static void RequireIdentifier(Guid value, string parameterName)
     {
