@@ -57,6 +57,10 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.Property(row => row.PageContext).HasMaxLength(120);
             entity.Property(row => row.PlacementScopeKey).HasMaxLength(100);
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
+            entity.HasOne(row => row.PublicReadReference)
+                .WithMany()
+                .HasForeignKey(row => row.PublicReadRevisionId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(row => new { row.ClientEventId, row.EventKind })
                 .IsUnique()
                 .HasDatabaseName("ux_analytics_interaction_event_semantic_key");
@@ -73,7 +77,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.HasKey(row => new { row.EventId, row.ParameterKey });
             entity.Property(row => row.ParameterKey).HasMaxLength(32);
             entity.Property(row => row.ParameterValue).HasMaxLength(200);
-            entity.HasOne<AnalyticsInteractionEventRow>()
+            entity.HasOne(row => row.Event)
                 .WithMany()
                 .HasForeignKey(row => row.EventId)
                 .OnDelete(DeleteBehavior.Restrict);
@@ -101,7 +105,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
         {
             entity.ToTable("public_listing_reference", "access_projection");
             entity.HasKey(row => new { row.PublicReadRevisionId, row.ListingId });
-            entity.HasOne<AnalyticsPublicReadReferenceRow>()
+            entity.HasOne(row => row.PublicReadReference)
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
                 .OnDelete(DeleteBehavior.Restrict);
