@@ -203,7 +203,6 @@ public sealed record PublicReadRevision
         ArgumentNullException.ThrowIfNull(baseProjection);
         ArgumentNullException.ThrowIfNull(promotionOverlay);
         ArgumentNullException.ThrowIfNull(safetyOverlay);
-        QueryContractRules.RequireId(id, nameof(id));
         if (promotionOverlay.Kind != QueryOverlayKind.Promotion || safetyOverlay.Kind != QueryOverlayKind.VisibilitySafety)
         {
             throw new QueryDomainException("QUERY_OVERLAY_KIND_INVALID", "A public read revision requires one promotion and one visibility-safety overlay.");
@@ -215,13 +214,39 @@ public sealed record PublicReadRevision
             throw new QueryDomainException("QUERY_COMPONENT_CATALOG_MISMATCH", "All public read components must belong to the same catalog.");
         }
 
-        return new PublicReadRevision(
+        return Restore(
             id,
             baseProjection.CatalogKey,
             baseProjection.Id,
             promotionOverlay.Id,
             safetyOverlay.Id,
             baseProjection.SourcePublicationId,
+            createdAtUtc,
+            contentDigest);
+    }
+
+    public static PublicReadRevision Restore(
+        Guid id,
+        string catalogKey,
+        Guid baseProjectionId,
+        Guid promotionOverlayId,
+        Guid safetyOverlayId,
+        Guid sourcePublicationId,
+        DateTimeOffset createdAtUtc,
+        string contentDigest)
+    {
+        QueryContractRules.RequireId(id, nameof(id));
+        QueryContractRules.RequireId(baseProjectionId, nameof(baseProjectionId));
+        QueryContractRules.RequireId(promotionOverlayId, nameof(promotionOverlayId));
+        QueryContractRules.RequireId(safetyOverlayId, nameof(safetyOverlayId));
+        QueryContractRules.RequireId(sourcePublicationId, nameof(sourcePublicationId));
+        return new PublicReadRevision(
+            id,
+            QueryContractRules.RequireKey(catalogKey, nameof(catalogKey)),
+            baseProjectionId,
+            promotionOverlayId,
+            safetyOverlayId,
+            sourcePublicationId,
             QueryContractRules.RequireUtc(createdAtUtc, nameof(createdAtUtc)),
             QueryContractRules.RequireDigest(contentDigest, nameof(contentDigest)));
     }
