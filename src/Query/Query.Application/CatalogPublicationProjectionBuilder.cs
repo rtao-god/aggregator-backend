@@ -20,6 +20,7 @@ public static class CatalogPublicationProjectionBuilder
         ArgumentNullException.ThrowIfNull(artifact);
         ValidateSourceIdentity(activation, artifact);
 
+        var localePolicy = QueryLocalePolicy.Create(artifact.DefaultLocale, artifact.SupportedLocales);
         var documents = artifact.Listings
             .OrderBy(item => item.ListingId)
             .Select(item => MapDocument(item, artifact.CreatedAtUtc))
@@ -28,6 +29,8 @@ public static class CatalogPublicationProjectionBuilder
         {
             artifact.PublicationId,
             artifact.CatalogKey,
+            localePolicy.DefaultLocale,
+            localePolicy.SupportedLocales,
             artifact.PublicationSequence,
             artifact.ConfigurationRevisionId,
             builder = BuilderIdentity,
@@ -36,6 +39,7 @@ public static class CatalogPublicationProjectionBuilder
         var baseProjection = QueryBaseProjection.Create(
             baseProjectionId,
             artifact.CatalogKey,
+            localePolicy,
             artifact.PublicationId,
             activation.ArtifactDigest,
             artifact.PublicationSequence,
@@ -154,7 +158,7 @@ public static class CatalogPublicationProjectionBuilder
             attributes,
             geography,
             source.Contacts.Select(item => new QueryContactDocument(
-                (QueryContactKind)item.Kind,
+                MapContactKind(item.Kind),
                 item.Target,
                 item.Label)),
             source.Media.Select(item => new QueryMediaDocument(
@@ -162,7 +166,7 @@ public static class CatalogPublicationProjectionBuilder
                 item.ObjectUri,
                 item.ContentType,
                 item.ContentDigest,
-                (QueryMediaRightsBasis)item.RightsBasis)),
+                MapMediaRightsBasis(item.RightsBasis))),
             source.ContentDigest,
             publishedAtUtc);
     }
@@ -210,6 +214,32 @@ public static class CatalogPublicationProjectionBuilder
         _ => throw Failure(
             "QUERY_FIELD_STATE_UNSUPPORTED",
             $"Catalog field state '{state}' is unsupported.",
+            "Upgrade Query to the exact Catalog contract before consuming this publication."),
+    };
+
+    private static QueryContactKind MapContactKind(ContactKindContract kind) => kind switch
+    {
+        ContactKindContract.Website => QueryContactKind.Website,
+        ContactKindContract.Email => QueryContactKind.Email,
+        ContactKindContract.Phone => QueryContactKind.Phone,
+        ContactKindContract.WhatsApp => QueryContactKind.WhatsApp,
+        ContactKindContract.BookingReference => QueryContactKind.BookingReference,
+        ContactKindContract.MapReference => QueryContactKind.MapReference,
+        _ => throw Failure(
+            "QUERY_CONTACT_KIND_UNSUPPORTED",
+            $"Catalog contact kind '{kind}' is unsupported.",
+            "Upgrade Query to the exact Catalog contract before consuming this publication."),
+    };
+
+    private static QueryMediaRightsBasis MapMediaRightsBasis(MediaRightsBasisContract rightsBasis) => rightsBasis switch
+    {
+        MediaRightsBasisContract.OwnerProvided => QueryMediaRightsBasis.OwnerProvided,
+        MediaRightsBasisContract.ExplicitLicense => QueryMediaRightsBasis.ExplicitLicense,
+        MediaRightsBasisContract.OriginalEditorialWork => QueryMediaRightsBasis.OriginalEditorialWork,
+        MediaRightsBasisContract.PublicDomain => QueryMediaRightsBasis.PublicDomain,
+        _ => throw Failure(
+            "QUERY_MEDIA_RIGHTS_BASIS_UNSUPPORTED",
+            $"Catalog media rights basis '{rightsBasis}' is unsupported.",
             "Upgrade Query to the exact Catalog contract before consuming this publication."),
     };
 
