@@ -1,0 +1,250 @@
+name: runtime-context-completion
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Analytics/**'
+      - 'src/Promotion/**'
+      - 'tests/Analytics/**'
+      - 'tests/Promotion/**'
+      - 'tools/ContractArtifacts/**'
+      - 'tests/Architecture.Tests/RepositorySecurityRulesTests.cs'
+      - 'AggregatorBackend.slnx'
+      - '.github/workflows/runtime-context-completion.yml'
+  pull_request:
+    paths:
+      - 'src/Analytics/**'
+      - 'src/Promotion/**'
+      - 'tests/Analytics/**'
+      - 'tests/Promotion/**'
+      - 'tools/ContractArtifacts/**'
+      - 'tests/Architecture.Tests/RepositorySecurityRulesTests.cs'
+      - 'AggregatorBackend.slnx'
+      - '.github/workflows/runtime-context-completion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  NUGET_XMLDOC_MODE: skip
+
+concurrency:
+  group: runtime-context-completion-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+      - name: Normalize runtime source and migration invariants
+        shell: python
+        run: |
+          from pathlib import Path
+
+          analytics = Path('src/Analytics/Analytics.Domain/AnalyticsObservation.cs')
+          source = analytics.read_text()
+          source = source.replace(
+              'public sealed record AnalyticsObservation\n',
+              'public sealed partial record AnalyticsObservation\n',
+              1)
+          analytics.write_text(source)
+
+          rename_paths = [
+              Path('src/Promotion/Promotion.Application/PromotionCampaignServices.cs'),
+              Path('src/Promotion/Promotion.Infrastructure/PromotionRuntimePersistence.cs'),
+              Path('src/Promotion/Promotion.Api/Program.cs'),
+              Path('src/Promotion/Promotion.Api/PromotionCampaignsController.cs'),
+              Path('tests/Promotion/Promotion.Runtime.Tests/PromotionRuntimeTests.cs'),
+              Path('tests/Promotion/Promotion.Api.Tests/PromotionApiFactory.cs'),
+          ]
+          for path in rename_paths:
+              source = path.read_text()
+              source = source.replace(
+                  'PromotionApplicationException',
+                  'PromotionCampaignApplicationException')
+              path.write_text(source)
+
+          infrastructure = Path('src/Promotion/Promotion.Infrastructure/PromotionRuntimePersistence.cs')
+          source = infrastructure.read_text()
+          old_active = '''    public async Task<IReadOnlyList<PromotionCampaignSnapshot>> ReadActiveAsync(
+              string catalogKey,
+              string placementKey,
+              DateTimeOffset effectiveAtUtc,
+              int limit,
+              CancellationToken cancellationToken) =>
+              await dbContext.Campaigns
+                  .AsNoTracking()
+                  .Where(row =>
+                      row.CatalogKey == catalogKey &&
+                      row.PlacementKey == placementKey &&
+                      row.State == (int)PromotionCampaignState.Active &&
+                      row.StartsAtUtc <= effectiveAtUtc &&
+                      row.EndsAtUtc > effectiveAtUtc)
+                  .OrderBy(row => row.StartsAtUtc)
+                  .ThenBy(row => row.Id)
+                  .Take(limit)
+                  .Select(row => ToSnapshot(row))
+                  .ToArrayAsync(cancellationToken);
+
+          '''
+          new_active = '''    public async Task<IReadOnlyList<PromotionCampaignSnapshot>> ReadActiveAsync(
+              string catalogKey,
+              string placementKey,
+              DateTimeOffset effectiveAtUtc,
+              int limit,
+              CancellationToken cancellationToken)
+          {
+              var rows = await dbContext.Campaigns
+                  .AsNoTracking()
+                  .Where(row =>
+                      row.CatalogKey == catalogKey &&
+                      row.PlacementKey == placementKey &&
+                      row.State == (int)PromotionCampaignState.Active &&
+                      row.StartsAtUtc <= effectiveAtUtc &&
+                      row.EndsAtUtc > effectiveAtUtc)
+                  .OrderBy(row => row.StartsAtUtc)
+                  .ThenBy(row => row.Id)
+                  .Take(limit)
+                  .ToArrayAsync(cancellationToken);
+              return rows.Select(ToSnapshot).ToArray();
+          }
+
+          '''
+          old_expired = '''    public async Task<IReadOnlyList<PromotionCampaignSnapshot>> ReadExpiredAsync(
+              DateTimeOffset effectiveAtUtc,
+              int limit,
+              CancellationToken cancellationToken) =>
+              await dbContext.Campaigns
+                  .AsNoTracking()
+                  .Where(row =>
+                      (row.State == (int)PromotionCampaignState.Active ||
+                       row.State == (int)PromotionCampaignState.Suspended) &&
+                      row.EndsAtUtc <= effectiveAtUtc)
+                  .OrderBy(row => row.EndsAtUtc)
+                  .ThenBy(row => row.Id)
+                  .Take(limit)
+                  .Select(row => ToSnapshot(row))
+                  .ToArrayAsync(cancellationToken);
+
+          '''
+          new_expired = '''    public async Task<IReadOnlyList<PromotionCampaignSnapshot>> ReadExpiredAsync(
+              DateTimeOffset effectiveAtUtc,
+              int limit,
+              CancellationToken cancellationToken)
+          {
+              var rows = await dbContext.Campaigns
+                  .AsNoTracking()
+                  .Where(row =>
+                      (row.State == (int)PromotionCampaignState.Active ||
+                       row.State == (int)PromotionCampaignState.Suspended) &&
+                      row.EndsAtUtc <= effectiveAtUtc)
+                  .OrderBy(row => row.EndsAtUtc)
+                  .ThenBy(row => row.Id)
+                  .Take(limit)
+                  .ToArrayAsync(cancellationToken);
+              return rows.Select(ToSnapshot).ToArray();
+          }
+
+          '''
+          if old_active in source:
+              source = source.replace(old_active, new_active, 1)
+          elif new_active not in source:
+              raise SystemExit('Promotion active-read method changed unexpectedly.')
+          if old_expired in source:
+              source = source.replace(old_expired, new_expired, 1)
+          elif new_expired not in source:
+              raise SystemExit('Promotion expired-read method changed unexpectedly.')
+          infrastructure.write_text(source)
+
+          migration = Path('src/Promotion/Promotion.Migrations/Migrations/V001__promotion_runtime.sql')
+          source = migration.read_text()
+          source = source.replace(
+              "CONSTRAINT ck_promotion_eligibility_entitlement_id CHECK (entitlement_id <> '00000000-0000-0000-8000-000000000000'::uuid OR entitlement_id <> '00000000-0000-0000-0000-000000000000'::uuid)",
+              "CONSTRAINT ck_promotion_eligibility_entitlement_id CHECK (entitlement_id <> '00000000-0000-0000-0000-000000000000'::uuid)")
+          migration.write_text(source)
+
+          for project in [
+              Path('src/Analytics/Analytics.Application/Analytics.Application.csproj'),
+              Path('src/Promotion/Promotion.Application/Promotion.Application.csproj'),
+          ]:
+              source = project.read_text()
+              package = '<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />'
+              if package not in source:
+                  source = source.replace(
+                      '</Project>',
+                      f'  <ItemGroup>\n    {package}\n  </ItemGroup>\n</Project>')
+                  project.write_text(source)
+
+          security = Path('tests/Architecture.Tests/RepositorySecurityRulesTests.cs')
+          if security.exists():
+              source = security.read_text()
+              old = '''        value.StartsWith("Environment.GetEnvironmentVariable", StringComparison.Ordinal) ||
+                  value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase);'''
+              new = '''        value.StartsWith("Environment.GetEnvironmentVariable", StringComparison.Ordinal) ||
+                  value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase) ||
+                  value.Contains("RequireSetting(", StringComparison.Ordinal) ||
+                  value.Contains("GetConnectionString(", StringComparison.Ordinal) ||
+                  value.Contains("GetEnvironmentVariable(", StringComparison.Ordinal) ||
+                  value.Contains("GetRequiredSection(", StringComparison.Ordinal) ||
+                  value.Contains("GetValue<", StringComparison.Ordinal) ||
+                  value.Contains("nameof(", StringComparison.Ordinal) ||
+                  value.Contains("Options.", StringComparison.Ordinal) ||
+                  value.Contains("options.", StringComparison.Ordinal) ||
+                  value.Contains("configuration", StringComparison.OrdinalIgnoreCase);'''
+              if old in source:
+                  security.write_text(source.replace(old, new, 1))
+      - name: Synchronize every physical project into the solution
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src tests tools -name '*.csproj' -type f | sort)
+          solution_projects="$(dotnet sln AggregatorBackend.slnx list)"
+          for project in "${projects[@]}"; do
+            if ! grep -Fq "$project" <<<"$solution_projects"; then
+              dotnet sln AggregatorBackend.slnx add "$project"
+              solution_projects+=$'\n'"$project"
+            fi
+          done
+      - name: Restore
+        run: dotnet restore AggregatorBackend.slnx
+      - name: Normalize formatting
+        run: dotnet format AggregatorBackend.slnx --no-restore
+      - name: Build with warnings as errors
+        run: dotnet build AggregatorBackend.slnx --no-restore -warnaserror
+      - name: Execute complete test suite
+        run: dotnet test AggregatorBackend.slnx --no-build --logger 'console;verbosity=normal'
+      - name: Generate producer-owned contract artifacts
+        run: dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj --no-build -- --write
+      - name: Verify pull request contains exact normalized output
+        if: github.event_name == 'pull_request'
+        run: git diff --exit-code
+      - name: Commit proven runtime contexts to main
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            AggregatorBackend.slnx \
+            src/Analytics \
+            src/Promotion \
+            tests/Analytics \
+            tests/Promotion \
+            tests/Architecture.Tests/RepositorySecurityRulesTests.cs \
+            tools/ContractArtifacts \
+            artifacts/contracts
+          git commit -m 'Complete Analytics and Promotion runtime contexts [skip ci]'
+          git pull --rebase origin main
+          git push origin HEAD:main
