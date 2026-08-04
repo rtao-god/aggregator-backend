@@ -1,4 +1,3 @@
-using Aggregator.Query.Application;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Aggregator.Query.Worker;
@@ -18,7 +17,6 @@ public static class QueryWorkerServiceCollectionExtensions
 
         services.AddSingleton(publicationOptions);
         services.AddSingleton(promotionOptions);
-        services.AddScoped<PromotionOverlayProjectionService>();
         services.AddHostedService<CatalogPublicationProjectionWorker>();
         services.AddHostedService<PromotionOverlayProjectionWorker>();
         return services;
