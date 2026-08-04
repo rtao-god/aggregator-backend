@@ -52,3 +52,5 @@ The persistence model enforces the same value shape: complete rows require every
 - domain tests cover listing requirements, placement exposure and sponsored placement identity, campaign parameter allowlisting, event-time bounds, negative metrics, and observed-zero versus unavailable states;
 - application tests cover accepted intake, same-payload replay, digest conflict, canonical campaign-parameter ordering, unknown public-read revision rejection, complete aggregate range coverage, canonical public membership ordering, duplicate membership rejection, and access source revision validation;
 - infrastructure model tests cover semantic-key uniqueness, event shape and time constraints, restrictive immutable projection ownership, access revision concurrency, incomplete metric value shape, and absence of raw-IP storage.
+
+The infrastructure proof is currently model-level. Real PostgreSQL uniqueness races, serializable access revision ordering, and constraint rejection remain integration-test requirements before the Analytics persistence boundary can be called production-proven.
