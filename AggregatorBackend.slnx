@@ -25,6 +25,8 @@
     <Project Path="src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj" />
     <Project Path="src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
     <Project Path="src/Ingestion/Ingestion.Application/Ingestion.Application.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
@@ -45,5 +47,6 @@
   <Folder Name="/tests/Ingestion/">
     <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>
