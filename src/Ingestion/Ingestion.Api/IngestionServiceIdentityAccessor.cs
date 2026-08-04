@@ -8,7 +8,7 @@ internal static class IngestionServiceIdentityAccessor
     public static string Require(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
-        var subject = principal.FindFirstValue("sub");
+        var subject = principal.FindFirst("sub")?.Value;
         if (string.IsNullOrWhiteSpace(subject) || subject.Length > 200)
         {
             throw new IngestionApplicationException(
