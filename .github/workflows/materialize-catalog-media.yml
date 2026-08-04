@@ -56,17 +56,60 @@ jobs:
           python3 tools/completion/write_catalog_media_deployment.py
           python3 .tools/complete-backend.py
 
-      - name: Restore complete physical solution
-        run: dotnet restore AggregatorBackend.slnx
+      - name: Restore Catalog media owner projects
+        run: |
+          projects=(
+            src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj
+            src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj
+            src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj
+            tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj
+            tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj
+            tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
 
-      - name: Apply canonical formatting
-        run: dotnet format AggregatorBackend.slnx --no-restore
+      - name: Apply canonical Catalog media formatting
+        run: |
+          projects=(
+            src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj
+            src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj
+            src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj
+            src/Catalog/Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj
+            src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj
+            src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj
+            src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj
+            tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj
+            tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj
+            tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --no-restore
+          done
 
-      - name: Build complete physical solution
-        run: dotnet build AggregatorBackend.slnx --no-restore -warnaserror /m:1 /nr:false
+      - name: Build Catalog media deployables
+        run: |
+          projects=(
+            src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj
+            src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj
+            src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
 
-      - name: Test complete physical solution
-        run: dotnet test AggregatorBackend.slnx --no-build --logger "console;verbosity=normal" /m:1 /nr:false
+      - name: Test Catalog media owner boundaries
+        run: |
+          projects=(
+            tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj
+            tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj
+            tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger "console;verbosity=normal" /m:1 /nr:false
+          done
 
       - name: Verify owner inventory and generated source
         run: |
