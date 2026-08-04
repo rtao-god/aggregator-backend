@@ -3,7 +3,7 @@ namespace Aggregator.Catalog.Contracts;
 public static class CatalogPublicationArtifactContract
 {
     public const string Identity = "aggregator-catalog-publication";
-    public const int Revision = 1;
+    public const int Revision = 2;
 }
 
 public sealed record CatalogPublicationArtifact(
@@ -11,6 +11,8 @@ public sealed record CatalogPublicationArtifact(
     int ContractRevision,
     Guid PublicationId,
     string CatalogKey,
+    string DefaultLocale,
+    IReadOnlyList<string> SupportedLocales,
     Guid ConfigurationRevisionId,
     long PublicationSequence,
     DateTimeOffset CreatedAtUtc,
