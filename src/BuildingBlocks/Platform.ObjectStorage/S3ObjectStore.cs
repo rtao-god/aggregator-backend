@@ -74,10 +74,16 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
     {
         ValidateKey(key);
         ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(expectedSha256);
         ValidateDigest(expectedSha256);
         if (expectedSize < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(expectedSize));
+        }
+
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            throw new ArgumentException("Content type is required.", nameof(contentType));
         }
 
         if (!content.CanRead)
@@ -140,6 +146,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
         CancellationToken cancellationToken)
     {
         ValidateKey(key);
+        ArgumentNullException.ThrowIfNull(expectedSha256);
         ValidateDigest(expectedSha256);
         using var response = await _client.GetObjectAsync(
             new GetObjectRequest { BucketName = _options.Bucket, Key = key },
@@ -226,6 +233,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
 
     private static void ValidateDigest(string digest)
     {
+        ArgumentNullException.ThrowIfNull(digest);
         if (digest.Length != 64 || digest.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
         {
             throw new ArgumentException("A lowercase SHA-256 hex digest is required.", nameof(digest));
@@ -234,7 +242,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
 
     private static void ValidateKey(string key)
     {
-        if (string.IsNullOrWhiteSpace(key) || key.StartsWith('/', StringComparison.Ordinal) || key.Contains("..", StringComparison.Ordinal) || key.Contains('\\'))
+        if (string.IsNullOrWhiteSpace(key) || key.StartsWith("/", StringComparison.Ordinal) || key.Contains("..", StringComparison.Ordinal) || key.Contains('\\'))
         {
             throw new ArgumentException("Object key must be relative and traversal-free.", nameof(key));
         }
