@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Platform.Observability;
 using Platform.ProblemDetails;
 using Platform.Security;
