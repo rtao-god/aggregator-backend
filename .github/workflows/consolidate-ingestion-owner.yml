@@ -1,0 +1,785 @@
+name: Consolidate canonical Ingestion processing owner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/consolidate-ingestion-owner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: consolidate-ingestion-owner
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  consolidate-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Consolidate the Ingestion owner path
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path.cwd()
+
+          def read(path: str) -> str:
+              return (root / path).read_text(encoding='utf-8')
+
+          def write(path: str, content: str) -> None:
+              target = root / path
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_text(content, encoding='utf-8', newline='\n')
+
+          def replace_exact(path: str, old: str, new: str, expected: int = 1) -> None:
+              content = read(path)
+              actual = content.count(old)
+              if actual != expected:
+                  raise RuntimeError(
+                      f"Unexpected anchor count in {path}: expected {expected}, actual {actual}")
+              write(path, content.replace(old, new))
+
+          def remove_required(path: str) -> None:
+              target = root / path
+              if not target.exists():
+                  raise RuntimeError(f"Expected obsolete path is missing: {path}")
+              target.unlink()
+
+          processing_services = 'src/Ingestion/Ingestion.Application/IngestionProcessingServices.cs'
+          replace_exact(
+              processing_services,
+              '    private static IReadOnlyList<IngestionProcessingDecision> ClassifyItems(\n',
+              '    private static IngestionProcessingDecision[] ClassifyItems(\n')
+          replace_exact(
+              processing_services,
+              '        ISet<string> blocking,\n',
+              '        SortedSet<string> blocking,\n')
+          replace_exact(
+              processing_services,
+              '        ISet<string> review)\n',
+              '        SortedSet<string> review)\n')
+
+          processing_persistence = 'src/Ingestion/Ingestion.Infrastructure/IngestionProcessingPersistence.cs'
+          replace_exact(
+              processing_persistence,
+              '    {\n        ValidateExactDecisionCoverage(decisions);\n',
+              '    {\n        ArgumentNullException.ThrowIfNull(decisions);\n        ValidateExactDecisionCoverage(decisions);\n')
+          replace_exact(
+              processing_persistence,
+              '    {\n        await using var transaction = await dbContext.Database.BeginTransactionAsync(\n'
+              '            System.Data.IsolationLevel.Serializable,\n'
+              '            cancellationToken);\n'
+              '        var batch = await RequireBatchAsync(batchId, cancellationToken);\n'
+              '        EnsureBatch(batch, ImportBatchState.ReviewRequired, expectedAggregateRevision);\n',
+              '    {\n        ArgumentNullException.ThrowIfNull(reviewDecisions);\n'
+              '        await using var transaction = await dbContext.Database.BeginTransactionAsync(\n'
+              '            System.Data.IsolationLevel.Serializable,\n'
+              '            cancellationToken);\n'
+              '        var batch = await RequireBatchAsync(batchId, cancellationToken);\n'
+              '        EnsureBatch(batch, ImportBatchState.ReviewRequired, expectedAggregateRevision);\n')
+          replace_exact(
+              processing_persistence,
+              '    {\n        await using var transaction = await dbContext.Database.BeginTransactionAsync(\n'
+              '            System.Data.IsolationLevel.Serializable,\n'
+              '            cancellationToken);\n'
+              '        var replay = await ReadCommitReplayAsync(commandIdentity, cancellationToken);\n',
+              '    {\n        ArgumentNullException.ThrowIfNull(commandIdentity);\n'
+              '        await using var transaction = await dbContext.Database.BeginTransactionAsync(\n'
+              '            System.Data.IsolationLevel.Serializable,\n'
+              '            cancellationToken);\n'
+              '        var replay = await ReadCommitReplayAsync(commandIdentity, cancellationToken);\n')
+
+          write(
+              'src/Ingestion/Ingestion.Infrastructure/IngestionObjectStorageServiceCollectionExtensions.cs',
+              '''using Aggregator.Ingestion.Application;
+          using Microsoft.Extensions.Configuration;
+          using Microsoft.Extensions.DependencyInjection;
+          using Platform.ObjectStorage;
+
+          namespace Aggregator.Ingestion.Infrastructure;
+
+          /// <summary>Composes the strict S3-compatible object-store adapter used by Ingestion.</summary>
+          public static class IngestionObjectStorageServiceCollectionExtensions
+          {
+              public static IServiceCollection AddIngestionObjectStorage(
+                  this IServiceCollection services,
+                  IConfiguration configuration)
+              {
+                  ArgumentNullException.ThrowIfNull(services);
+                  ArgumentNullException.ThrowIfNull(configuration);
+                  var section = configuration.GetRequiredSection("Ingestion:ObjectStorage");
+                  var options = new S3ObjectStoreOptions
+                  {
+                      ServiceUrl = ReadAbsoluteUri(section, "ServiceUrl"),
+                      Region = ReadRequired(section, "Region"),
+                      Bucket = ReadRequired(section, "Bucket"),
+                      AccessKey = ReadRequired(section, "AccessKey"),
+                      SecretKey = ReadRequired(section, "SecretKey"),
+                      ForcePathStyle = ReadBoolean(section, "ForcePathStyle"),
+                  };
+                  options.Validate();
+                  services.AddSingleton(options);
+                  services.AddSingleton<IObjectStore>(provider =>
+                      new S3ObjectStore(provider.GetRequiredService<S3ObjectStoreOptions>()));
+                  services.AddScoped<IIngestionPayloadStore, ObjectStoreIngestionPayloadStore>();
+                  return services;
+              }
+
+              private static Uri ReadAbsoluteUri(IConfigurationSection section, string key)
+              {
+                  var value = ReadRequired(section, key);
+                  if (!Uri.TryCreate(value, UriKind.Absolute, out var result))
+                  {
+                      throw InvalidConfiguration(section, key, "an absolute URI");
+                  }
+
+                  return result;
+              }
+
+              private static bool ReadBoolean(IConfigurationSection section, string key)
+              {
+                  var value = ReadRequired(section, key);
+                  if (!bool.TryParse(value, out var result))
+                  {
+                      throw InvalidConfiguration(section, key, "a Boolean");
+                  }
+
+                  return result;
+              }
+
+              private static string ReadRequired(IConfigurationSection section, string key)
+              {
+                  var value = section[key];
+                  if (string.IsNullOrWhiteSpace(value))
+                  {
+                      throw InvalidConfiguration(section, key, "a non-empty value");
+                  }
+
+                  return value;
+              }
+
+              private static InvalidOperationException InvalidConfiguration(
+                  IConfigurationSection section,
+                  string key,
+                  string expected) =>
+                  new($"Configuration '{section.Path}:{key}' must be {expected}.");
+          }
+          '''.replace('          ', ''))
+
+          replace_exact(
+              'src/Ingestion/Ingestion.Api/Program.cs',
+              '        builder.Services.AddIngestionInfrastructure(builder.Configuration);\n'
+              '        builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);\n',
+              '        builder.Services.AddIngestionInfrastructure(builder.Configuration);\n'
+              '        builder.Services.AddIngestionObjectStorage(builder.Configuration);\n'
+              '        builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);\n')
+
+          replace_exact(
+              'tests/Ingestion/Ingestion.Api.Tests/IngestionApiFactory.cs',
+              '            ["Authentication__Authority"] = "https://issuer.test",\n',
+              '            ["Ingestion__ObjectStorage__ServiceUrl"] = "https://object-store.test",\n'
+              '            ["Ingestion__ObjectStorage__Region"] = "us-east-1",\n'
+              '            ["Ingestion__ObjectStorage__Bucket"] = "ingestion-test",\n'
+              '            ["Ingestion__ObjectStorage__AccessKey"] = "test-access-key",\n'
+              '            ["Ingestion__ObjectStorage__SecretKey"] = "test-secret-key",\n'
+              '            ["Ingestion__ObjectStorage__ForcePathStyle"] = "true",\n'
+              '            ["Authentication__Authority"] = "https://issuer.test",\n')
+
+          write(
+              'src/Ingestion/Ingestion.Worker/IngestionWorkerOptions.cs',
+              '''using System.Globalization;
+          using Microsoft.Extensions.Configuration;
+
+          namespace Aggregator.Ingestion.Worker;
+
+          /// <summary>Fail-fast bounded execution settings for the canonical Ingestion validation worker.</summary>
+          public sealed record IngestionWorkerOptions
+          {
+              public const string SectionName = "IngestionWorker";
+
+              public required string WorkerIdentity { get; init; }
+
+              public required int ValidationBatchSize { get; init; }
+
+              public required TimeSpan LeaseDuration { get; init; }
+
+              public required TimeSpan EmptyDelay { get; init; }
+
+              public static IngestionWorkerOptions FromConfiguration(IConfiguration configuration)
+              {
+                  ArgumentNullException.ThrowIfNull(configuration);
+                  var section = configuration.GetRequiredSection(SectionName);
+                  var options = new IngestionWorkerOptions
+                  {
+                      WorkerIdentity = ReadRequired(section, nameof(WorkerIdentity)),
+                      ValidationBatchSize = ReadInt32(section, nameof(ValidationBatchSize)),
+                      LeaseDuration = ReadTimeSpan(section, nameof(LeaseDuration)),
+                      EmptyDelay = ReadTimeSpan(section, nameof(EmptyDelay)),
+                  };
+                  options.Validate();
+                  return options;
+              }
+
+              public void Validate()
+              {
+                  if (string.IsNullOrWhiteSpace(WorkerIdentity) ||
+                      WorkerIdentity.Length > 200 ||
+                      WorkerIdentity.Any(char.IsControl))
+                  {
+                      throw new InvalidOperationException(
+                          $"Configuration '{SectionName}:{nameof(WorkerIdentity)}' must be a stable non-empty identity of at most 200 characters.");
+                  }
+
+                  if (ValidationBatchSize is < 1 or > 100)
+                  {
+                      throw new InvalidOperationException(
+                          $"Configuration '{SectionName}:{nameof(ValidationBatchSize)}' must be between 1 and 100.");
+                  }
+
+                  if (LeaseDuration < TimeSpan.FromSeconds(10) ||
+                      LeaseDuration > TimeSpan.FromMinutes(15))
+                  {
+                      throw new InvalidOperationException(
+                          $"Configuration '{SectionName}:{nameof(LeaseDuration)}' must be between ten seconds and fifteen minutes.");
+                  }
+
+                  if (EmptyDelay < TimeSpan.FromMilliseconds(100) ||
+                      EmptyDelay > TimeSpan.FromMinutes(1))
+                  {
+                      throw new InvalidOperationException(
+                          $"Configuration '{SectionName}:{nameof(EmptyDelay)}' must be between 100 milliseconds and one minute.");
+                  }
+              }
+
+              private static int ReadInt32(IConfigurationSection section, string key)
+              {
+                  var value = ReadRequired(section, key);
+                  if (!int.TryParse(
+                          value,
+                          NumberStyles.None,
+                          CultureInfo.InvariantCulture,
+                          out var result))
+                  {
+                      throw InvalidConfiguration(section, key, "an integer");
+                  }
+
+                  return result;
+              }
+
+              private static TimeSpan ReadTimeSpan(IConfigurationSection section, string key)
+              {
+                  var value = ReadRequired(section, key);
+                  if (!TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var result))
+                  {
+                      throw InvalidConfiguration(section, key, "a TimeSpan");
+                  }
+
+                  return result;
+              }
+
+              private static string ReadRequired(IConfigurationSection section, string key)
+              {
+                  var value = section[key];
+                  if (string.IsNullOrWhiteSpace(value))
+                  {
+                      throw InvalidConfiguration(section, key, "a non-empty value");
+                  }
+
+                  return value;
+              }
+
+              private static InvalidOperationException InvalidConfiguration(
+                  IConfigurationSection section,
+                  string key,
+                  string expected) =>
+                  new($"Configuration '{section.Path}:{key}' must be {expected}.");
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'src/Ingestion/Ingestion.Worker/IngestionValidationWorker.cs',
+              '''using Aggregator.Ingestion.Application;
+          using Microsoft.Extensions.DependencyInjection;
+          using Microsoft.Extensions.Hosting;
+          using Microsoft.Extensions.Logging;
+
+          namespace Aggregator.Ingestion.Worker;
+
+          /// <summary>Executes bounded validation leases against the canonical Ingestion processing ledger.</summary>
+          public sealed class IngestionValidationWorker(
+              IServiceScopeFactory scopeFactory,
+              IngestionWorkerOptions options,
+              ILogger<IngestionValidationWorker> logger) : BackgroundService
+          {
+              private readonly IServiceScopeFactory _scopeFactory =
+                  scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+              private readonly IngestionWorkerOptions _options =
+                  options ?? throw new ArgumentNullException(nameof(options));
+              private readonly ILogger<IngestionValidationWorker> _logger =
+                  logger ?? throw new ArgumentNullException(nameof(logger));
+
+              protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+              {
+                  _options.Validate();
+                  while (!stoppingToken.IsCancellationRequested)
+                  {
+                      var processed = 0;
+                      try
+                      {
+                          for (; processed < _options.ValidationBatchSize; processed++)
+                          {
+                              await using var scope = _scopeFactory.CreateAsyncScope();
+                              var service = scope.ServiceProvider
+                                  .GetRequiredService<ValidateIngestionPackageService>();
+                              if (!await service.ProcessNextAsync(
+                                      _options.WorkerIdentity,
+                                      _options.LeaseDuration,
+                                      stoppingToken))
+                              {
+                                  break;
+                              }
+                          }
+                      }
+                      catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                      {
+                          break;
+                      }
+                      catch (Exception exception)
+                      {
+                          _logger.LogError(
+                              exception,
+                              "Ingestion validation worker {WorkerIdentity} failed its current owner batch; persisted leases remain authoritative",
+                              _options.WorkerIdentity);
+                      }
+
+                      if (processed == 0)
+                      {
+                          await Task.Delay(_options.EmptyDelay, stoppingToken);
+                      }
+                  }
+              }
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'src/Ingestion/Ingestion.Worker/IngestionWorkerServiceCollectionExtensions.cs',
+              '''using Microsoft.Extensions.DependencyInjection;
+
+          namespace Aggregator.Ingestion.Worker;
+
+          public static class IngestionWorkerServiceCollectionExtensions
+          {
+              public static IServiceCollection AddIngestionWorker(
+                  this IServiceCollection services,
+                  IngestionWorkerOptions options)
+              {
+                  ArgumentNullException.ThrowIfNull(services);
+                  ArgumentNullException.ThrowIfNull(options);
+                  options.Validate();
+                  services.AddSingleton(options);
+                  services.AddHostedService<IngestionValidationWorker>();
+                  return services;
+              }
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'src/Ingestion/Ingestion.Worker/Program.cs',
+              '''using Aggregator.Ingestion.Application;
+          using Aggregator.Ingestion.Infrastructure;
+          using Microsoft.Extensions.Hosting;
+          using Platform.Observability;
+
+          namespace Aggregator.Ingestion.Worker;
+
+          public static class Program
+          {
+              public static async Task Main(string[] args)
+              {
+                  var host = CreateHost(args);
+                  await host.RunAsync();
+              }
+
+              public static IHost CreateHost(string[] args)
+              {
+                  ArgumentNullException.ThrowIfNull(args);
+                  var builder = Host.CreateApplicationBuilder(args);
+                  var options = IngestionWorkerOptions.FromConfiguration(builder.Configuration);
+                  builder.Services
+                      .AddIngestionApplication()
+                      .AddIngestionInfrastructure(builder.Configuration)
+                      .AddIngestionObjectStorage(builder.Configuration)
+                      .AddIngestionProcessingInfrastructure(builder.Configuration)
+                      .AddIngestionWorker(options);
+                  builder.Services.AddPlatformObservability(
+                      builder.Configuration,
+                      "ingestion-worker");
+                  return builder.Build();
+              }
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'src/Ingestion/Ingestion.Worker/appsettings.json',
+              '''{
+            "IngestionWorker": {
+              "WorkerIdentity": "ingestion-validation-worker",
+              "ValidationBatchSize": 10,
+              "LeaseDuration": "00:05:00",
+              "EmptyDelay": "00:00:02"
+            }
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj',
+              '''<Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <IsPackable>false</IsPackable>
+              <IsTestProject>true</IsTestProject>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="Microsoft.NET.Test.Sdk" />
+              <PackageReference Include="xunit" />
+              <PackageReference Include="xunit.runner.visualstudio" />
+              <PackageReference Include="coverlet.collector" />
+            </ItemGroup>
+            <ItemGroup>
+              <ProjectReference Include="../../../src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj" />
+            </ItemGroup>
+          </Project>
+          '''.replace('          ', ''))
+          write(
+              'tests/Ingestion/Ingestion.Worker.Tests/GlobalUsings.cs',
+              'global using Xunit;\n')
+          write(
+              'tests/Ingestion/Ingestion.Worker.Tests/IngestionWorkerOptionsTests.cs',
+              '''using Aggregator.Ingestion.Worker;
+          using Microsoft.Extensions.Configuration;
+          using Microsoft.Extensions.DependencyInjection;
+          using Microsoft.Extensions.Hosting;
+
+          namespace Ingestion.Worker.Tests;
+
+          public sealed class IngestionWorkerOptionsTests
+          {
+              [Fact]
+              public void ExactConfigurationCreatesBoundedOptions()
+              {
+                  var configuration = CreateConfiguration();
+
+                  var options = IngestionWorkerOptions.FromConfiguration(configuration);
+
+                  Assert.Equal("ingestion-validation-worker", options.WorkerIdentity);
+                  Assert.Equal(12, options.ValidationBatchSize);
+                  Assert.Equal(TimeSpan.FromMinutes(4), options.LeaseDuration);
+                  Assert.Equal(TimeSpan.FromSeconds(3), options.EmptyDelay);
+              }
+
+              [Theory]
+              [InlineData("0")]
+              [InlineData("101")]
+              public void UnsafeValidationBatchIsRejected(string batchSize)
+              {
+                  var configuration = CreateConfiguration(
+                      new KeyValuePair<string, string?>(
+                          "IngestionWorker:ValidationBatchSize",
+                          batchSize));
+
+                  Assert.Throws<InvalidOperationException>(() =>
+                      IngestionWorkerOptions.FromConfiguration(configuration));
+              }
+
+              [Fact]
+              public void MissingOwnerSettingFailsClosed()
+              {
+                  var values = ValidValues();
+                  values.Remove("IngestionWorker:LeaseDuration");
+                  var configuration = new ConfigurationBuilder()
+                      .AddInMemoryCollection(values)
+                      .Build();
+
+                  Assert.Throws<InvalidOperationException>(() =>
+                      IngestionWorkerOptions.FromConfiguration(configuration));
+              }
+
+              [Fact]
+              public void CompositionRegistersOnlyCanonicalValidationWorker()
+              {
+                  var services = new ServiceCollection();
+                  services.AddLogging();
+                  var options = IngestionWorkerOptions.FromConfiguration(CreateConfiguration());
+                  services.AddIngestionWorker(options);
+                  using var provider = services.BuildServiceProvider();
+
+                  var hosted = provider.GetServices<IHostedService>().ToArray();
+
+                  Assert.IsType<IngestionValidationWorker>(Assert.Single(hosted));
+              }
+
+              private static IConfiguration CreateConfiguration(
+                  params KeyValuePair<string, string?>[] overrides)
+              {
+                  var values = ValidValues();
+                  foreach (var value in overrides)
+                  {
+                      values[value.Key] = value.Value;
+                  }
+
+                  return new ConfigurationBuilder()
+                      .AddInMemoryCollection(values)
+                      .Build();
+              }
+
+              private static Dictionary<string, string?> ValidValues() =>
+                  new(StringComparer.Ordinal)
+                  {
+                      ["IngestionWorker:WorkerIdentity"] = "ingestion-validation-worker",
+                      ["IngestionWorker:ValidationBatchSize"] = "12",
+                      ["IngestionWorker:LeaseDuration"] = "00:04:00",
+                      ["IngestionWorker:EmptyDelay"] = "00:00:03",
+                  };
+          }
+          '''.replace('          ', ''))
+
+          write(
+              'src/Ingestion/Ingestion.Migrations/Migrations/V004__remove_obsolete_package_validation_owner.sql',
+              '''DROP TABLE IF EXISTS batches.item_issue;
+          DROP TABLE IF EXISTS batches.ingestion_item;
+          DROP TABLE IF EXISTS operations.package_validation_work;
+          '''.replace('          ', ''))
+
+          obsolete = [
+              'src/Ingestion/Ingestion.Application/IngestionPackageProcessingService.cs',
+              'src/Ingestion/Ingestion.Application/IngestionPackagePayloadValidator.cs',
+              'src/Ingestion/Ingestion.Infrastructure/IngestionPackageObjectReader.cs',
+              'src/Ingestion/Ingestion.Infrastructure/EfIngestionPackageWorkRepository.cs',
+              'src/Ingestion/Ingestion.Contracts/IngestionPackagePayloadContracts.cs',
+              'tests/Ingestion/Ingestion.Application.Tests/IngestionPackageProcessingTests.cs',
+              'tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj',
+              'tools/IngestionWorkerGenerator/Program.cs',
+              'tools/completion/normalize_ingestion_worker_generator.py',
+              'tools/completion/normalize_ingestion_worker_terminal.py',
+              'docs/generated/ingestion-worker-generation.md',
+          ]
+          for path in obsolete:
+              remove_required(path)
+
+          replace_exact(
+              'compose.yml',
+              '      Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}\n',
+              '      Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}\n'
+              '      Ingestion__ObjectStorage__ForcePathStyle: "true"\n')
+          replace_exact(
+              'deploy/compose.complete.yaml',
+              '      Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333\n'
+              '      Ingestion__ObjectStorage__Bucket: ${INGESTION_BUCKET:-ingestion-packages}\n'
+              '      Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY}\n'
+              '      Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY}\n',
+              '      Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333\n'
+              '      Ingestion__ObjectStorage__Region: ${OBJECT_STORAGE_REGION:-us-east-1}\n'
+              '      Ingestion__ObjectStorage__Bucket: ${INGESTION_BUCKET:-ingestion-packages}\n'
+              '      Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY}\n'
+              '      Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY}\n'
+              '      Ingestion__ObjectStorage__ForcePathStyle: "true"\n',
+              expected=2)
+          replace_exact(
+              'deploy/compose.complete.yaml',
+              '      IngestionWorker__WorkerIdentity: ingestion-validation-worker\n',
+              '      IngestionWorker__WorkerIdentity: ingestion-validation-worker\n'
+              '      IngestionWorker__ValidationBatchSize: "10"\n'
+              '      IngestionWorker__LeaseDuration: "00:05:00"\n'
+              '      IngestionWorker__EmptyDelay: "00:00:02"\n')
+
+          replace_exact(
+              'AggregatorBackend.slnx',
+              '    <Project Path="tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj" />\n',
+              '    <Project Path="tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj" />\n'
+              '    <Project Path="tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj" />\n')
+          for solution in ['AggregatorBackend.All.slnx', 'AggregatorBackend.Runtime.slnx']:
+              replace_exact(
+                  solution,
+                  '    <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />\n',
+                  '    <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />\n'
+                  '    <Project Path="src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj" />\n')
+              replace_exact(
+                  solution,
+                  '    <Project Path="tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj" />\n',
+                  '    <Project Path="tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj" />\n'
+                  '    <Project Path="tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj" />\n'
+                  '    <Project Path="tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj" />\n')
+
+          module = '.codex/modules/ingestion.md'
+          replace_exact(
+              module,
+              '- `Ingestion.Worker`: bounded validation and Catalog-delivery loops over persisted leases and exact owner state.\n',
+              '- `Ingestion.Worker`: bounded validation loop over the canonical `processing.validation_job` lease and item-decision ledger. It owns no parallel payload contract or schema.\n')
+          replace_exact(
+              module,
+              '- `Ingestion.Migrations`: one-shot SQL owner for registration, processing, delivery, package-work, constraints, indexes, immutable records, lifecycle-transition enforcement, and migration identity.\n',
+              '- `Ingestion.Migrations`: one-shot SQL owner for registration, canonical processing and delivery, constraints, indexes, immutable records, lifecycle-transition enforcement, migration identity, and explicit removal of the obsolete package-validation tables.\n')
+          replace_exact(
+              module,
+              'There is one active review/commit implementation: `IngestionProcessingContracts`, `IngestionProcessingServices`, `IngestionProcessingPersistence`, `IngestionProcessingController`, and `Ingestion.Worker`. The superseded parallel review/commit contracts, controller, workflow, migration, tests, and source-mutating CI workflows were removed rather than retained as compatibility code.\n',
+              'There is one active review/commit implementation: `IngestionProcessingContracts`, `IngestionProcessingServices`, `IngestionProcessingPersistence`, `IngestionProcessingController`, and `Ingestion.Worker`. The superseded parallel review/commit contracts, controller, workflow, tests, source generators, and source-mutating CI workflows were removed rather than retained as compatibility code. The historical migration that created the abandoned package-validation tables is followed by an owner migration that drops them.\n')
+          replace_exact(
+              module,
+              '→ delivery worker publishes typed Catalog draft commands\n',
+              '→ the canonical delivery service leases typed Catalog draft commands for the broker adapter\n')
+          replace_exact(
+              module,
+              '- Application and processing tests cover canonical package integrity, duplicate-item rejection, explicit accepted/review/rejected classification, review decision identity, idempotent commit, draft-only Catalog command shape, and bounded worker behavior.\n',
+              '- Application and processing tests cover canonical package integrity, duplicate-item rejection, explicit accepted/review/rejected classification, review decision identity, idempotent commit, and draft-only Catalog command shape.\n- Worker tests cover strict owner configuration and registration of only the canonical validation hosted service.\n')
+
+          if (root / 'tools/IngestionWorkerGenerator').exists() and any((root / 'tools/IngestionWorkerGenerator').iterdir()):
+              raise RuntimeError('Obsolete Ingestion generator directory is not empty.')
+          PY
+
+      - name: Prove duplicate production owners are unreachable
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'IngestionPackagePayloadValidator|IngestionPackageProcessingService|IIngestionPackageWorkRepository|IngestionPackageWorkClaim|AggregatorCandidatePayloadContract' \
+            src/Ingestion tests/Ingestion; then
+            echo 'An obsolete Ingestion validation owner remains reachable.' >&2
+            exit 1
+          fi
+          test ! -e tools/IngestionWorkerGenerator/Program.cs
+          test ! -e .github/workflows/generate-ingestion-worker.yml
+          test ! -e .github/workflows/generate-ingestion-worker-v2.yml
+
+      - name: Restore Ingestion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Ingestion tests/Ingestion -name '*.csproj' -type f | sort)
+          test "${#projects[@]}" -gt 0
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+          dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
+
+      - name: Format changed Ingestion projects
+        shell: bash
+        run: |
+          projects=(
+            src/Ingestion/Ingestion.Application/Ingestion.Application.csproj
+            src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj
+            src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
+            src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
+            tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj
+            tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --no-restore
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build Ingestion production graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
+
+      - name: Test complete Ingestion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find tests/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger 'console;verbosity=normal' /m:1 /nr:false
+          done
+
+      - name: Prove architecture boundary
+        shell: bash
+        run: |
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-restore -warnaserror --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Commit proven owner consolidation and remove this workflow
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- \
+              src/Ingestion tests/Ingestion .codex/modules/ingestion.md \
+              compose.yml deploy/compose.complete.yaml \
+              AggregatorBackend.slnx AggregatorBackend.All.slnx AggregatorBackend.Runtime.slnx \
+              tools/IngestionWorkerGenerator \
+              tools/completion/normalize_ingestion_worker_generator.py \
+              tools/completion/normalize_ingestion_worker_terminal.py \
+              docs/generated/ingestion-worker-generation.md)
+            test -z "$affected" || {
+              printf 'Ingestion owner changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm .github/workflows/consolidate-ingestion-owner.yml
+          paths=(
+            src/Ingestion
+            tests/Ingestion
+            .codex/modules/ingestion.md
+            compose.yml
+            deploy/compose.complete.yaml
+            AggregatorBackend.slnx
+            AggregatorBackend.All.slnx
+            AggregatorBackend.Runtime.slnx
+            tools/IngestionWorkerGenerator
+            tools/completion/normalize_ingestion_worker_generator.py
+            tools/completion/normalize_ingestion_worker_terminal.py
+            docs/generated/ingestion-worker-generation.md
+            .github/workflows/consolidate-ingestion-owner.yml
+          )
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Consolidate canonical Ingestion processing owner' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Canonical Ingestion owner proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/ingestion-owner'
+            });
