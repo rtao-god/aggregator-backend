@@ -61,6 +61,13 @@ public sealed record PlacementContext(
         Guid? placementId,
         string? scopeKey)
     {
+        if (!Enum.IsDefined(exposureKind))
+        {
+            throw new AnalyticsDomainException(
+                "ANALYTICS_PLACEMENT_EXPOSURE_INVALID",
+                $"Placement exposure kind '{exposureKind}' is unsupported.");
+        }
+
         if (exposureKind == PlacementExposureKind.Sponsored)
         {
             if (placementId is null || placementId == Guid.Empty)
