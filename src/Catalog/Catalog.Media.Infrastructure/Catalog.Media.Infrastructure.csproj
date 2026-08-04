@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Catalog.Media.Domain/Catalog.Media.Domain.csproj" />
+    <ProjectReference Include="../Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
+    <ProjectReference Include="../Catalog.Media.Application/Catalog.Media.Application.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
+  </ItemGroup>
+</Project>

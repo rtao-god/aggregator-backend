@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Catalog.Media.Application/Catalog.Media.Application.csproj" />
+    <ProjectReference Include="../Catalog.Media.Domain/Catalog.Media.Domain.csproj" />
+    <ProjectReference Include="../Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
+  </ItemGroup>
+</Project>
