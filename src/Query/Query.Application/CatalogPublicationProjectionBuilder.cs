@@ -73,9 +73,9 @@ public static class CatalogPublicationProjectionBuilder
             safetyDigest);
         var publicReadDigest = QueryCanonicalJson.ComputeDigest(new
         {
-            baseProjection.ContentDigest,
-            promotionOverlay.ContentDigest,
-            safetyOverlay.ContentDigest,
+            baseProjectionDigest = baseProjection.ContentDigest,
+            promotionOverlayDigest = promotionOverlay.ContentDigest,
+            safetyOverlayDigest = safetyOverlay.ContentDigest,
             artifact.PublicationId,
         });
         var publicReadRevision = PublicReadRevision.Create(
