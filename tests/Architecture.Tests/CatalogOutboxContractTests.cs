@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace Architecture.Tests;
 
 public sealed class CatalogOutboxContractTests
