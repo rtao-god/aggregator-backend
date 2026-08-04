@@ -33,11 +33,19 @@ jobs:
       - name: Format
         run: dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
       - name: Build
-        run: dotnet build AggregatorBackend.slnx --no-restore -warnaserror
+        run: >-
+          dotnet build AggregatorBackend.slnx
+          --no-restore -warnaserror /m:1 /nr:false
       - name: Test
-        run: dotnet test AggregatorBackend.slnx --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test AggregatorBackend.slnx
+          --no-build --no-restore -warnaserror
+          --logger "console;verbosity=normal" /m:1 /nr:false
       - name: Architecture proof
-        run: dotnet test tests/Architecture.Tests/Architecture.Tests.csproj --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj
+          --no-build --no-restore -warnaserror
+          --logger "console;verbosity=normal" /m:1 /nr:false
       - name: Publish connector-readable status
         if: always()
         uses: actions/github-script@v9
