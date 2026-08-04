@@ -1,0 +1,307 @@
+name: Converge canonical static gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/converge-static-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: canonical-static-convergence
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  converge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Apply pending reviewed owner repairs idempotently
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          def execute_yaml_python_block(
+              workflow: Path,
+              step_name: str,
+              next_step_name: str | None = None) -> None:
+              source = workflow.read_text(encoding='utf-8')
+              marker = f"      - name: {step_name}\n"
+              start = source.index(marker)
+              run_marker = "        run: |\n"
+              start = source.index(run_marker, start) + len(run_marker)
+              if next_step_name is None:
+                  end = source.find("\n      - name:", start)
+              else:
+                  end = source.index(f"\n      - name: {next_step_name}", start)
+              if end < 0:
+                  raise RuntimeError(f'End of step {step_name} was not found in {workflow}.')
+              block = textwrap.dedent(source[start:end])
+              if block.startswith("python3 - <<'"):
+                  first_newline = block.index('\n') + 1
+                  terminator = block[:first_newline].split("<<'", 1)[1].split("'", 1)[0]
+                  end_marker = f"\n{terminator}"
+                  block = block[first_newline:block.rindex(end_marker)]
+              exec(compile(block, str(workflow), 'exec'))
+
+          architecture = Path('.github/workflows/repair-architecture-proof-v3.yml')
+          if architecture.exists():
+              execute_yaml_python_block(
+                  architecture,
+                  'Install analyzer-safe semantic assertions',
+                  'Restore, format, and build architecture proof')
+
+          obsolete_ingestion = Path(
+              'src/Ingestion/Ingestion.Application/IngestionPackageProcessingService.cs')
+          ingestion_v4 = Path('.github/workflows/consolidate-ingestion-owner-v4.yml')
+          if obsolete_ingestion.exists():
+              if not ingestion_v4.exists():
+                  raise RuntimeError(
+                      'The obsolete Ingestion owner is reachable but its reviewed consolidation workflow is missing.')
+              execute_yaml_python_block(
+                  ingestion_v4,
+                  'Apply the reviewed Ingestion consolidation',
+                  'Prove duplicate production owners are unreachable')
+
+      - name: Prove duplicate owners are absent after convergence
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'IngestionPackagePayloadValidator|IngestionPackageProcessingService|IIngestionPackageWorkRepository|IngestionPackageWorkClaim|AggregatorCandidatePayloadContract' \
+            src/Ingestion tests/Ingestion; then
+            echo 'An obsolete Ingestion validation owner remains reachable.' >&2
+            exit 1
+          fi
+          if grep -R --line-number --include='*.cs' \
+            -E 'PromotionCampaign(Service|Snapshot|State|Response|Request|Repository|Command)' \
+            src/Promotion tests/Promotion; then
+            echo 'A parallel Promotion campaign owner remains reachable.' >&2
+            exit 1
+          fi
+
+      - name: Restore canonical solution
+        id: restore
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet restore AggregatorBackend.slnx 2>&1 | tee /tmp/static-restore.log
+
+      - name: Format canonical solution
+        id: format
+        if: steps.restore.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet format AggregatorBackend.slnx --no-restore 2>&1 | tee /tmp/static-format.log
+          dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore 2>&1 | tee -a /tmp/static-format.log
+
+      - name: Build canonical solution
+        id: build
+        if: steps.restore.outcome == 'success' && steps.format.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build AggregatorBackend.slnx --no-restore -warnaserror /m:1 /nr:false \
+            2>&1 | tee /tmp/static-build.log
+
+      - name: Test canonical solution
+        id: test
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test AggregatorBackend.slnx --no-build -warnaserror \
+            --logger 'console;verbosity=normal' /m:1 /nr:false \
+            2>&1 | tee /tmp/static-test.log
+
+      - name: Determine gate result
+        id: gate
+        shell: bash
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          FORMAT_OUTCOME: ${{ steps.format.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          printf 'restore=%s\nformat=%s\nbuild=%s\ntest=%s\n' \
+            "$RESTORE_OUTCOME" "$FORMAT_OUTCOME" "$BUILD_OUTCOME" "$TEST_OUTCOME"
+          if [ "$RESTORE_OUTCOME" = success ] && \
+             [ "$FORMAT_OUTCOME" = success ] && \
+             [ "$BUILD_OUTCOME" = success ] && \
+             [ "$TEST_OUTCOME" = success ]; then
+            echo 'passed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'passed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish exact failure diagnostic
+        if: steps.gate.outputs.passed != 'true'
+        uses: actions/github-script@v9
+        env:
+          RESTORE_OUTCOME: ${{ steps.restore.outcome }}
+          FORMAT_OUTCOME: ${{ steps.format.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const logs = [
+              ['restore', '/tmp/static-restore.log'],
+              ['format', '/tmp/static-format.log'],
+              ['build', '/tmp/static-build.log'],
+              ['test', '/tmp/static-test.log']
+            ];
+            let diagnostic = '';
+            for (const [name, path] of logs) {
+              if (!fs.existsSync(path)) continue;
+              const lines = fs.readFileSync(path, 'utf8').split(/\r?\n/);
+              const relevant = lines.filter(line =>
+                /\berror\b|\bfailed\b|\bfailure\b|\bwarning\b|\bexception\b/i.test(line));
+              const selected = (relevant.length > 0 ? relevant : lines).slice(-160);
+              diagnostic += `\n## ${name}\n\n\`\`\`text\n${selected.join('\n')}\n\`\`\`\n`;
+            }
+            const title = '[CI] Canonical static gate blocker';
+            const body = [
+              `Commit: ${context.sha}`,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '| Stage | Outcome |',
+              '|---|---|',
+              `| restore | ${process.env.RESTORE_OUTCOME} |`,
+              `| format | ${process.env.FORMAT_OUTCOME} |`,
+              `| build | ${process.env.BUILD_OUTCOME} |`,
+              `| test | ${process.env.TEST_OUTCOME} |`,
+              diagnostic
+            ].join('\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
+
+      - name: Commit only the fully proven static state
+        if: steps.gate.outputs.passed == 'true'
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            echo 'main changed during the atomic proof; refusing a mixed-base commit.' >&2
+            exit 1
+          fi
+          one_shot_workflows=(
+            .github/workflows/repair-architecture-proof.yml
+            .github/workflows/repair-architecture-proof-v2.yml
+            .github/workflows/repair-architecture-proof-v3.yml
+            .github/workflows/consolidate-ingestion-owner.yml
+            .github/workflows/consolidate-ingestion-owner-v2.yml
+            .github/workflows/consolidate-ingestion-owner-v3.yml
+            .github/workflows/consolidate-ingestion-owner-v4.yml
+            .github/workflows/fix-promotion-campaign-owner.yml
+            .github/workflows/complete-promotion-owner.yml
+            .github/workflows/complete-promotion-owner-v2.yml
+            .github/workflows/continue-after-architecture.yml
+            .github/workflows/continue-after-architecture-v3.yml
+            .github/workflows/converge-static-gate.yml
+          )
+          for workflow in "${one_shot_workflows[@]}"; do
+            if [ -e "$workflow" ]; then git rm "$workflow"; fi
+          done
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          tree=$(git write-tree)
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Converge canonical static gate' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Close resolved diagnostic issue
+        if: steps.gate.outputs.passed == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const title = '[CI] Canonical static gate blocker';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            for (const issue of issues) {
+              if (issue.title === title && !issue.pull_request) {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed'
+                });
+              }
+            }
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          PASSED: ${{ steps.gate.outputs.passed }}
+        with:
+          script: |
+            const passed = process.env.PASSED === 'true';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: passed ? 'success' : 'failure',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: passed ? 'Canonical static gate passed' : 'Canonical static gate failed',
+              context: 'ci/canonical-static-gate'
+            });
+
+      - name: Fail job when gate is red
+        if: steps.gate.outputs.passed != 'true'
+        run: exit 1
