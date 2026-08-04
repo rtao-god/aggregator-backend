@@ -44,7 +44,7 @@ public sealed class QueryProjectionService(
             activation.EventId,
             CatalogIntegrationEventTypes.PublicationActivated,
             eventPayloadDigest,
-            activation.PublicationSequence,
+            activation.ActivationRevision,
             builtAtUtc);
         return await projectionStore.ActivateAsync(projection, inbox, cancellationToken);
     }
@@ -63,7 +63,8 @@ public sealed class QueryProjectionService(
 
         if (string.IsNullOrWhiteSpace(activation.CatalogKey) ||
             string.IsNullOrWhiteSpace(activation.ArtifactKey) ||
-            activation.PublicationSequence <= 0)
+            activation.PublicationSequence <= 0 ||
+            activation.ActivationRevision <= 0)
         {
             throw new QueryProjectionException(
                 "Query.Inbox",
