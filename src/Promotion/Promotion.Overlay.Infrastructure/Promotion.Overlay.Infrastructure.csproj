@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Promotion.Overlay.Application/Promotion.Overlay.Application.csproj" />
+    <ProjectReference Include="../Promotion.Contracts/Promotion.Contracts.csproj" />
+  </ItemGroup>
+</Project>
