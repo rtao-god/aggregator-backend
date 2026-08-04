@@ -310,6 +310,7 @@ public static class CatalogIngestionInfrastructureExtensions
         services.AddScoped<ICatalogIngestionDraftStore, EfCatalogIngestionDraftStore>();
         services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
         services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
+        services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
         return services;
     }
 }
