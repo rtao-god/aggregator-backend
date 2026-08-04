@@ -10,6 +10,7 @@ public static class AnalyticsApplicationServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SubmitInteractionEventService>();
         services.AddScoped<ReadDailyListingMetricsService>();
+        services.AddScoped<RebuildDailyAnalyticsMetricsService>();
         return services;
     }
 }
