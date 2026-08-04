@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Aggregator.Catalog.Contracts;
 
 public static class CatalogIngestionCommandContracts
@@ -8,8 +10,19 @@ public static class CatalogIngestionCommandContracts
 public enum CatalogDraftValueKindContract
 {
     Text = 1,
+
+    [SuppressMessage(
+        "Naming",
+        "CA1720:Identifier contains type name",
+        Justification = "Integer is the canonical producer-owned ingestion value-kind token.")]
     Integer = 2,
+
+    [SuppressMessage(
+        "Naming",
+        "CA1720:Identifier contains type name",
+        Justification = "Decimal is the canonical producer-owned ingestion value-kind token.")]
     Decimal = 3,
+
     Boolean = 4,
     Date = 5,
     DateTime = 6,
