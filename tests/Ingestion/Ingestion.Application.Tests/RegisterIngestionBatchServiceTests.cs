@@ -186,13 +186,16 @@ public sealed class RegisterIngestionBatchServiceTests
             RegisteredBatch = batch;
             CommandIdentity = commandIdentity;
             CallerServiceIdentity = callerServiceIdentity;
-            return Task.FromResult(new IngestionBatchRegistrationResult(batch, false));
+            return Task.FromResult(
+                new IngestionBatchRegistrationResult(
+                    IngestionBatchSnapshot.From(batch),
+                    false));
         }
 
-        public Task<ImportBatch?> GetAsync(
+        public Task<IngestionBatchSnapshot?> ReadAsync(
             ImportBatchId batchId,
             CancellationToken cancellationToken) =>
-            Task.FromResult<ImportBatch?>(null);
+            Task.FromResult<IngestionBatchSnapshot?>(null);
     }
 
     private sealed class FixedClock(DateTimeOffset value) : IIngestionClock
