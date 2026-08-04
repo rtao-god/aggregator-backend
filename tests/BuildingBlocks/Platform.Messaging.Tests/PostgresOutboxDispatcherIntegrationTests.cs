@@ -59,15 +59,17 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
                 PayloadJson = "{\"state\":\"corrupted\"}",
             };
             await scope.InsertAsync(corrupted);
+            var publisher = new RecordingPublisher();
             var dispatcher = CreateDispatcher(
                 scope,
-                new IntegrityPublisher(),
+                publisher,
                 maximumDeliveryAttempts: 1);
 
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 dispatcher.DispatchOnceAsync(CancellationToken.None));
 
             Assert.Contains("digest does not match", exception.Message, StringComparison.Ordinal);
+            Assert.Empty(publisher.Messages);
             var state = await scope.ReadStateAsync(corrupted.MessageId);
             Assert.Equal(1, state.DeliveryAttempts);
             Assert.False(state.IsDispatched);
@@ -126,7 +128,6 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
             {
                 ConnectionString = scope.ConnectionString,
                 Schema = scope.Schema,
-                Table = "outbox_message",
                 DispatcherIdentity = dispatcherIdentity,
                 BatchSize = 10,
                 MaximumDeliveryAttempts = maximumDeliveryAttempts,
@@ -164,18 +165,7 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
         public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
             Messages.Add(message);
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class IntegrityPublisher : IIntegrationEventPublisher
-    {
-        public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
             return Task.CompletedTask;
         }
     }
@@ -187,7 +177,6 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
     {
         public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken)
         {
-            _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
             await scope.ReplaceLeaseAsync(
                 message.MessageId,
                 replacementLeaseToken,
@@ -248,8 +237,8 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
                     correlation_id varchar(128) NOT NULL,
                     causation_id uuid NULL,
                     lease_token uuid NULL,
-                    lease_owner varchar(200) NULL,
-                    lease_until_utc timestamptz NULL,
+                    leased_by varchar(200) NULL,
+                    lease_expires_at_utc timestamptz NULL,
                     delivery_attempts integer NOT NULL DEFAULT 0,
                     dispatched_at_utc timestamptz NULL,
                     last_error varchar(4000) NULL,
@@ -320,8 +309,8 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
             command.CommandText = $"""
                 UPDATE "{Schema}"."outbox_message"
                 SET lease_token = @leaseToken,
-                    lease_owner = @leaseOwner,
-                    lease_until_utc = @leaseUntilUtc
+                    leased_by = @leaseOwner,
+                    lease_expires_at_utc = @leaseUntilUtc
                 WHERE message_id = @messageId;
                 """;
             command.Parameters.AddWithValue("messageId", NpgsqlDbType.Uuid, messageId);
@@ -344,8 +333,8 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
                        dispatched_at_utc IS NOT NULL,
                        dead_lettered_at_utc IS NOT NULL,
                        lease_token,
-                       lease_owner,
-                       lease_until_utc,
+                       leased_by,
+                       lease_expires_at_utc,
                        last_error,
                        dead_letter_reason
                 FROM "{Schema}"."outbox_message"

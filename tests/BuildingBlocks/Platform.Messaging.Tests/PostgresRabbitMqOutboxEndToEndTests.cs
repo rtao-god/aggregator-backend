@@ -75,7 +75,6 @@ public sealed class PostgresRabbitMqOutboxEndToEndTests
                 {
                     ConnectionString = postgresConnectionString,
                     Schema = schema,
-                    Table = "outbox_message",
                     DispatcherIdentity = $"platform-messaging-e2e-dispatcher-{suffix}",
                     BatchSize = 10,
                     MaximumDeliveryAttempts = 3,
@@ -130,8 +129,8 @@ public sealed class PostgresRabbitMqOutboxEndToEndTests
                 correlation_id varchar(128) NOT NULL,
                 causation_id uuid NULL,
                 lease_token uuid NULL,
-                lease_owner varchar(200) NULL,
-                lease_until_utc timestamptz NULL,
+                leased_by varchar(200) NULL,
+                lease_expires_at_utc timestamptz NULL,
                 delivery_attempts integer NOT NULL DEFAULT 0,
                 dispatched_at_utc timestamptz NULL,
                 last_error varchar(4000) NULL,
@@ -191,8 +190,8 @@ public sealed class PostgresRabbitMqOutboxEndToEndTests
             SELECT dispatched_at_utc IS NOT NULL
                AND dead_lettered_at_utc IS NULL
                AND lease_token IS NULL
-               AND lease_owner IS NULL
-               AND lease_until_utc IS NULL
+               AND leased_by IS NULL
+               AND lease_expires_at_utc IS NULL
             FROM "{schema}"."outbox_message"
             WHERE message_id = @messageId;
             """;

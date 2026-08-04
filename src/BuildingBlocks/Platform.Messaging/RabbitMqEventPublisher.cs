@@ -1,4 +1,3 @@
-using System.Text;
 using RabbitMQ.Client;
 
 namespace Platform.Messaging;
@@ -48,6 +47,7 @@ public sealed class RabbitMqEventPublisher : IIntegrationEventPublisher, IAsyncD
     public async Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
+        var body = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
         var channel = await GetChannelAsync(cancellationToken);
         var properties = new BasicProperties
         {
@@ -66,7 +66,6 @@ public sealed class RabbitMqEventPublisher : IIntegrationEventPublisher, IAsyncD
             },
         };
 
-        var body = Encoding.UTF8.GetBytes(message.PayloadJson);
         await channel.BasicPublishAsync(
             _options.Exchange,
             message.RoutingKey,

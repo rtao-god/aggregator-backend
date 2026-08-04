@@ -101,6 +101,24 @@ public sealed class RabbitMqEventPublisherIntegrationTests
             CancellationToken.None);
     }
 
+    [Fact]
+    public async Task CorruptedPayloadIsRejectedBeforeBrokerConnection()
+    {
+        var validMessage = CreateMessage();
+        var corruptedMessage = validMessage with { PayloadJson = "{}" };
+        await using var publisher = new RabbitMqEventPublisher(new RabbitMqPublisherOptions
+        {
+            BrokerUri = new Uri("amqp://127.0.0.1:1", UriKind.Absolute),
+            Exchange = "platform.messaging.integrity-test",
+            ClientProvidedName = "platform-messaging-integrity-test",
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            publisher.PublishAsync(corruptedMessage, CancellationToken.None));
+
+        Assert.Contains("digest does not match", exception.Message, StringComparison.Ordinal);
+    }
+
     private static async Task<BasicGetResult> GetEventuallyAsync(IChannel channel, string queueName)
     {
         for (var attempt = 0; attempt < 20; attempt++)

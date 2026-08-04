@@ -31,6 +31,7 @@ public sealed class PostgresOutboxDispatcher
         {
             try
             {
+                _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
                 await _publisher.PublishAsync(message, cancellationToken);
                 await MarkDispatchedAsync(
                     message.MessageId,

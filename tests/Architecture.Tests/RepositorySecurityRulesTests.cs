@@ -8,39 +8,92 @@ public sealed partial class RepositorySecurityRulesTests
     private static readonly string RepositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory);
 
     [Fact]
-    public void CommandControllersRequireExplicitAuthorization()
+    public void MutatingEndpointsRequireExplicitAccessDeclaration()
     {
         var failures = new List<string>();
         foreach (var file in EnumerateSourceFiles("src", "*.Controller.cs", "*Controller.cs"))
         {
-            var source = File.ReadAllText(file);
-            if (!source.Contains("[ApiController]", StringComparison.Ordinal) ||
-                !source.Contains("ControllerBase", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var hasMutation = MutationAttributeRegex().IsMatch(source);
-            if (!hasMutation)
-            {
-                continue;
-            }
-
-            var classAuthorization = HasAuthorizationBeforeControllerDeclaration(source);
-            foreach (Match mutation in MutationMethodRegex().Matches(source))
-            {
-                var prefixStart = Math.Max(0, mutation.Index - 1200);
-                var prefix = source[prefixStart..mutation.Index];
-                if (!classAuthorization && !AuthorizationAttributeRegex().IsMatch(prefix))
-                {
-                    failures.Add(
-                        $"{Relative(file)} contains a mutating endpoint without an explicit [Authorize] policy near offset {mutation.Index}.");
-                }
-            }
+            failures.AddRange(FindMutatingEndpointsWithoutAccessDeclaration(
+                File.ReadAllText(file),
+                Relative(file)));
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
+
+    [Fact]
+    public void AccessScannerAcceptsExplicitPolicyAndAnonymousContracts()
+    {
+        const string source = """
+        [ApiController]
+        public sealed class PublicController : ControllerBase
+        {
+            [HttpPost]
+            [AllowAnonymous]
+            public void Submit() { }
+        }
+
+        [ApiController]
+        [Authorize("owner.policy")]
+        public sealed class ProtectedController : ControllerBase
+        {
+            [HttpPost]
+            public void Create() { }
+        }
+
+        [ApiController]
+        public sealed class MethodProtectedController : ControllerBase
+        {
+            [Authorize(Policy = "owner.policy")]
+            [HttpPost]
+            public void Update() { }
+        }
+        """;
+
+        Assert.Empty(FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
+    }
+
+    [Fact]
+    public void AccessScannerDoesNotBorrowAuthorizationFromAnotherController()
+    {
+        const string source = """
+        [ApiController]
+        [Authorize("owner.policy")]
+        public sealed class ProtectedController : ControllerBase
+        {
+            [HttpPost]
+            public void Create() { }
+        }
+
+        [ApiController]
+        public sealed class UnprotectedController : ControllerBase
+        {
+            [HttpPost]
+            public void Create() { }
+        }
+        """;
+
+        var failure = Assert.Single(
+            FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
+        Assert.Contains("UnprotectedController", failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AccessScannerRejectsBareAuthorizeAttribute()
+    {
+        const string source = """
+        [ApiController]
+        [Authorize]
+        public sealed class BareAuthorizeController : ControllerBase
+        {
+            [HttpPost]
+            public void Create() { }
+        }
+        """;
+
+        Assert.Single(FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
+    }
+
 
     [Fact]
     public void ApiAndWorkerStartupNeverOwnBusinessMigrations()
@@ -179,17 +232,72 @@ public sealed partial class RepositorySecurityRulesTests
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
-    private static bool HasAuthorizationBeforeControllerDeclaration(string source)
+    private static List<string> FindMutatingEndpointsWithoutAccessDeclaration(
+    string source,
+    string sourceIdentity)
     {
-        var declaration = ControllerDeclarationRegex().Match(source);
-        if (!declaration.Success)
+        if (!source.Contains("[ApiController]", StringComparison.Ordinal) ||
+            !source.Contains("ControllerBase", StringComparison.Ordinal))
         {
-            return false;
+            return [];
         }
 
-        var prefixStart = Math.Max(0, declaration.Index - 2000);
-        return AuthorizationAttributeRegex().IsMatch(source[prefixStart..declaration.Index]);
+        var failures = new List<string>();
+        var controllerDeclarations = ControllerDeclarationRegex().Matches(source);
+        foreach (Match endpoint in EndpointDeclarationRegex().Matches(source))
+        {
+            var attributes = endpoint.Groups["attributes"].Value;
+            if (!MutationAttributeRegex().IsMatch(attributes))
+            {
+                continue;
+            }
+
+            Match? controllerDeclaration = null;
+            foreach (Match candidate in controllerDeclarations)
+            {
+                if (candidate.Index >= endpoint.Index)
+                {
+                    break;
+                }
+
+                controllerDeclaration = candidate;
+            }
+
+            if (controllerDeclaration is null)
+            {
+                failures.Add(
+                    $"{sourceIdentity} contains a mutating endpoint outside an explicit controller declaration near offset {endpoint.Index}.");
+                continue;
+            }
+
+            if (!HasExplicitAccessDeclarationBeforeController(source, controllerDeclaration) &&
+                !HasExplicitAccessDeclaration(attributes))
+            {
+                failures.Add(
+                    $"{sourceIdentity} controller '{controllerDeclaration.Value.Trim()}' contains a mutating endpoint without an explicit [Authorize(...)] or [AllowAnonymous] declaration near offset {endpoint.Index}.");
+            }
+        }
+
+        return failures;
     }
+
+    private static bool HasExplicitAccessDeclarationBeforeController(
+        string source,
+        Match declaration)
+    {
+        var prefixStart = Math.Max(0, declaration.Index - 2000);
+        var prefix = source[prefixStart..declaration.Index];
+        var apiControllerIndex = prefix.LastIndexOf(
+            "[ApiController]",
+            StringComparison.Ordinal);
+        return apiControllerIndex >= 0 &&
+            HasExplicitAccessDeclaration(prefix[apiControllerIndex..]);
+    }
+
+    private static bool HasExplicitAccessDeclaration(string source) =>
+        AuthorizationAttributeRegex().IsMatch(source) ||
+        AllowAnonymousAttributeRegex().IsMatch(source);
+
 
     private static IEnumerable<string> EnumerateSourceFiles(
         string relativeRoot,
@@ -269,14 +377,17 @@ public sealed partial class RepositorySecurityRulesTests
     [GeneratedRegex(@"\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\([^\]]*\))?\]", RegexOptions.CultureInvariant)]
     private static partial Regex MutationAttributeRegex();
 
-    [GeneratedRegex(@"\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\([^\]]*\))?\][\s\S]{0,1800}?\b(?:public|internal)\s+(?:async\s+)?", RegexOptions.CultureInvariant)]
-    private static partial Regex MutationMethodRegex();
+    [GeneratedRegex(@"(?<attributes>(?:\s*\[[^\]]+\]\s*)+)\b(?:public|internal)\s+(?:(?:static|virtual|override|sealed|new|unsafe|async)\s+)*", RegexOptions.CultureInvariant)]
+    private static partial Regex EndpointDeclarationRegex();
 
     [GeneratedRegex(@"\b(?:public|internal)\s+(?:(?:sealed|abstract|partial)\s+)*class\s+\w*Controller\b", RegexOptions.CultureInvariant)]
     private static partial Regex ControllerDeclarationRegex();
 
-    [GeneratedRegex(@"\[Authorize(?:Attribute)?\s*\([^\]]*(?:Policy\s*=|policy\s*:)[^\]]+\)\]", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\[Authorize(?:Attribute)?\s*\(\s*[^)\s][^)]*\)\]", RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationAttributeRegex();
+
+    [GeneratedRegex(@"\[AllowAnonymous(?:Attribute)?\s*\]", RegexOptions.CultureInvariant)]
+    private static partial Regex AllowAnonymousAttributeRegex();
 
     [GeneratedRegex(@"(?im)(?<name>password|secret(?:key)?|accesskey|clientsecret|apikey|token)\s*(?:=|:|\])\s*(?<value>[^\r\n#]+)", RegexOptions.CultureInvariant)]
     private static partial Regex CredentialAssignmentRegex();
