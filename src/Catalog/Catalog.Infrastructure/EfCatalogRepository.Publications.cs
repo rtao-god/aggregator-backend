@@ -35,6 +35,33 @@ public sealed partial class EfCatalogRepository
         }
     }
 
+    public async Task<long> GetNextPublicationActivationRevisionAsync(
+        CatalogKey catalogKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(catalogKey);
+        await _dbContext.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await using var command = _dbContext.Database.GetDbConnection().CreateCommand();
+            command.CommandText = """
+                INSERT INTO catalog.publication_activation_sequence (catalog_key, next_revision)
+                VALUES (@catalog_key, 2)
+                ON CONFLICT (catalog_key)
+                DO UPDATE SET next_revision = catalog.publication_activation_sequence.next_revision + 1
+                RETURNING next_revision - 1;
+                """;
+            command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey.Value));
+            var result = await command.ExecuteScalarAsync(cancellationToken)
+                ?? throw new InvalidOperationException("Publication activation revision allocator returned no value.");
+            return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            await _dbContext.Database.CloseConnectionAsync();
+        }
+    }
+
     public async Task<Guid?> GetCurrentPublicationIdAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken)
