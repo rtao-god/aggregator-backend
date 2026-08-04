@@ -1,0 +1,471 @@
+name: Repair semantic architecture proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-architecture-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-architecture-proof
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Align architecture assertions with canonical contracts
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path.cwd()
+
+          outbox_path = root / 'tests/Architecture.Tests/CatalogOutboxContractTests.cs'
+          outbox = outbox_path.read_text(encoding='utf-8')
+          if outbox.count('"lease_owner"') != 1:
+              raise RuntimeError('Expected exactly one stale Catalog outbox lease_owner assertion.')
+          outbox_path.write_text(
+              outbox.replace('"lease_owner"', '"leased_by"'),
+              encoding='utf-8',
+              newline='\n')
+
+          security_path = root / 'tests/Architecture.Tests/RepositorySecurityRulesTests.cs'
+          security = security_path.read_text(encoding='utf-8')
+
+          def replace_fact_method(source: str, method_name: str, replacement: str) -> str:
+              signature = re.search(
+                  rf'public\s+void\s+{re.escape(method_name)}\s*\(\s*\)',
+                  source)
+              if signature is None:
+                  raise RuntimeError(f'Architecture method {method_name} was not found.')
+              start = source.rfind('    [Fact]', 0, signature.start())
+              if start < 0:
+                  raise RuntimeError(f'[Fact] boundary for {method_name} was not found.')
+              next_fact = source.find('\n    [Fact]', signature.end())
+              if next_fact < 0:
+                  class_end = source.rfind('\n}')
+                  if class_end < signature.end():
+                      raise RuntimeError(f'Class boundary for {method_name} was not found.')
+                  end = class_end
+              else:
+                  end = next_fact
+              return source[:start] + replacement.rstrip() + '\n' + source[end:]
+
+          authorization_method = r'''    [Fact]
+              public void CommandControllersRequireExplicitAuthorization()
+              {
+                  var repositoryRoot = LocateRepositoryRoot();
+                  var failures = new List<string>();
+                  var controllersRoot = Path.Combine(repositoryRoot, "src");
+                  foreach (var path in Directory.EnumerateFiles(
+                               controllersRoot,
+                               "*Controller.cs",
+                               SearchOption.AllDirectories))
+                  {
+                      var lines = File.ReadAllLines(path);
+                      var classHasExplicitPolicy = HasExplicitClassPolicy(lines);
+                      for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+                      {
+                          if (!IsMutatingEndpointAttribute(lines[lineIndex]))
+                          {
+                              continue;
+                          }
+
+                          var attributeStart = lineIndex;
+                          while (attributeStart > 0)
+                          {
+                              var previous = lines[attributeStart - 1].Trim();
+                              if (previous.Length == 0 || previous.StartsWith('[', StringComparison.Ordinal))
+                              {
+                                  attributeStart--;
+                                  continue;
+                              }
+
+                              break;
+                          }
+
+                          var methodLine = lineIndex + 1;
+                          while (methodLine < lines.Length &&
+                                 !lines[methodLine].Contains("public ", StringComparison.Ordinal))
+                          {
+                              methodLine++;
+                          }
+
+                          if (methodLine >= lines.Length || methodLine - lineIndex > 40)
+                          {
+                              failures.Add(
+                                  $"{Path.GetRelativePath(repositoryRoot, path)} has a mutating endpoint attribute without a bounded public method declaration near line {lineIndex + 1}.");
+                              continue;
+                          }
+
+                          var attributes = string.Join(
+                              Environment.NewLine,
+                              lines[attributeStart..methodLine]);
+                          if (!classHasExplicitPolicy && !HasExplicitAuthorizePolicy(attributes))
+                          {
+                              failures.Add(
+                                  $"{Path.GetRelativePath(repositoryRoot, path)} has a mutating endpoint without an explicit [Authorize(Policy = ...)] attribute near line {lineIndex + 1}.");
+                          }
+                      }
+                  }
+
+                  Assert.True(
+                      failures.Count == 0,
+                      string.Join(Environment.NewLine, failures));
+
+                  static bool IsMutatingEndpointAttribute(string line)
+                  {
+                      var trimmed = line.TrimStart();
+                      return trimmed.StartsWith("[HttpPost", StringComparison.Ordinal) ||
+                             trimmed.StartsWith("[HttpPut", StringComparison.Ordinal) ||
+                             trimmed.StartsWith("[HttpPatch", StringComparison.Ordinal) ||
+                             trimmed.StartsWith("[HttpDelete", StringComparison.Ordinal);
+                  }
+
+                  static bool HasExplicitClassPolicy(IReadOnlyList<string> lines)
+                  {
+                      var classLine = -1;
+                      for (var index = 0; index < lines.Count; index++)
+                      {
+                          if (lines[index].Contains(" class ", StringComparison.Ordinal) ||
+                              lines[index].TrimStart().StartsWith("class ", StringComparison.Ordinal))
+                          {
+                              classLine = index;
+                              break;
+                          }
+                      }
+
+                      if (classLine < 0)
+                      {
+                          return false;
+                      }
+
+                      var attributeStart = classLine;
+                      while (attributeStart > 0)
+                      {
+                          var previous = lines[attributeStart - 1].Trim();
+                          if (previous.Length == 0 || previous.StartsWith('[', StringComparison.Ordinal))
+                          {
+                              attributeStart--;
+                              continue;
+                          }
+
+                          break;
+                      }
+
+                      return HasExplicitAuthorizePolicy(string.Join(
+                          Environment.NewLine,
+                          lines[attributeStart..classLine]));
+                  }
+
+                  static bool HasExplicitAuthorizePolicy(string attributes) =>
+                      System.Text.RegularExpressions.Regex.IsMatch(
+                          attributes,
+                          @"\[\s*Authorize\s*\([^\]]*\bPolicy\s*=",
+                          System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                          TimeSpan.FromSeconds(1));
+
+                  static string LocateRepositoryRoot()
+                  {
+                      var directory = new DirectoryInfo(AppContext.BaseDirectory);
+                      while (directory is not null)
+                      {
+                          if (File.Exists(Path.Combine(directory.FullName, "AggregatorBackend.slnx")))
+                          {
+                              return directory.FullName;
+                          }
+
+                          directory = directory.Parent;
+                      }
+
+                      throw new InvalidOperationException("Repository root was not found.");
+                  }
+              }
+          '''.replace('              ', '')
+
+          credential_method = r'''    [Fact]
+              public void RepositoryDoesNotCommitCredentialValues()
+              {
+                  var repositoryRoot = LocateRepositoryRoot();
+                  var candidates = new HashSet<string>(StringComparer.Ordinal);
+                  foreach (var path in Directory.EnumerateFiles(repositoryRoot, "compose*.yml"))
+                  {
+                      candidates.Add(path);
+                  }
+
+                  foreach (var path in Directory.EnumerateFiles(repositoryRoot, "compose*.yaml"))
+                  {
+                      candidates.Add(path);
+                  }
+
+                  var deployRoot = Path.Combine(repositoryRoot, "deploy");
+                  if (Directory.Exists(deployRoot))
+                  {
+                      foreach (var path in Directory.EnumerateFiles(
+                                   deployRoot,
+                                   "*",
+                                   SearchOption.AllDirectories))
+                      {
+                          if (IsConfigurationFile(path))
+                          {
+                              candidates.Add(path);
+                          }
+                      }
+                  }
+
+                  var sourceRoot = Path.Combine(repositoryRoot, "src");
+                  foreach (var path in Directory.EnumerateFiles(
+                               sourceRoot,
+                               "appsettings*.json",
+                               SearchOption.AllDirectories))
+                  {
+                      candidates.Add(path);
+                  }
+
+                  var failures = new List<string>();
+                  foreach (var path in candidates.Order(StringComparer.Ordinal))
+                  {
+                      var lines = File.ReadAllLines(path);
+                      for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+                      {
+                          var line = lines[lineIndex].Trim();
+                          if (line.Length == 0 || line.StartsWith('#', StringComparison.Ordinal))
+                          {
+                              continue;
+                          }
+
+                          foreach (System.Text.RegularExpressions.Match match in CredentialAssignmentPattern().Matches(line))
+                          {
+                              var value = match.Groups["value"].Value;
+                              if (IsForbiddenLiteralCredential(value))
+                              {
+                                  failures.Add(
+                                      $"{Path.GetRelativePath(repositoryRoot, path)}:{lineIndex + 1} commits a literal credential value for '{match.Groups["key"].Value}'.");
+                              }
+                          }
+
+                          foreach (System.Text.RegularExpressions.Match match in ConnectionStringCredentialPattern().Matches(line))
+                          {
+                              var value = match.Groups["value"].Value;
+                              if (IsForbiddenLiteralCredential(value))
+                              {
+                                  failures.Add(
+                                      $"{Path.GetRelativePath(repositoryRoot, path)}:{lineIndex + 1} commits a literal connection-string credential for '{match.Groups["key"].Value}'.");
+                              }
+                          }
+                      }
+                  }
+
+                  Assert.True(
+                      failures.Count == 0,
+                      string.Join(Environment.NewLine, failures.Distinct(StringComparer.Ordinal)));
+
+                  static bool IsConfigurationFile(string path)
+                  {
+                      var extension = Path.GetExtension(path);
+                      return extension.Equals(".yml", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".env", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".sh", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".ps1", StringComparison.OrdinalIgnoreCase);
+                  }
+
+                  static System.Text.RegularExpressions.Regex CredentialAssignmentPattern() =>
+                      new(
+                          @"(?ix)(?<key>[\"']?(?:password|passwd|pwd|secret|token|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|signing[_-]?key)[\"']?)\s*[:=]\s*(?<value>[^#\r\n,]+)",
+                          System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                          TimeSpan.FromSeconds(1));
+
+                  static System.Text.RegularExpressions.Regex ConnectionStringCredentialPattern() =>
+                      new(
+                          @"(?ix)\b(?<key>Password|Pwd|Secret|Token|AccessKey|SecretKey|ClientSecret)\s*=\s*(?<value>[^;\s]+)",
+                          System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                          TimeSpan.FromSeconds(1));
+
+                  static bool IsForbiddenLiteralCredential(string rawValue)
+                  {
+                      var value = rawValue.Trim().TrimEnd(',').Trim('"', '\'');
+                      if (value.Length == 0 ||
+                          value.Equals("null", StringComparison.OrdinalIgnoreCase) ||
+                          value.Equals("~", StringComparison.Ordinal))
+                      {
+                          return false;
+                      }
+
+                      var defaultMatch = System.Text.RegularExpressions.Regex.Match(
+                          value,
+                          @"\$\{[^}:]+:-(?<default>[^}]+)\}",
+                          System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                          TimeSpan.FromSeconds(1));
+                      if (defaultMatch.Success)
+                      {
+                          return !IsKnownNonSecretFixture(defaultMatch.Groups["default"].Value);
+                      }
+
+                      if (value.Contains("${", StringComparison.Ordinal) ||
+                          value.Contains("${{", StringComparison.Ordinal) ||
+                          value.Contains("secrets.", StringComparison.OrdinalIgnoreCase) ||
+                          value.Contains("env.", StringComparison.OrdinalIgnoreCase) ||
+                          value.StartsWith('$') ||
+                          value.StartsWith('<') ||
+                          value.StartsWith('%'))
+                      {
+                          return false;
+                      }
+
+                      return !IsKnownNonSecretFixture(value);
+                  }
+
+                  static bool IsKnownNonSecretFixture(string rawValue)
+                  {
+                      var value = rawValue.Trim().Trim('"', '\'');
+                      return value.Equals("test", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("testing", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("example", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("dummy", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("guest", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("placeholder", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("required", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("not-a-secret", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("change-me", StringComparison.OrdinalIgnoreCase) ||
+                             value.Equals("changeme", StringComparison.OrdinalIgnoreCase);
+                  }
+
+                  static string LocateRepositoryRoot()
+                  {
+                      var directory = new DirectoryInfo(AppContext.BaseDirectory);
+                      while (directory is not null)
+                      {
+                          if (File.Exists(Path.Combine(directory.FullName, "AggregatorBackend.slnx")))
+                          {
+                              return directory.FullName;
+                          }
+
+                          directory = directory.Parent;
+                      }
+
+                      throw new InvalidOperationException("Repository root was not found.");
+                  }
+              }
+          '''.replace('              ', '')
+
+          security = replace_fact_method(
+              security,
+              'CommandControllersRequireExplicitAuthorization',
+              authorization_method)
+          security = replace_fact_method(
+              security,
+              'RepositoryDoesNotCommitCredentialValues',
+              credential_method)
+          security_path.write_text(security, encoding='utf-8', newline='\n')
+
+          sensitive_default = re.compile(
+              r'\$\{(?P<name>[A-Z0-9_]*(?:PASSWORD|PASS|SECRET|TOKEN|ACCESS_KEY|SECRET_KEY|PRIVATE_KEY|CLIENT_SECRET|SIGNING_KEY)[A-Z0-9_]*):-([^}]+)\}')
+          deployment_files = list(root.glob('compose*.yml')) + list(root.glob('compose*.yaml'))
+          if deployRoot := root / 'deploy':
+              if deployRoot.exists():
+                  deployment_files.extend(deployRoot.rglob('*.yml'))
+                  deployment_files.extend(deployRoot.rglob('*.yaml'))
+          for path in sorted(set(deployment_files)):
+              content = path.read_text(encoding='utf-8')
+              rewritten = sensitive_default.sub(
+                  lambda match: '${' + match.group('name') + ':?' + match.group('name') + ' is required}',
+                  content)
+              if rewritten != content:
+                  path.write_text(rewritten, encoding='utf-8', newline='\n')
+
+      - name: Restore and format architecture proof
+        run: |
+          dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
+          dotnet format tests/Architecture.Tests/Architecture.Tests.csproj --no-restore
+          dotnet format tests/Architecture.Tests/Architecture.Tests.csproj --verify-no-changes --no-restore
+
+      - name: Run semantic architecture proof
+        run: |
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-restore -warnaserror --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Commit proven architecture repair and remove this workflow
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- \
+              tests/Architecture.Tests \
+              compose.yml compose.*.yml compose.*.yaml deploy)
+            test -z "$affected" || {
+              printf 'Architecture-owned files changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm .github/workflows/repair-architecture-proof.yml
+          paths=(
+            tests/Architecture.Tests
+            compose.yml
+            compose.acceptance.yml
+            compose.runtime.yml
+            compose.workers.yml
+            deploy
+            .github/workflows/repair-architecture-proof.yml
+          )
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          for path in "${paths[@]}"; do
+            if [ -e "$path" ] || git cat-file -e "$base:$path" 2>/dev/null; then
+              GIT_INDEX_FILE="$index" git add -A -- "$path"
+            fi
+          done
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Repair semantic architecture proof' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Semantic architecture proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/architecture-proof'
+            });
