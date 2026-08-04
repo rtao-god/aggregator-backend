@@ -113,21 +113,13 @@ public sealed class ObjectStoreCatalogPublicationArtifactReaderTests
         public Task<StoredObjectDescriptor> PutVerifiedAsync(
             string key,
             Stream content,
-            long length,
-            string sha256,
+            long expectedSize,
+            string expectedSha256,
             string contentType,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("Write is outside this reader contract test.");
 
-        public Task<PresignedUpload> CreatePresignedUploadAsync(
-            string key,
-            string contentType,
-            long maximumLength,
-            TimeSpan lifetime,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException("Upload is outside this reader contract test.");
-
-        public Task<StoredObjectDescriptor?> HeadAsync(
+        public Task<StoredObjectDescriptor> HeadAsync(
             string key,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("Head is outside this reader contract test.");
@@ -137,10 +129,24 @@ public sealed class ObjectStoreCatalogPublicationArtifactReaderTests
             string expectedSha256,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Assert.Equal(expectedDigest, expectedSha256);
             ReadCount++;
             return Task.FromResult<Stream>(new MemoryStream(content, writable: false));
         }
+
+        public Task<ScopedObjectUrl> CreateScopedReadUrlAsync(
+            string key,
+            TimeSpan lifetime,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Scoped reads are outside this reader contract test.");
+
+        public Task<ScopedObjectUrl> CreateScopedWriteUrlAsync(
+            string key,
+            string contentType,
+            TimeSpan lifetime,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Scoped writes are outside this reader contract test.");
 
         public Task DeleteAsync(string key, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Delete is outside this reader contract test.");
