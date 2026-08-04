@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore AggregatorBackend.slnx
+      - name: Format
+        run: dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
+      - name: Build
+        run: dotnet build AggregatorBackend.slnx --no-restore -warnaserror
+      - name: Test
+        run: dotnet test AggregatorBackend.slnx --no-build --logger "console;verbosity=normal"
+      - name: Architecture proof
+        run: dotnet test tests/Architecture.Tests/Architecture.Tests.csproj --no-build --logger "console;verbosity=normal"

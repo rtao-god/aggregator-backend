@@ -1,0 +1,5 @@
+<Project>
+  <Target Name="RejectFloatingPackageVersions" BeforeTargets="CollectPackageReferences">
+    <Error Condition="$([System.String]::Copy('%(PackageReference.Version)').Contains('*'))" Text="Floating NuGet versions are forbidden: %(PackageReference.Identity) %(PackageReference.Version)." />
+  </Target>
+</Project>
