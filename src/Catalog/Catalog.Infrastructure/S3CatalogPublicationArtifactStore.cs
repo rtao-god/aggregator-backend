@@ -50,9 +50,9 @@ public sealed class S3CatalogPublicationArtifactStore(
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
-        if (objectKey.StartsWith("/", StringComparison.Ordinal) ||
+        if (objectKey.StartsWith('/') ||
             objectKey.Contains("..", StringComparison.Ordinal) ||
-            objectKey.Contains("\\", StringComparison.Ordinal))
+            objectKey.Contains('\\'))
         {
             throw new ArgumentException("Object key must be a normalized relative key.", nameof(objectKey));
         }
