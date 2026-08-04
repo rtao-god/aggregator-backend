@@ -99,6 +99,45 @@ def normalize_application_source() -> None:
 """,
         "outbox command context guard",
     )
+    source = replace_required(
+        source,
+        """    public static byte[] Serialize<T>(T value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var element = JsonSerializer.SerializeToElement(value, Options);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
+        {
+            WriteCanonical(element, writer);
+        }
+        return buffer.ToArray();
+    }
+""",
+        """    public static byte[] Serialize<T>(T value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var element = JsonSerializer.SerializeToElement(value, Options);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
+        {
+            WriteCanonical(element, writer);
+        }
+        return buffer.ToArray();
+    }
+
+    public static T Deserialize<T>(ReadOnlySpan<byte> document)
+    {
+        var value = JsonSerializer.Deserialize<T>(document, Options);
+        return value ?? throw new CatalogMediaApplicationException(
+            "CatalogMedia.Contracts",
+            "CATALOG_MEDIA_DOCUMENT_EMPTY",
+            500,
+            "Catalog media document deserialized to no value.",
+            "Restore the exact document from a verified owner source.");
+    }
+""",
+        "strict canonical deserialization",
+    )
     APPLICATION_SOURCE.write_text(source, encoding="utf-8", newline="\n")
 
 
