@@ -1,107 +1,118 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Aggregator.Analytics.Api;
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Platform.Observability;
+using Platform.ProblemDetails;
+using Platform.Security;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = 64 * 1024);
-var connectionString = builder.Configuration.GetConnectionString("Analytics");
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException("ConnectionStrings:Analytics is required.");
-}
+namespace Aggregator.Analytics.Api;
 
-var sessionHashKeyText = builder.Configuration["Analytics:SessionHashKey"];
-if (string.IsNullOrWhiteSpace(sessionHashKeyText))
+public partial class Program
 {
-    throw new InvalidOperationException("Analytics:SessionHashKey is required.");
-}
-
-byte[] sessionHashKey;
-try
-{
-    sessionHashKey = Convert.FromBase64String(sessionHashKeyText);
-}
-catch (FormatException exception)
-{
-    throw new InvalidOperationException(
-        "Analytics:SessionHashKey must be a base64-encoded secret.",
-        exception);
-}
-
-var runtimeOptions = new AnalyticsRuntimeOptions
-{
-    SessionHashKey = sessionHashKey,
-};
-runtimeOptions.Validate();
-var apiOptions = new AnalyticsApiOptions
-{
-    InternalMetricsKey = builder.Configuration["Analytics:InternalMetricsKey"]
-        ?? throw new InvalidOperationException("Analytics:InternalMetricsKey is required."),
-};
-apiOptions.Validate();
-
-builder.Services.AddAnalyticsRuntimeInfrastructure(connectionString);
-builder.Services.AddSingleton(runtimeOptions);
-builder.Services.AddSingleton(apiOptions);
-builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<AnalyticsRuntimeService>();
-builder.Services.AddPlatformObservability(builder.Configuration, "analytics-api");
-builder.Services
-    .AddControllers()
-    .AddJsonOptions(options =>
+    public static void Main(string[] args)
     {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
-        options.JsonSerializerOptions.Converters.Add(
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
-    });
-builder.Services.AddOpenApi("analytics-public");
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("analytics-intake", limiter =>
-    {
-        limiter.PermitLimit = 240;
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.QueueLimit = 0;
-        limiter.AutoReplenishment = true;
-    });
-});
+        var application = CreateApplication(args);
+        application.Run();
+    }
 
-var app = builder.Build();
-app.UseMiddleware<AnalyticsFailureMiddleware>();
-app.UseRateLimiter();
-app.MapControllers();
-app.MapGet("/health/live", () => Results.Ok(new
-{
-    owner = "Analytics.Runtime",
-    state = "live",
-}));
-app.MapGet("/health/ready", async (
-    IAnalyticsRuntimeStore store,
-    CancellationToken cancellationToken) =>
-{
-    var ready = await store.CheckReadinessAsync(cancellationToken);
-    return Results.Json(
-        new
+    public static WebApplication CreateApplication(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.ConfigureKestrel(options =>
+            options.Limits.MaxRequestBodySize = 64 * 1024);
+
+        builder.Services
+            .AddControllers()
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+                options.JsonSerializerOptions.Converters.Add(
+                    new JsonStringEnumConverter(
+                        JsonNamingPolicy.CamelCase,
+                        allowIntegerValues: false));
+            });
+        builder.Services.Configure<ApiBehaviorOptions>(options =>
+            options.InvalidModelStateResponseFactory = AnalyticsModelStateProblemFactory.Create);
+        builder.Services.AddOpenApi("analytics");
+        builder.Services.AddOwnerProblemDetails();
+        builder.Services.AddAnalyticsApplication();
+        builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
+        builder.Services.AddPlatformObservability(builder.Configuration, "analytics-api");
+
+        var antiAbuseOptions = AnalyticsAntiAbuseOptions.FromConfiguration(builder.Configuration);
+        builder.Services.AddSingleton(antiAbuseOptions);
+        builder.Services.AddSingleton<AnalyticsAntiAbuseProofService>();
+        builder.Services.AddSingleton<IAntiAbuseVerifier>(services =>
+            services.GetRequiredService<AnalyticsAntiAbuseProofService>());
+
+        builder.Services.AddRateLimiter(options =>
         {
-            owner = "Analytics.Runtime",
-            state = ready ? "ready" : "unavailable",
-        },
-        statusCode: ready
-            ? StatusCodes.Status200OK
-            : StatusCodes.Status503ServiceUnavailable);
-});
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi("/openapi/{documentName}.json");
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter(
+                AnalyticsRateLimitPolicies.AntiAbuseTokens,
+                limiter =>
+                {
+                    limiter.PermitLimit = 60;
+                    limiter.QueueLimit = 0;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.AutoReplenishment = true;
+                });
+            options.AddFixedWindowLimiter(
+                AnalyticsRateLimitPolicies.InteractionEvents,
+                limiter =>
+                {
+                    limiter.PermitLimit = 240;
+                    limiter.QueueLimit = 0;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.AutoReplenishment = true;
+                });
+            options.AddFixedWindowLimiter(
+                AnalyticsRateLimitPolicies.Metrics,
+                limiter =>
+                {
+                    limiter.PermitLimit = 120;
+                    limiter.QueueLimit = 0;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.AutoReplenishment = true;
+                });
+        });
+
+        var authorization = builder.Services.AddPlatformJwtAuthentication(
+            builder.Configuration,
+            audience: "aggregator-analytics");
+        authorization
+            .AddRequiredScopePolicy(
+                AnalyticsAuthorizationPolicies.ViewListing,
+                AnalyticsAuthorizationPolicies.ViewListing)
+            .AddRequiredScopePolicy(
+                AnalyticsAuthorizationPolicies.TestContracts,
+                AnalyticsAuthorizationPolicies.TestContracts);
+
+        var application = builder.Build();
+        application.UseOwnerProblemDetails();
+        application.UseStatusCodePages(AnalyticsAuthorizationStatusCodeWriter.WriteAsync);
+        application.UseMiddleware<AnalyticsFailureMiddleware>();
+        application.UseRateLimiter();
+        application.UseAuthentication();
+        application.UseAuthorization();
+        application.MapGet("/health/live", AnalyticsHealthEndpoints.Live)
+            .AllowAnonymous()
+            .WithName("AnalyticsLive");
+        application.MapGet("/health/ready", AnalyticsHealthEndpoints.ReadyAsync)
+            .AllowAnonymous()
+            .WithName("AnalyticsReady");
+        application.MapControllers();
+        if (application.Environment.IsDevelopment())
+        {
+            application.MapOpenApi("/openapi/{documentName}.json")
+                .RequireAuthorization(AnalyticsAuthorizationPolicies.TestContracts);
+        }
+
+        return application;
+    }
 }
-
-await app.RunAsync();
-
-public partial class Program;
