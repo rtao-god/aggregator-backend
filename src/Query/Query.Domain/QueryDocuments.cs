@@ -181,7 +181,7 @@ public sealed class QueryListingDocument
             QueryContractRules.RequireText(localization.Locale, nameof(localizations), 35);
             QueryContractRules.RequireText(localization.RoutePath, nameof(localizations), 500);
             QueryContractRules.RequireText(localization.Title, nameof(localizations), 300);
-            if (!localization.RoutePath.StartsWith("/", StringComparison.Ordinal))
+            if (!localization.RoutePath.StartsWith('/'))
             {
                 throw new QueryDomainException("QUERY_ROUTE_PATH_INVALID", "A public route path must be absolute within the site.");
             }
