@@ -29,14 +29,24 @@ public sealed class CatalogClaimService(
         return CatalogContractMapper.ToResponse(claim);
     }
 
+    /// <summary>Starts a new correlation root for a direct application or operator verification command.</summary>
+    public Task<ListingAccessGrantResponse> VerifyAsync(
+        Guid claimId,
+        VerifyListingClaimRequest request,
+        CatalogActor reviewer,
+        CancellationToken cancellationToken) =>
+        VerifyAsync(claimId, request, reviewer, CatalogEventContext.StartRoot(), cancellationToken);
+
     public async Task<ListingAccessGrantResponse> VerifyAsync(
         Guid claimId,
         VerifyListingClaimRequest request,
         CatalogActor reviewer,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reviewer);
+        ArgumentNullException.ThrowIfNull(eventContext);
         ArgumentNullException.ThrowIfNull(request.Scopes);
         var claim = await RequireClaimAsync(claimId, cancellationToken);
         var verifiedAtUtc = timeProvider.GetUtcNow();
@@ -55,12 +65,13 @@ public sealed class CatalogClaimService(
             grant.Scopes.Select(scope => (ListingAccessScopeContract)scope).Order().ToArray(),
             grant.ExpiresAtUtc,
             verifiedAtUtc);
-        var outboxMessage = new CatalogOutboxMessage(
+        var outboxMessage = CatalogOutboxMessageFactory.Create(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimVerified,
-            EventRevision: 1,
-            CatalogCanonicalJson.SerializeEvent(integrationEvent),
-            verifiedAtUtc);
+            CatalogIntegrationEventContracts.ListingClaimVerified,
+            integrationEvent,
+            verifiedAtUtc,
+            eventContext);
         await repository.CompleteClaimVerificationAsync(
             claim,
             grant,
@@ -83,14 +94,24 @@ public sealed class CatalogClaimService(
         return CatalogContractMapper.ToResponse(claim);
     }
 
+    /// <summary>Starts a new correlation root for a direct application or operator revocation command.</summary>
+    public Task<ListingClaimResponse> RevokeAsync(
+        Guid claimId,
+        RevokeListingClaimRequest request,
+        CatalogActor reviewer,
+        CancellationToken cancellationToken) =>
+        RevokeAsync(claimId, request, reviewer, CatalogEventContext.StartRoot(), cancellationToken);
+
     public async Task<ListingClaimResponse> RevokeAsync(
         Guid claimId,
         RevokeListingClaimRequest request,
         CatalogActor reviewer,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reviewer);
+        ArgumentNullException.ThrowIfNull(eventContext);
         var claim = await RequireClaimAsync(claimId, cancellationToken);
         var revokedAtUtc = timeProvider.GetUtcNow();
         claim.Revoke(reviewer.Id, request.Reason, revokedAtUtc);
@@ -100,12 +121,13 @@ public sealed class CatalogClaimService(
             claim.ListingId,
             claim.ClaimantActorId,
             revokedAtUtc);
-        var outboxMessage = new CatalogOutboxMessage(
+        var outboxMessage = CatalogOutboxMessageFactory.Create(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimRevoked,
-            EventRevision: 1,
-            CatalogCanonicalJson.SerializeEvent(integrationEvent),
-            revokedAtUtc);
+            CatalogIntegrationEventContracts.ListingClaimRevoked,
+            integrationEvent,
+            revokedAtUtc,
+            eventContext);
         await repository.SaveClaimDecisionAsync(claim, outboxMessage, cancellationToken);
         return CatalogContractMapper.ToResponse(claim);
     }
