@@ -18,6 +18,7 @@ public sealed class CatalogConfigurationController(CatalogConfigurationService s
         [FromBody] ImportProductConfigurationRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var response = await service.ImportAsync(request, cancellationToken);
         return StatusCode(StatusCodes.Status201Created, response);
     }
@@ -31,6 +32,7 @@ public sealed class CatalogConfigurationController(CatalogConfigurationService s
         [FromBody] ActivateProductConfigurationRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (request.TargetConfigurationRevisionId != revisionId)
         {
             throw new CatalogContractException(
