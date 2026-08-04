@@ -37,13 +37,15 @@ public sealed class PromotionPersistenceModelTests
         using var context = CreateContext();
         var model = context.GetService<IDesignTimeModel>().Model;
         var capacity = FindTable(model, "placements", "sponsored_placement_capacity");
+        var primaryKey = capacity.FindPrimaryKey()
+            ?? throw new InvalidOperationException("Promotion capacity primary key is missing.");
         var checkNames = capacity.GetCheckConstraints()
             .Select(check => check.Name)
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Equal(
             ["PlacementId", "Locale"],
-            capacity.FindPrimaryKey()?.Properties.Select(property => property.Name).ToArray());
+            primaryKey.Properties.Select(property => property.Name).ToArray());
         Assert.Contains("ck_sponsored_capacity_scope", checkNames);
         Assert.Contains("ck_sponsored_capacity_slot", checkNames);
         Assert.Contains("ck_sponsored_capacity_window", checkNames);
@@ -63,6 +65,8 @@ public sealed class PromotionPersistenceModelTests
             "access_projection",
             "listing_eligibility_projection");
         var command = FindTable(model, "operations", "command_result");
+        var commandPrimaryKey = command.FindPrimaryKey()
+            ?? throw new InvalidOperationException("Promotion command-result primary key is missing.");
 
         Assert.True(eligibility.FindProperty("SourceRevision")?.IsConcurrencyToken);
         Assert.Contains(
@@ -73,7 +77,7 @@ public sealed class PromotionPersistenceModelTests
                 StringComparison.Ordinal));
         Assert.Equal(
             ["Scope", "IdempotencyKey"],
-            command.FindPrimaryKey()?.Properties.Select(property => property.Name).ToArray());
+            commandPrimaryKey.Properties.Select(property => property.Name).ToArray());
         var commandChecks = command.GetCheckConstraints()
             .Select(check => check.Name)
             .ToHashSet(StringComparer.Ordinal);
