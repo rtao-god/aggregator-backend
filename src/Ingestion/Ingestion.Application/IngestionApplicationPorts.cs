@@ -79,7 +79,65 @@ public sealed record IngestionCommandIdentity(string Scope, string Key, string R
     }
 }
 
-public sealed record IngestionBatchRegistrationResult(ImportBatch Batch, bool Replayed);
+/// <summary>Read-only persisted projection of one exact Ingestion-owned import batch.</summary>
+public sealed record IngestionBatchSnapshot(
+    ImportBatchId Id,
+    string ProducerIdentity,
+    string ProducerBuild,
+    Guid CollectorExportId,
+    string CollectorExportDigest,
+    string TargetSiteKey,
+    string TargetCatalogKey,
+    Guid TargetCatalogConfigurationRevisionId,
+    int ExpectedItemCount,
+    string ManifestDigest,
+    string ItemIndexDigest,
+    string PayloadDigest,
+    string PayloadObjectKey,
+    string PayloadObjectDigest,
+    long PayloadObjectSize,
+    string PayloadContentType,
+    DateTimeOffset RegisteredAtUtc,
+    DateTimeOffset LastChangedAtUtc,
+    ImportBatchState State,
+    long AggregateRevision,
+    int AcceptedItemCount,
+    int ReviewRequiredItemCount,
+    int RejectedItemCount,
+    string? FailureCode)
+{
+    public static IngestionBatchSnapshot From(ImportBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        return new IngestionBatchSnapshot(
+            batch.Id,
+            batch.ProducerIdentity,
+            batch.ProducerBuild,
+            batch.CollectorExportId,
+            batch.CollectorExportDigest,
+            batch.TargetSiteKey,
+            batch.TargetCatalogKey,
+            batch.TargetCatalogConfigurationRevisionId,
+            batch.ExpectedItemCount,
+            batch.ManifestDigest,
+            batch.ItemIndexDigest,
+            batch.PayloadDigest,
+            batch.PayloadObjectKey,
+            batch.PayloadObjectDigest,
+            batch.PayloadObjectSize,
+            batch.PayloadContentType,
+            batch.RegisteredAtUtc,
+            batch.LastChangedAtUtc,
+            batch.State,
+            batch.AggregateRevision,
+            batch.AcceptedItemCount,
+            batch.ReviewRequiredItemCount,
+            batch.RejectedItemCount,
+            batch.FailureCode);
+    }
+}
+
+public sealed record IngestionBatchRegistrationResult(IngestionBatchSnapshot Batch, bool Replayed);
 
 public interface IIngestionBatchRepository
 {
@@ -90,7 +148,7 @@ public interface IIngestionBatchRepository
         string callerServiceIdentity,
         CancellationToken cancellationToken);
 
-    public Task<ImportBatch?> GetAsync(
+    public Task<IngestionBatchSnapshot?> ReadAsync(
         ImportBatchId batchId,
         CancellationToken cancellationToken);
 }
