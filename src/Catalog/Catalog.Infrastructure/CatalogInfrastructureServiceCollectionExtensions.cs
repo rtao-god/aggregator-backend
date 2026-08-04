@@ -76,5 +76,5 @@ public static class CatalogInfrastructureServiceCollectionExtensions
 
 public sealed class UuidV7CatalogIdSource : ICatalogIdSource
 {
-    public Guid Next() => Guid.CreateVersion7();
+    public Guid CreateId() => Guid.CreateVersion7();
 }

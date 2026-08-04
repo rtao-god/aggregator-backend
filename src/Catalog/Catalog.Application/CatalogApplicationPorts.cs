@@ -6,7 +6,7 @@ namespace Aggregator.Catalog.Application;
 /// <summary>Creates application-owned business identifiers.</summary>
 public interface ICatalogIdSource
 {
-    public Guid Next();
+    public Guid CreateId();
 }
 
 /// <summary>Persists Catalog aggregates and their transactional outbox effects.</summary>
@@ -81,7 +81,7 @@ public interface ICatalogRepository
     public Task ActivateExistingPublicationAsync(
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
-        CurrentPublicationPointer pointer,
+        CurrentPublicationPointer publicationPointer,
         CatalogOutboxMessage outboxMessage,
         CancellationToken cancellationToken);
 

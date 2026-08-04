@@ -154,13 +154,13 @@ public sealed partial class EfCatalogRepository
     public Task ActivateExistingPublicationAsync(
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
-        CurrentPublicationPointer pointer,
+        CurrentPublicationPointer publicationPointer,
         CatalogOutboxMessage outboxMessage,
         CancellationToken cancellationToken) =>
         ExecuteInTransactionAsync(async innerCancellationToken =>
         {
             ArgumentNullException.ThrowIfNull(targetPublication);
-            ArgumentNullException.ThrowIfNull(pointer);
+            ArgumentNullException.ThrowIfNull(publicationPointer);
             ArgumentNullException.ThrowIfNull(outboxMessage);
             var targetExists = await _dbContext.Publications
                 .AsNoTracking()
@@ -183,10 +183,10 @@ public sealed partial class EfCatalogRepository
                 expectedCurrentPublicationId,
                 targetPublication.CatalogKey);
 
-            current.PublicationId = pointer.PublicationId;
-            current.PublicationSequence = pointer.PublicationSequence;
-            current.ActivatedAtUtc = pointer.ActivatedAtUtc;
-            current.ActivatedByActorId = pointer.ActivatedByActorId;
+            current.PublicationId = publicationPointer.PublicationId;
+            current.PublicationSequence = publicationPointer.PublicationSequence;
+            current.ActivatedAtUtc = publicationPointer.ActivatedAtUtc;
+            current.ActivatedByActorId = publicationPointer.ActivatedByActorId;
             AddOutbox(outboxMessage);
             await _dbContext.SaveChangesAsync(innerCancellationToken);
         }, cancellationToken);

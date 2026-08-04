@@ -16,6 +16,7 @@ public sealed class CatalogPublicationService(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(request.Selections);
         if (request.Selections.Count == 0)
         {
             throw new CatalogContractException(
@@ -81,7 +82,7 @@ public sealed class CatalogPublicationService(
             selection.Revision.Content.EnsurePublishable(activeConfiguration);
         }
 
-        var publicationId = idSource.Next();
+        var publicationId = idSource.CreateId();
         var sequence = await repository.GetNextPublicationSequenceAsync(catalogKey, cancellationToken);
         var createdAtUtc = timeProvider.GetUtcNow();
         var artifactKey = $"catalog/{catalogKey.Value}/publications/{publicationId:N}.json";
@@ -128,7 +129,7 @@ public sealed class CatalogPublicationService(
         var previousPublicationId = await repository.GetCurrentPublicationIdAsync(catalogKey, cancellationToken);
         EnsurePointerExpectation(previousPublicationId, expectedCurrentPublicationId);
         var integrationEvent = new CatalogPublicationActivatedV1(
-            idSource.Next(),
+            idSource.CreateId(),
             publication.Id,
             publication.CatalogKey.Value,
             publication.ConfigurationRevisionId,
@@ -141,7 +142,7 @@ public sealed class CatalogPublicationService(
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.PublicationActivatedV1,
-            eventRevision: 1,
+            EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             createdAtUtc);
 
@@ -188,14 +189,14 @@ public sealed class CatalogPublicationService(
         }
 
         var activatedAtUtc = timeProvider.GetUtcNow();
-        var pointer = CurrentPublicationPointer.Create(
+        var publicationPointer = CurrentPublicationPointer.Create(
             catalogKey,
             target.Id,
             target.Sequence,
             activatedAtUtc,
             actor.Id);
         var integrationEvent = new CatalogPublicationActivatedV1(
-            idSource.Next(),
+            idSource.CreateId(),
             target.Id,
             target.CatalogKey.Value,
             target.ConfigurationRevisionId,
@@ -208,14 +209,14 @@ public sealed class CatalogPublicationService(
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.PublicationActivatedV1,
-            eventRevision: 1,
+            EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             activatedAtUtc);
 
         await repository.ActivateExistingPublicationAsync(
             target,
             request.ExpectedCurrentPublicationId,
-            pointer,
+            publicationPointer,
             outboxMessage,
             cancellationToken);
         return CatalogContractMapper.ToResponse(target, isCurrent: true);

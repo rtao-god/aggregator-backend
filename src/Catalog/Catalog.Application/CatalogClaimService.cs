@@ -19,7 +19,7 @@ public sealed class CatalogClaimService(
             ?? throw new CatalogNotFoundException("listing", request.ListingId);
 
         var claim = ListingClaim.Submit(
-            idSource.Next(),
+            idSource.CreateId(),
             request.ListingId,
             claimant.Id,
             request.EvidenceReference,
@@ -37,16 +37,17 @@ public sealed class CatalogClaimService(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reviewer);
+        ArgumentNullException.ThrowIfNull(request.Scopes);
         var claim = await RequireClaimAsync(claimId, cancellationToken);
         var verifiedAtUtc = timeProvider.GetUtcNow();
         var grant = claim.Verify(
-            idSource.Next(),
+            idSource.CreateId(),
             reviewer.Id,
-            request.Scopes.Select(scope => (ListingAccessScope)scope),
+            request.Scopes.Select(CatalogContractMapper.ToDomain),
             verifiedAtUtc,
             request.ExpiresAtUtc);
         var integrationEvent = new CatalogListingClaimVerifiedV1(
-            idSource.Next(),
+            idSource.CreateId(),
             claim.Id,
             grant.Id,
             grant.ListingId,
@@ -57,7 +58,7 @@ public sealed class CatalogClaimService(
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimVerifiedV1,
-            eventRevision: 1,
+            EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             verifiedAtUtc);
         await repository.CompleteClaimVerificationAsync(
@@ -94,7 +95,7 @@ public sealed class CatalogClaimService(
         var revokedAtUtc = timeProvider.GetUtcNow();
         claim.Revoke(reviewer.Id, request.Reason, revokedAtUtc);
         var integrationEvent = new CatalogListingClaimRevokedV1(
-            idSource.Next(),
+            idSource.CreateId(),
             claim.Id,
             claim.ListingId,
             claim.ClaimantActorId,
@@ -102,7 +103,7 @@ public sealed class CatalogClaimService(
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimRevokedV1,
-            eventRevision: 1,
+            EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             revokedAtUtc);
         await repository.SaveClaimDecisionAsync(claim, outboxMessage, cancellationToken);

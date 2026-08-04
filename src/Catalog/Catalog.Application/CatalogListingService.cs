@@ -27,7 +27,7 @@ public sealed class CatalogListingService(
                 $"Subject kind '{subject.Kind}' cannot be listed in catalog '{catalogKey}'.");
         }
 
-        var listing = Listing.Create(idSource.Next(), catalogKey, subject, timeProvider.GetUtcNow());
+        var listing = Listing.Create(idSource.CreateId(), catalogKey, subject, timeProvider.GetUtcNow());
         await repository.AddListingAsync(listing, cancellationToken);
         return CatalogContractMapper.ToResponse(listing);
     }
@@ -75,7 +75,7 @@ public sealed class CatalogListingService(
         var canonicalContent = CatalogCanonicalJson.SerializeListingContent(request.Content);
         var contentDigest = CatalogCanonicalJson.ComputeSha256(canonicalContent);
         var revision = listing.AddDraftRevision(
-            idSource.Next(),
+            idSource.CreateId(),
             request.ExpectedVersion,
             configuration.RevisionId,
             subject,
@@ -116,7 +116,7 @@ public sealed class CatalogListingService(
         }
 
         var decision = listing.Approve(
-            idSource.Next(),
+            idSource.CreateId(),
             revision.Id,
             request.ExpectedVersion,
             revision.Content,
@@ -138,7 +138,7 @@ public sealed class CatalogListingService(
         var listing = await RequireListingAsync(listingId, cancellationToken);
         _ = await RequireRevisionAsync(request.RevisionId, listingId, cancellationToken);
         var decision = listing.Reject(
-            idSource.Next(),
+            idSource.CreateId(),
             request.RevisionId,
             request.ExpectedVersion,
             actor.Id,
