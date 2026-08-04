@@ -25,7 +25,7 @@ public sealed record QueryInboxMessage(
     Guid EventId,
     string EventType,
     string PayloadDigest,
-    long PublicationSequence,
+    long ActivationRevision,
     DateTimeOffset ReceivedAtUtc);
 
 public sealed record QueryProjectionActivation(
