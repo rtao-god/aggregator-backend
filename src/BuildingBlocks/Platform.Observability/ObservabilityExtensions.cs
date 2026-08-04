@@ -20,23 +20,33 @@ public static class ObservabilityExtensions
             throw new ArgumentException("Service name is required.", nameof(serviceName));
         }
 
+        var useOtlpExporter = !string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
         var telemetry = services
             .AddOpenTelemetry()
             .ConfigureResource(resource => resource.AddService(serviceName));
 
-        telemetry.WithTracing(tracing => tracing
-            .AddAspNetCoreInstrumentation(options => options.RecordException = true)
-            .AddHttpClientInstrumentation(options => options.RecordException = true));
-
-        telemetry.WithMetrics(metrics => metrics
-            .AddAspNetCoreInstrumentation()
-            .AddHttpClientInstrumentation()
-            .AddRuntimeInstrumentation());
-
-        if (!string.IsNullOrWhiteSpace(configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+        telemetry.WithTracing(tracing =>
         {
-            telemetry.UseOtlpExporter();
-        }
+            tracing
+                .AddAspNetCoreInstrumentation(options => options.RecordException = true)
+                .AddHttpClientInstrumentation(options => options.RecordException = true);
+            if (useOtlpExporter)
+            {
+                tracing.AddOtlpExporter();
+            }
+        });
+
+        telemetry.WithMetrics(metrics =>
+        {
+            metrics
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddRuntimeInstrumentation();
+            if (useOtlpExporter)
+            {
+                metrics.AddOtlpExporter();
+            }
+        });
 
         return services;
     }
