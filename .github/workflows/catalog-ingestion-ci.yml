@@ -1,0 +1,90 @@
+name: Catalog ingestion owner proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/catalog-ingestion-ci.yml'
+      - 'src/Catalog/Catalog.Application/CatalogIngestionDraftService.cs'
+      - 'src/Catalog/Catalog.Application/VerifiedCatalogIngestionDraftService.cs'
+      - 'src/Catalog/Catalog.Contracts/CatalogIngestionCommand*.cs'
+      - 'src/Catalog/Catalog.Contracts/CatalogIngestionCommands.cs'
+      - 'src/Catalog/Catalog.Infrastructure/CatalogIngestionDraftPersistence.cs'
+      - 'src/Catalog/Catalog.Infrastructure/CatalogIngestionTargetProjectionWriter.cs'
+      - 'src/Catalog/Catalog.Api/CatalogIngestionDraftController.cs'
+      - 'tests/Catalog/Catalog.Ingestion.Tests/**'
+  pull_request:
+    paths:
+      - 'src/Catalog/Catalog.Application/CatalogIngestionDraftService.cs'
+      - 'src/Catalog/Catalog.Application/VerifiedCatalogIngestionDraftService.cs'
+      - 'src/Catalog/Catalog.Contracts/CatalogIngestionCommand*.cs'
+      - 'src/Catalog/Catalog.Contracts/CatalogIngestionCommands.cs'
+      - 'src/Catalog/Catalog.Infrastructure/CatalogIngestionDraftPersistence.cs'
+      - 'src/Catalog/Catalog.Infrastructure/CatalogIngestionTargetProjectionWriter.cs'
+      - 'src/Catalog/Catalog.Api/CatalogIngestionDraftController.cs'
+      - 'tests/Catalog/Catalog.Ingestion.Tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  catalog-ingestion-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore owner test graph
+        run: dotnet restore tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj
+
+      - name: Verify owner formatting
+        run: |
+          projects=(
+            src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj
+            src/Catalog/Catalog.Application/Catalog.Application.csproj
+            src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj
+            src/Catalog/Catalog.Api/Catalog.Api.csproj
+            tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build owner boundary
+        run: >-
+          dotnet build tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj
+          --no-restore -warnaserror /m:1 /nr:false
+
+      - name: Test owner boundary
+        run: >-
+          dotnet test tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj
+          --no-build --logger "console;verbosity=normal" /m:1 /nr:false
+
+      - name: Publish connector-readable status
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Catalog ingestion owner proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/catalog-ingestion-owner'
+            });
