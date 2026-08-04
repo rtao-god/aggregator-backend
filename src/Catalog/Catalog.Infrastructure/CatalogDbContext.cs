@@ -207,11 +207,22 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         modelBuilder.Entity<CatalogOutboxRow>(entity =>
         {
             entity.ToTable("outbox_message");
-            entity.HasKey(row => row.Id);
-            entity.Property(row => row.EventType).HasMaxLength(256);
-            entity.Property(row => row.Payload).HasColumnType("jsonb");
-            entity.Property(row => row.LastError).HasMaxLength(4096);
-            entity.HasIndex(row => new { row.PublishedAtUtc, row.OccurredAtUtc });
+            entity.HasKey(row => row.MessageId);
+            entity.Property(row => row.RoutingKey).HasMaxLength(256);
+            entity.Property(row => row.ContractIdentity).HasMaxLength(256);
+            entity.Property(row => row.PayloadJson).HasColumnType("jsonb");
+            entity.Property(row => row.PayloadDigest).HasMaxLength(64);
+            entity.Property(row => row.CorrelationId).HasMaxLength(128);
+            entity.Property(row => row.LeasedBy).HasMaxLength(200);
+            entity.Property(row => row.LastError).HasMaxLength(2000);
+            entity.Property(row => row.DeadLetterReason).HasMaxLength(2000);
+            entity.HasIndex(row => new
+            {
+                row.DispatchedAtUtc,
+                row.DeadLetteredAtUtc,
+                row.OccurredAtUtc,
+            });
+            entity.HasIndex(row => row.LeaseExpiresAtUtc);
         });
 
         ApplySnakeCaseColumns(modelBuilder);
