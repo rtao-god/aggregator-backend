@@ -44,8 +44,19 @@ public sealed record AnalyticsAntiAbuseOptions
                 exception);
         }
 
-        var lifetimeSeconds = configuration.GetValue<int?>(
-            "Analytics:AntiAbuseTokenLifetimeSeconds") ?? 120;
+        var lifetimeValue = configuration["Analytics:AntiAbuseTokenLifetimeSeconds"];
+        var lifetimeSeconds = 120;
+        if (lifetimeValue is not null &&
+            !int.TryParse(
+                lifetimeValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out lifetimeSeconds))
+        {
+            throw new InvalidOperationException(
+                "Analytics:AntiAbuseTokenLifetimeSeconds must be an integer.");
+        }
+
         var options = new AnalyticsAntiAbuseOptions
         {
             SigningKey = signingKey,
