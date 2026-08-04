@@ -1,0 +1,65 @@
+name: promotion-worker-container
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/Promotion/**"
+      - "src/BuildingBlocks/**"
+      - "deploy/compose.promotion-worker.yaml"
+      - "Directory.Build.*"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "global.json"
+      - ".github/workflows/promotion-worker-container.yml"
+  pull_request:
+    paths:
+      - "src/Promotion/**"
+      - "src/BuildingBlocks/**"
+      - "deploy/compose.promotion-worker.yaml"
+      - "Directory.Build.*"
+      - "Directory.Packages.props"
+      - "NuGet.config"
+      - "global.json"
+      - ".github/workflows/promotion-worker-container.yml"
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: promotion-worker-container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate Compose deployment contract
+        env:
+          PROMOTION_APP_CONNECTION_STRING: Host=promotion-db;Database=promotion_db;Username=promotion_app;Password=acceptance-only
+          RABBITMQ_BROKER_URI: amqp://guest:guest@rabbitmq:5672/
+          PROMOTION_SYSTEM_ACTOR_ID: 0198b400-0000-7000-8000-000000000001
+        run: docker compose -f deploy/compose.promotion-worker.yaml config --quiet
+      - name: Build Promotion Worker image
+        run: docker build --file src/Promotion/Promotion.Worker/Dockerfile --tag aggregator/promotion-worker:ci .
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Promotion Worker container: ${process.env.JOB_STATUS}`,
+              context: 'ci/promotion-worker-container'
+            });
