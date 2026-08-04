@@ -20,6 +20,7 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        ArgumentNullException.ThrowIfNull(builder);
         builder.UseEnvironment("Testing");
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -38,12 +39,12 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
             services
                 .AddAuthentication(options =>
                 {
-                    options.DefaultAuthenticateScheme = TestAuthenticationHandler.Scheme;
-                    options.DefaultChallengeScheme = TestAuthenticationHandler.Scheme;
-                    options.DefaultForbidScheme = TestAuthenticationHandler.Scheme;
+                    options.DefaultAuthenticateScheme = TestAuthenticationHandler.AuthenticationSchemeName;
+                    options.DefaultChallengeScheme = TestAuthenticationHandler.AuthenticationSchemeName;
+                    options.DefaultForbidScheme = TestAuthenticationHandler.AuthenticationSchemeName;
                 })
                 .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
-                    TestAuthenticationHandler.Scheme,
+                    TestAuthenticationHandler.AuthenticationSchemeName,
                     _ => { });
         });
     }
@@ -53,7 +54,7 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
         ILoggerFactory logger,
         UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string Scheme = "CatalogApiTest";
+        public const string AuthenticationSchemeName = "CatalogApiTest";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
@@ -76,10 +77,10 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
                 claims.Add(new Claim("scope", scopes.ToString()));
             }
 
-            var identity = new ClaimsIdentity(claims, Scheme);
+            var identity = new ClaimsIdentity(claims, AuthenticationSchemeName);
             var principal = new ClaimsPrincipal(identity);
             return Task.FromResult(AuthenticateResult.Success(
-                new AuthenticationTicket(principal, Scheme)));
+                new AuthenticationTicket(principal, AuthenticationSchemeName)));
         }
     }
 }
