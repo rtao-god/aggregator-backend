@@ -37,6 +37,11 @@
     <Project Path="src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
     <Project Path="src/Analytics/Analytics.Application/Analytics.Application.csproj" />
   </Folder>
+  <Folder Name="/src/Promotion/">
+    <Project Path="src/Promotion/Promotion.Domain/Promotion.Domain.csproj" />
+    <Project Path="src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+    <Project Path="src/Promotion/Promotion.Application/Promotion.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
   </Folder>
@@ -64,5 +69,9 @@
   <Folder Name="/tests/Analytics/">
     <Project Path="tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj" />
     <Project Path="tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Promotion/">
+    <Project Path="tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj" />
   </Folder>
 </Solution>
