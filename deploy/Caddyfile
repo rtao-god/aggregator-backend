@@ -1,0 +1,44 @@
+{
+    auto_https off
+    admin off
+}
+
+:8080 {
+    encode zstd gzip
+
+    @catalog path /api/catalog-command/*
+    handle @catalog {
+        reverse_proxy catalog-api:8080
+    }
+
+    @catalogMedia path /api/catalog-media/*
+    handle @catalogMedia {
+        reverse_proxy catalog-media-api:8080
+    }
+
+    @query path /api/catalog-query/*
+    handle @query {
+        reverse_proxy query-api:8080
+    }
+
+    @ingestion path /api/ingestion/*
+    handle @ingestion {
+        reverse_proxy ingestion-api:8080
+    }
+
+    @analytics path /api/analytics/*
+    handle @analytics {
+        reverse_proxy analytics-api:8080
+    }
+
+    @promotion path /api/promotion/*
+    handle @promotion {
+        reverse_proxy promotion-api:8080
+    }
+
+    respond /health/live 200 {
+        body "live"
+    }
+
+    respond 404
+}
