@@ -97,8 +97,7 @@ public sealed class CatalogPublicationService(
         var artifactKey = $"catalog/{catalogKey.Value}/publications/{publicationId:N}.json";
         var artifact = CatalogPublicationArtifactFactory.Create(
             publicationId,
-            catalogKey,
-            request.ConfigurationRevisionId,
+            activeConfiguration,
             sequence,
             createdAtUtc,
             selections);
