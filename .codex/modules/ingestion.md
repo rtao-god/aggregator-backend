@@ -9,21 +9,23 @@ It does not own collector crawling or `collector-candidate-export`, and it canno
 ## Projects
 
 - `Ingestion.Domain`: import-batch lifecycle, optimistic concurrency, terminal failure states, and immutable item-decision supersession.
-- `Ingestion.Contracts`: producer-owned manifest, item, provenance, typed value, quality, and package transport contracts.
-- `Ingestion.Application`: canonical serialization, fail-closed package validation, producer authorization, exact Catalog-reference validation, idempotent registration, and storage ports.
+- `Ingestion.Contracts`: producer-owned manifest, item, provenance, typed value, quality, package transport, and API response contracts.
+- `Ingestion.Application`: canonical serialization, fail-closed package validation, producer authorization, exact Catalog-reference validation, idempotent registration, read-only batch queries, transport mapping, and storage ports.
 - `Ingestion.Infrastructure`: the Ingestion-only EF Core model, atomic registration repository, producer registry, local Catalog-reference projection reader, UUIDv7/UTC adapters, and read-only database readiness.
+- `Ingestion.Api`: authenticated manifest registration, exact batch read, typed transport/model/auth failures, rate limiting, read-only health, and development-only protected OpenAPI.
 - `Ingestion.Migrations`: one-shot SQL owner for Ingestion schemas, constraints, indexes, immutable package triggers, and migration identity.
 
-API and worker projects are added only together with their first real production composition root; no placeholder host is retained.
+The worker project is added only together with its first real upload/integrity or delivery composition root; no placeholder host is retained.
 
 ## Active flow
 
 ```text
 collector-owned sealed export
 → generated backend ingestion client
-→ exact manifest registration
-→ producer and target Catalog validation
+→ POST /api/ingestion/batches with exact manifest digest and Idempotency-Key
+→ internal service authentication and producer/target Catalog validation
 → one Ingestion transaction stores batch + manifest + source policies + artifacts + idempotency result
+→ GET /api/ingestion/batches/{batchId} reads only the stored Ingestion projection
 → uploaded-object identity verification
 → package-level integrity validation
 → explicit accepted / needs-review / rejected item decisions
@@ -31,6 +33,19 @@ collector-owned sealed export
 → typed Catalog commands
 → exact Catalog outcomes in the Ingestion delivery ledger
 ```
+
+## API boundary
+
+- Audience: `aggregator-ingestion`.
+- Registration scope: `ingestion.upload`.
+- Read scope: `ingestion.read`.
+- Contract document scope: `ingestion.test-contracts` in Development only.
+- Registration requires one exact `Idempotency-Key` and an authenticated OIDC `sub` representing the calling workload identity.
+- New registration returns `201`; exact idempotent replay returns `200` with `replayed = true` and the original batch identity.
+- Missing batch is a typed `404`, not a successful empty payload.
+- Numeric enum tokens are rejected; the generated string-enum wire contract is authoritative.
+- Authentication, authorization, model-state, application, and domain failures include owner, code, correlation ID, and required action.
+- `/health/live` and `/health/ready` are read-only and never migrate, process packages, repair rows, or publish.
 
 ## Persistence boundary
 
@@ -61,7 +76,8 @@ The app role has no `catalog_db` credentials. Business migrations run only throu
 ## Proof
 
 - Domain tests cover package-level failure states, exact decision coverage, partial Catalog outcomes, immutable item-decision supersession, and stale aggregate revisions.
-- Application tests cover canonical package integrity, duplicate item rejection, post-seal mutation, explicit review/rejection decisions, unknown wire revisions, producer authorization, and exact target Catalog configuration identity.
-- Infrastructure tests inspect the Npgsql EF model for concurrency, semantic uniqueness, restrictive foreign keys, idempotency ownership, and required dedicated configuration.
+- Application tests cover canonical package integrity, duplicate item rejection, post-seal mutation, explicit review/rejection decisions, unknown wire revisions, producer authorization, exact target Catalog configuration identity, every batch-state transport mapping, and absent/existing read semantics.
+- Infrastructure tests inspect the Npgsql EF design model for concurrency, semantic uniqueness, restrictive foreign keys, idempotency ownership, and required dedicated configuration.
+- API tests cover anonymous and wrong-scope denial, missing workload subject, missing idempotency, numeric-enum rejection, create/replay, exact read, typed missing state, and anonymous read-only liveness.
 - Architecture tests enforce context project boundaries after the projects are included in the solution.
-- PostgreSQL runtime migration and transaction tests remain part of the integration stage; static model proof is not reported as runtime database proof.
+- PostgreSQL runtime migration/transaction tests and real OIDC/object-store integration remain part of the integration stage; static and in-memory API proof is not reported as those runtime proofs.
