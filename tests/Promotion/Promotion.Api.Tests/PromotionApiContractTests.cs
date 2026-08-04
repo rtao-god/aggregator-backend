@@ -10,6 +10,10 @@ namespace Promotion.Api.Tests;
 public sealed class PromotionApiContractTests(PromotionApiFactory factory) : IClassFixture<PromotionApiFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+    private static readonly int[] NumericPresentationFeatures = [1];
+    private static readonly string[] StringPresentationFeatures = ["featuredListing"];
+    private static readonly PromotionPresentationFeatureContract[] ProductPresentationFeatures =
+        [PromotionPresentationFeatureContract.FeaturedListing];
     private static readonly Guid ActorId =
         Guid.Parse("0198b300-0000-7000-8000-000000000001");
 
@@ -100,7 +104,7 @@ public sealed class PromotionApiContractTests(PromotionApiFactory factory) : ICl
                 {
                     ["en-GB"] = "Numeric enum product",
                 },
-                presentationFeatures = new[] { 1 },
+                presentationFeatures = NumericPresentationFeatures,
                 requiresVerifiedContact = false,
                 requiredContactCapability = (string?)null,
             }),
@@ -132,7 +136,7 @@ public sealed class PromotionApiContractTests(PromotionApiFactory factory) : ICl
                 {
                     ["en-GB"] = "Extra member product",
                 },
-                presentationFeatures = new[] { "featuredListing" },
+                presentationFeatures = StringPresentationFeatures,
                 requiresVerifiedContact = false,
                 requiredContactCapability = (string?)null,
                 unsupportedProductionField = true,
@@ -212,7 +216,7 @@ public sealed class PromotionApiContractTests(PromotionApiFactory factory) : ICl
                         ["de-DE"] = "Hervorgehobener Eintrag",
                         ["en-GB"] = "Featured listing",
                     },
-                    [PromotionPresentationFeatureContract.FeaturedListing],
+                    ProductPresentationFeatures,
                     RequiresVerifiedContact: true,
                     RequiredContactCapability: "website"),
                 options: JsonOptions),
