@@ -543,10 +543,10 @@ internal sealed class EfAnalyticsRepository(
             "Replay Catalog listing access events beginning with the next expected aggregate revision.",
             AccessRevisionContext(incoming, currentRevision));
 
-    private static IReadOnlyDictionary<string, object?> AccessRevisionContext(
+    private static Dictionary<string, object?> AccessRevisionContext(
         ListingMetricsAccessProjection incoming,
         long currentRevision) =>
-        new Dictionary<string, object?>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["listingId"] = incoming.ListingId,
             ["actorId"] = incoming.ActorId,
@@ -576,12 +576,12 @@ internal sealed class EfAnalyticsRepository(
             message,
             requiredAction);
 
-    private static AnalyticsCommandException PersistenceCorruption(
+    private static AnalyticsPersistenceCorruptionException PersistenceCorruption(
         string code,
         string message,
         string requiredAction,
         Exception innerException) =>
-        new AnalyticsPersistenceCorruptionException(
+        new(
             code,
             message,
             requiredAction,
