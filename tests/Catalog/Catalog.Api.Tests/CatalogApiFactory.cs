@@ -17,19 +17,34 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
     public const string ActorHeader = "X-Test-Actor";
     public const string ScopesHeader = "X-Test-Scopes";
 
+    private static readonly IReadOnlyDictionary<string, string> RequiredEnvironment =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ConnectionStrings__Catalog"] =
+                "Host=127.0.0.1;Port=1;Database=catalog;Username=test;Password=test;Timeout=1;Command Timeout=1",
+            ["Catalog__ObjectStorage__ServiceUrl"] = "http://127.0.0.1:1",
+            ["Catalog__ObjectStorage__BucketName"] = "catalog-test",
+            ["Catalog__ObjectStorage__AccessKey"] = "test-access",
+            ["Catalog__ObjectStorage__SecretKey"] = "test-secret",
+            ["Authentication__Authority"] = "https://issuer.test",
+            ["Authentication__RequireHttpsMetadata"] = "false",
+        };
+
+    private readonly Dictionary<string, string?> _originalEnvironment = new(StringComparer.Ordinal);
+
+    public CatalogApiFactory()
+    {
+        foreach (var setting in RequiredEnvironment)
+        {
+            _originalEnvironment[setting.Key] = Environment.GetEnvironmentVariable(setting.Key);
+            Environment.SetEnvironmentVariable(setting.Key, setting.Value);
+        }
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.UseEnvironment("Testing");
-        builder.UseSetting(
-            "ConnectionStrings:Catalog",
-            "Host=127.0.0.1;Port=1;Database=catalog;Username=test;Password=test;Timeout=1;Command Timeout=1");
-        builder.UseSetting("Catalog:ObjectStorage:ServiceUrl", "http://127.0.0.1:1");
-        builder.UseSetting("Catalog:ObjectStorage:BucketName", "catalog-test");
-        builder.UseSetting("Catalog:ObjectStorage:AccessKey", "test-access");
-        builder.UseSetting("Catalog:ObjectStorage:SecretKey", "test-secret");
-        builder.UseSetting("Authentication:Authority", "https://issuer.test");
-        builder.UseSetting("Authentication:RequireHttpsMetadata", "false");
         builder.ConfigureTestServices(services =>
         {
             services
@@ -43,6 +58,19 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
                     TestAuthenticationHandler.AuthenticationSchemeName,
                     _ => { });
         });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var setting in _originalEnvironment)
+            {
+                Environment.SetEnvironmentVariable(setting.Key, setting.Value);
+            }
+        }
+
+        base.Dispose(disposing);
     }
 
     private sealed class TestAuthenticationHandler(
