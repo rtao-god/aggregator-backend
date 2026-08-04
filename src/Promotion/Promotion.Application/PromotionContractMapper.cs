@@ -99,13 +99,13 @@ public static class PromotionContractMapper
 
     public static PromotionPresentationFeature ToDomain(
         PromotionPresentationFeatureContract feature) => feature switch
-    {
-        PromotionPresentationFeatureContract.FeaturedListing => PromotionPresentationFeature.FeaturedListing,
-        PromotionPresentationFeatureContract.SponsoredSlot => PromotionPresentationFeature.SponsoredSlot,
-        PromotionPresentationFeatureContract.ExtendedCard => PromotionPresentationFeature.ExtendedCard,
-        PromotionPresentationFeatureContract.ExtendedGallery => PromotionPresentationFeature.ExtendedGallery,
-        _ => throw Unsupported(nameof(feature), feature),
-    };
+        {
+            PromotionPresentationFeatureContract.FeaturedListing => PromotionPresentationFeature.FeaturedListing,
+            PromotionPresentationFeatureContract.SponsoredSlot => PromotionPresentationFeature.SponsoredSlot,
+            PromotionPresentationFeatureContract.ExtendedCard => PromotionPresentationFeature.ExtendedCard,
+            PromotionPresentationFeatureContract.ExtendedGallery => PromotionPresentationFeature.ExtendedGallery,
+            _ => throw Unsupported(nameof(feature), feature),
+        };
 
     public static PromotionProductState ToDomain(PromotionProductStateContract state) => state switch
     {
@@ -117,12 +117,12 @@ public static class PromotionContractMapper
 
     public static PromotionEntitlementSourceType ToDomain(
         PromotionEntitlementSourceTypeContract sourceType) => sourceType switch
-    {
-        PromotionEntitlementSourceTypeContract.ManualContract => PromotionEntitlementSourceType.ManualContract,
-        PromotionEntitlementSourceTypeContract.ManualTrial => PromotionEntitlementSourceType.ManualTrial,
-        PromotionEntitlementSourceTypeContract.AdministrativeGrant => PromotionEntitlementSourceType.AdministrativeGrant,
-        _ => throw Unsupported(nameof(sourceType), sourceType),
-    };
+        {
+            PromotionEntitlementSourceTypeContract.ManualContract => PromotionEntitlementSourceType.ManualContract,
+            PromotionEntitlementSourceTypeContract.ManualTrial => PromotionEntitlementSourceType.ManualTrial,
+            PromotionEntitlementSourceTypeContract.AdministrativeGrant => PromotionEntitlementSourceType.AdministrativeGrant,
+            _ => throw Unsupported(nameof(sourceType), sourceType),
+        };
 
     public static PlacementScopeType ToDomain(PlacementScopeTypeContract scopeType) => scopeType switch
     {
@@ -177,33 +177,33 @@ public static class PromotionContractMapper
 
     private static PromotionPresentationFeatureContract ToContract(
         PromotionPresentationFeature feature) => feature switch
-    {
-        PromotionPresentationFeature.FeaturedListing => PromotionPresentationFeatureContract.FeaturedListing,
-        PromotionPresentationFeature.SponsoredSlot => PromotionPresentationFeatureContract.SponsoredSlot,
-        PromotionPresentationFeature.ExtendedCard => PromotionPresentationFeatureContract.ExtendedCard,
-        PromotionPresentationFeature.ExtendedGallery => PromotionPresentationFeatureContract.ExtendedGallery,
-        _ => throw Unsupported(nameof(feature), feature),
-    };
+        {
+            PromotionPresentationFeature.FeaturedListing => PromotionPresentationFeatureContract.FeaturedListing,
+            PromotionPresentationFeature.SponsoredSlot => PromotionPresentationFeatureContract.SponsoredSlot,
+            PromotionPresentationFeature.ExtendedCard => PromotionPresentationFeatureContract.ExtendedCard,
+            PromotionPresentationFeature.ExtendedGallery => PromotionPresentationFeatureContract.ExtendedGallery,
+            _ => throw Unsupported(nameof(feature), feature),
+        };
 
     private static PromotionEntitlementSourceTypeContract ToContract(
         PromotionEntitlementSourceType sourceType) => sourceType switch
-    {
-        PromotionEntitlementSourceType.ManualContract => PromotionEntitlementSourceTypeContract.ManualContract,
-        PromotionEntitlementSourceType.ManualTrial => PromotionEntitlementSourceTypeContract.ManualTrial,
-        PromotionEntitlementSourceType.AdministrativeGrant => PromotionEntitlementSourceTypeContract.AdministrativeGrant,
-        _ => throw Unsupported(nameof(sourceType), sourceType),
-    };
+        {
+            PromotionEntitlementSourceType.ManualContract => PromotionEntitlementSourceTypeContract.ManualContract,
+            PromotionEntitlementSourceType.ManualTrial => PromotionEntitlementSourceTypeContract.ManualTrial,
+            PromotionEntitlementSourceType.AdministrativeGrant => PromotionEntitlementSourceTypeContract.AdministrativeGrant,
+            _ => throw Unsupported(nameof(sourceType), sourceType),
+        };
 
     private static PromotionEntitlementStateContract ToContract(
         PromotionEntitlementState state) => state switch
-    {
-        PromotionEntitlementState.Scheduled => PromotionEntitlementStateContract.Scheduled,
-        PromotionEntitlementState.Active => PromotionEntitlementStateContract.Active,
-        PromotionEntitlementState.Paused => PromotionEntitlementStateContract.Paused,
-        PromotionEntitlementState.Revoked => PromotionEntitlementStateContract.Revoked,
-        PromotionEntitlementState.Expired => PromotionEntitlementStateContract.Expired,
-        _ => throw Unsupported(nameof(state), state),
-    };
+        {
+            PromotionEntitlementState.Scheduled => PromotionEntitlementStateContract.Scheduled,
+            PromotionEntitlementState.Active => PromotionEntitlementStateContract.Active,
+            PromotionEntitlementState.Paused => PromotionEntitlementStateContract.Paused,
+            PromotionEntitlementState.Revoked => PromotionEntitlementStateContract.Revoked,
+            PromotionEntitlementState.Expired => PromotionEntitlementStateContract.Expired,
+            _ => throw Unsupported(nameof(state), state),
+        };
 
     private static PlacementScopeTypeContract ToContract(PlacementScopeType scopeType) => scopeType switch
     {
@@ -216,14 +216,14 @@ public static class PromotionContractMapper
 
     private static SponsoredPlacementStateContract ToContract(
         SponsoredPlacementState state) => state switch
-    {
-        SponsoredPlacementState.Scheduled => SponsoredPlacementStateContract.Scheduled,
-        SponsoredPlacementState.Active => SponsoredPlacementStateContract.Active,
-        SponsoredPlacementState.Paused => SponsoredPlacementStateContract.Paused,
-        SponsoredPlacementState.Ended => SponsoredPlacementStateContract.Ended,
-        SponsoredPlacementState.Revoked => SponsoredPlacementStateContract.Revoked,
-        _ => throw Unsupported(nameof(state), state),
-    };
+        {
+            SponsoredPlacementState.Scheduled => SponsoredPlacementStateContract.Scheduled,
+            SponsoredPlacementState.Active => SponsoredPlacementStateContract.Active,
+            SponsoredPlacementState.Paused => SponsoredPlacementStateContract.Paused,
+            SponsoredPlacementState.Ended => SponsoredPlacementStateContract.Ended,
+            SponsoredPlacementState.Revoked => SponsoredPlacementStateContract.Revoked,
+            _ => throw Unsupported(nameof(state), state),
+        };
 
     private static PromotionApplicationException Unsupported<TEnum>(string field, TEnum value)
         where TEnum : struct, Enum =>
