@@ -1,0 +1,132 @@
+name: Persist canonical static gate result
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/persist-static-gate-result.yml'
+  workflow_run:
+    workflows: ["Converge canonical static gate with diagnostics"]
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: write
+  issues: read
+
+concurrency:
+  group: persist-canonical-static-result
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'converge-static-gate-v2.yml',
+              ref: 'main'
+            });
+
+  persist:
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const greenPath = '.codex/ci/canonical-static-gate-green.txt';
+            const blockerPath = '.codex/ci/canonical-static-gate-blocker.md';
+            const branch = 'main';
+            async function getFile(path) {
+              try {
+                const response = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path,
+                  ref: branch
+                });
+                return Array.isArray(response.data) ? null : response.data;
+              } catch (error) {
+                if (error.status === 404) return null;
+                throw error;
+              }
+            }
+            async function deleteFile(path, message) {
+              const current = await getFile(path);
+              if (!current) return;
+              await github.rest.repos.deleteFile({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path,
+                branch,
+                sha: current.sha,
+                message
+              });
+            }
+            async function putFile(path, text, message) {
+              const current = await getFile(path);
+              await github.rest.repos.createOrUpdateFileContents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path,
+                branch,
+                message,
+                content: Buffer.from(text, 'utf8').toString('base64'),
+                ...(current ? { sha: current.sha } : {})
+              });
+            }
+
+            const run = context.payload.workflow_run;
+            if (run.conclusion === 'success') {
+              await deleteFile(
+                blockerPath,
+                'Clear resolved canonical static gate blocker [skip ci]');
+              const { data: main } = await github.rest.repos.getBranch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch
+              });
+              await putFile(
+                greenPath,
+                [
+                  `main_sha=${main.commit.sha}`,
+                  `source_run_sha=${run.head_sha}`,
+                  `run_url=${run.html_url}`,
+                  `completed_at=${run.updated_at}`,
+                  ''
+                ].join('\n'),
+                'Persist green canonical static gate proof [skip ci]');
+              return;
+            }
+
+            await deleteFile(
+              greenPath,
+              'Invalidate stale canonical static gate proof [skip ci]');
+            const title = '[CI] Canonical static gate blocker';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const issue = issues.find(candidate =>
+              candidate.title === title && !candidate.pull_request);
+            const text = issue?.body ?? [
+              '# Canonical static gate blocker',
+              '',
+              `Run: ${run.html_url}`,
+              `Source SHA: ${run.head_sha}`,
+              `Conclusion: ${run.conclusion}`,
+              '',
+              'The gate ended before publishing its structured diagnostic issue.'
+            ].join('\n');
+            await putFile(
+              blockerPath,
+              text,
+              'Persist canonical static gate blocker [skip ci]');
