@@ -182,11 +182,23 @@ public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> opti
         entity.Property(row => row.Key).HasColumnName("key").HasMaxLength(200);
         entity.Property(row => row.RequestDigest).HasColumnName("request_digest").HasMaxLength(64).IsFixedLength();
         entity.Property(row => row.BatchId).HasColumnName("batch_id");
+        entity.Property(row => row.ResultDocument).HasColumnName("result_document").HasColumnType("bytea");
+        entity.Property(row => row.ResultDigest).HasColumnName("result_digest").HasMaxLength(64).IsFixedLength();
         entity.Property(row => row.CallerServiceIdentity).HasColumnName("caller_service_identity").HasMaxLength(200);
         entity.Property(row => row.CreatedAtUtc).HasColumnName("created_at_utc").HasColumnType("timestamp with time zone");
         entity.HasOne<ImportBatchRow>()
             .WithMany()
             .HasForeignKey(row => row.BatchId)
             .OnDelete(DeleteBehavior.Restrict);
+        entity.ToTable(
+            table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_command_idempotency_result_document",
+                    "octet_length(result_document) > 0");
+                table.HasCheckConstraint(
+                    "ck_command_idempotency_result_digest",
+                    "result_digest ~ '^[0-9a-f]{64}$'");
+            });
     }
 }
