@@ -1,0 +1,166 @@
+services:
+  object-storage:
+    healthcheck:
+      disable: true
+
+  object-storage-init:
+    depends_on:
+      object-storage:
+        condition: service_started
+    command: |
+      until mc alias set local http://object-storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+        sleep 2
+      done
+      mc mb --ignore-existing "local/$$MINIO_CATALOG_BUCKET"
+      mc mb --ignore-existing "local/$$MINIO_INGESTION_BUCKET"
+      mc anonymous set none "local/$$MINIO_CATALOG_BUCKET"
+      mc anonymous set none "local/$$MINIO_INGESTION_BUCKET"
+
+  catalog-runtime-grants:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/grant-runtime.sh"]
+    environment:
+      DB_HOST: catalog-db
+      CONTEXT_DB: ${CATALOG_DB:?CATALOG_DB is required}
+      CONTEXT_MIGRATOR_USER: ${CATALOG_MIGRATOR_USER:?CATALOG_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${CATALOG_MIGRATOR_PASSWORD:?CATALOG_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${CATALOG_APP_USER:?CATALOG_APP_USER is required}
+    volumes:
+      - ./postgres/grant-runtime.sh:/grant-runtime.sh:ro
+    depends_on:
+      catalog-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  query-runtime-grants:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/grant-runtime.sh"]
+    environment:
+      DB_HOST: query-db
+      CONTEXT_DB: ${QUERY_DB:?QUERY_DB is required}
+      CONTEXT_MIGRATOR_USER: ${QUERY_MIGRATOR_USER:?QUERY_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${QUERY_MIGRATOR_PASSWORD:?QUERY_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${QUERY_APP_USER:?QUERY_APP_USER is required}
+    volumes:
+      - ./postgres/grant-runtime.sh:/grant-runtime.sh:ro
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  ingestion-runtime-grants:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/grant-runtime.sh"]
+    environment:
+      DB_HOST: ingestion-db
+      CONTEXT_DB: ${INGESTION_DB:?INGESTION_DB is required}
+      CONTEXT_MIGRATOR_USER: ${INGESTION_MIGRATOR_USER:?INGESTION_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${INGESTION_MIGRATOR_PASSWORD:?INGESTION_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${INGESTION_APP_USER:?INGESTION_APP_USER is required}
+    volumes:
+      - ./postgres/grant-runtime.sh:/grant-runtime.sh:ro
+    depends_on:
+      ingestion-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  analytics-runtime-grants:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/grant-runtime.sh"]
+    environment:
+      DB_HOST: analytics-db
+      CONTEXT_DB: ${ANALYTICS_DB:?ANALYTICS_DB is required}
+      CONTEXT_MIGRATOR_USER: ${ANALYTICS_MIGRATOR_USER:?ANALYTICS_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${ANALYTICS_MIGRATOR_PASSWORD:?ANALYTICS_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${ANALYTICS_APP_USER:?ANALYTICS_APP_USER is required}
+    volumes:
+      - ./postgres/grant-runtime.sh:/grant-runtime.sh:ro
+    depends_on:
+      analytics-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  promotion-runtime-grants:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/grant-runtime.sh"]
+    environment:
+      DB_HOST: promotion-db
+      CONTEXT_DB: ${PROMOTION_DB:?PROMOTION_DB is required}
+      CONTEXT_MIGRATOR_USER: ${PROMOTION_MIGRATOR_USER:?PROMOTION_MIGRATOR_USER is required}
+      CONTEXT_MIGRATOR_PASSWORD: ${PROMOTION_MIGRATOR_PASSWORD:?PROMOTION_MIGRATOR_PASSWORD is required}
+      CONTEXT_APP_USER: ${PROMOTION_APP_USER:?PROMOTION_APP_USER is required}
+    volumes:
+      - ./postgres/grant-runtime.sh:/grant-runtime.sh:ro
+    depends_on:
+      promotion-migrations:
+        condition: service_completed_successfully
+    networks: [backend]
+
+  catalog-api:
+    depends_on:
+      catalog-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  query-api:
+    depends_on:
+      query-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  ingestion-api:
+    depends_on:
+      ingestion-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  analytics-api:
+    depends_on:
+      analytics-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  promotion-api:
+    depends_on:
+      promotion-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  catalog-worker:
+    depends_on:
+      catalog-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  query-worker:
+    depends_on:
+      query-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  ingestion-worker:
+    depends_on:
+      ingestion-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  analytics-worker:
+    depends_on:
+      analytics-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+  promotion-worker:
+    depends_on:
+      promotion-runtime-grants:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+
+networks:
+  edge:
+    driver: bridge
