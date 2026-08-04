@@ -3,13 +3,16 @@ using Aggregator.Catalog.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;
 
 [ApiController]
 [Route("api/catalog-command/catalogs/{catalogKey}")]
 [EnableRateLimiting(CatalogRateLimitPolicies.Command)]
-public sealed class CatalogPublicationsController(CatalogPublicationService service) : ControllerBase
+public sealed class CatalogPublicationsController(
+    CatalogPublicationService service,
+    ICorrelationContextAccessor correlation) : ControllerBase
 {
     [HttpPost("publication-requests", Name = CatalogOperationIds.CreatePublication)]
     [Authorize(Policy = CatalogAuthorizationPolicies.Publish)]
@@ -30,6 +33,7 @@ public sealed class CatalogPublicationsController(CatalogPublicationService serv
         var response = await service.PublishAsync(
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken);
         return StatusCode(StatusCodes.Status201Created, response);
     }
@@ -47,6 +51,7 @@ public sealed class CatalogPublicationsController(CatalogPublicationService serv
             catalogKey,
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken));
     }
 }
