@@ -51,11 +51,15 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IIngestionBatchRepository>();
+            services.RemoveAll<IIngestionBatchLifecycleRepository>();
+            services.RemoveAll<IIngestionPayloadStore>();
             services.RemoveAll<IIngestionProducerRegistry>();
             services.RemoveAll<ICatalogIngestionReferenceReader>();
             services.RemoveAll<IIngestionClock>();
             services.RemoveAll<IIngestionIdSource>();
             services.AddSingleton<IIngestionBatchRepository>(Backend);
+            services.AddSingleton<IIngestionBatchLifecycleRepository>(Backend);
+            services.AddSingleton<IIngestionPayloadStore>(Backend);
             services.AddSingleton<IIngestionProducerRegistry>(Backend);
             services.AddSingleton<ICatalogIngestionReferenceReader>(Backend);
             services.AddSingleton<IIngestionClock>(Backend);
@@ -88,6 +92,8 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
 
     public sealed class TestIngestionBackend :
         IIngestionBatchRepository,
+        IIngestionBatchLifecycleRepository,
+        IIngestionPayloadStore,
         IIngestionProducerRegistry,
         ICatalogIngestionReferenceReader,
         IIngestionClock,
@@ -97,6 +103,8 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         private readonly Dictionary<Guid, IngestionBatchSnapshot> _batches = [];
         private readonly Dictionary<(string Scope, string Key), (string Digest, Guid BatchId)> _commands = [];
         private readonly Dictionary<(string Producer, Guid CollectorExportId), Guid> _exports = [];
+        private int _uploadAuthorizationCount;
+        private int _uploadVerificationCount;
 
         public Guid ActiveConfigurationRevisionId { get; } =
             Guid.Parse("0198a123-0000-7000-8000-000000000301");
@@ -105,6 +113,30 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             new(2026, 8, 4, 6, 15, 0, TimeSpan.Zero);
 
         public string? LastCallerServiceIdentity { get; private set; }
+
+        public bool PayloadExists { get; set; } = true;
+
+        public int UploadAuthorizationCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _uploadAuthorizationCount;
+                }
+            }
+        }
+
+        public int UploadVerificationCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _uploadVerificationCount;
+                }
+            }
+        }
 
         public Task<IngestionBatchRegistrationResult> RegisterAsync(
             ImportBatch batch,
@@ -116,24 +148,13 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             ArgumentNullException.ThrowIfNull(batch);
             ArgumentNullException.ThrowIfNull(manifest);
             ArgumentNullException.ThrowIfNull(commandIdentity);
+            cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
                 var commandKey = (commandIdentity.Scope, commandIdentity.Key);
                 if (_commands.TryGetValue(commandKey, out var existingCommand))
                 {
-                    if (!string.Equals(
-                            existingCommand.Digest,
-                            commandIdentity.RequestDigest,
-                            StringComparison.Ordinal))
-                    {
-                        throw new IngestionApplicationException(
-                            "Ingestion.Commands",
-                            "INGESTION_IDEMPOTENCY_DIGEST_CONFLICT",
-                            409,
-                            "The Idempotency-Key was already used for a different registration request.",
-                            "Reuse the key only with the exact original request or submit a new stable key.");
-                    }
-
+                    EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
                     return Task.FromResult(
                         new IngestionBatchRegistrationResult(
                             _batches[existingCommand.BatchId],
@@ -168,6 +189,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             ImportBatchId batchId,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             lock (_gate)
             {
                 return Task.FromResult(
@@ -177,10 +199,132 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             }
         }
 
+        public Task<IngestionBatchSnapshot?> ReadCommandResultAsync(
+            IngestionCommandIdentity commandIdentity,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(commandIdentity);
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                var commandKey = (commandIdentity.Scope, commandIdentity.Key);
+                if (!_commands.TryGetValue(commandKey, out var existingCommand))
+                {
+                    return Task.FromResult<IngestionBatchSnapshot?>(null);
+                }
+
+                EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
+                return Task.FromResult<IngestionBatchSnapshot?>(_batches[existingCommand.BatchId]);
+            }
+        }
+
+        public Task<IngestionBatchCommandResult> SaveLifecycleAsync(
+            ImportBatch batch,
+            long expectedStoredAggregateRevision,
+            IngestionCommandIdentity commandIdentity,
+            string callerServiceIdentity,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(batch);
+            ArgumentNullException.ThrowIfNull(commandIdentity);
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                var commandKey = (commandIdentity.Scope, commandIdentity.Key);
+                if (_commands.TryGetValue(commandKey, out var existingCommand))
+                {
+                    EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
+                    return Task.FromResult(new IngestionBatchCommandResult(
+                        _batches[existingCommand.BatchId],
+                        true));
+                }
+
+                if (!_batches.TryGetValue(batch.Id.Value, out var stored))
+                {
+                    throw new IngestionApplicationException(
+                        "Ingestion.Batches",
+                        "INGESTION_BATCH_NOT_FOUND",
+                        404,
+                        $"Import batch '{batch.Id.Value:D}' was not found.",
+                        "Use the exact ImportBatchId returned by registration.");
+                }
+
+                if (stored.AggregateRevision != expectedStoredAggregateRevision)
+                {
+                    throw new IngestionApplicationException(
+                        "Ingestion.Batches",
+                        "INGESTION_BATCH_REVISION_CONFLICT",
+                        409,
+                        "The import batch changed before the lifecycle transition was persisted.",
+                        "Reload the exact batch and retry with its current aggregate revision.");
+                }
+
+                var snapshot = IngestionBatchSnapshot.From(batch);
+                _batches[batch.Id.Value] = snapshot;
+                _commands.Add(commandKey, (commandIdentity.RequestDigest, batch.Id.Value));
+                LastCallerServiceIdentity = callerServiceIdentity;
+                return Task.FromResult(new IngestionBatchCommandResult(snapshot, false));
+            }
+        }
+
+        public Task<IngestionUploadAuthorization> CreateUploadAuthorizationAsync(
+            string objectKey,
+            string contentType,
+            long maximumSize,
+            TimeSpan lifetime,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                _uploadAuthorizationCount++;
+            }
+
+            return Task.FromResult(new IngestionUploadAuthorization(
+                new Uri(
+                    $"https://object-store.test/upload?key={Uri.EscapeDataString(objectKey)}",
+                    UriKind.Absolute),
+                objectKey,
+                UtcNow.Add(lifetime),
+                contentType,
+                maximumSize));
+        }
+
+        public Task<IngestionPayloadDescriptor> VerifyUploadedAsync(
+            string objectKey,
+            string expectedContentDigest,
+            long expectedSize,
+            string expectedContentType,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                _uploadVerificationCount++;
+                if (!PayloadExists)
+                {
+                    throw new IngestionApplicationException(
+                        "Ingestion.ObjectStorage",
+                        "INGESTION_PAYLOAD_OBJECT_MISSING",
+                        409,
+                        $"Payload object '{objectKey}' does not exist.",
+                        "Upload the exact registered object before completing the upload.");
+                }
+            }
+
+            return Task.FromResult(new IngestionPayloadDescriptor(
+                objectKey,
+                expectedContentDigest,
+                expectedSize,
+                expectedContentType,
+                UtcNow));
+        }
+
         public Task<RegisteredIngestionProducer?> GetAsync(
             string producerIdentity,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             RegisteredIngestionProducer? producer = string.Equals(
                 producerIdentity,
                 "collector-berlin",
@@ -196,18 +340,34 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         Task<CatalogIngestionReference?> ICatalogIngestionReferenceReader.GetAsync(
             string siteKey,
             string catalogKey,
-            CancellationToken cancellationToken) =>
-            Task.FromResult<CatalogIngestionReference?>(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<CatalogIngestionReference?>(
                 new CatalogIngestionReference(
                     siteKey,
                     catalogKey,
                     ActiveConfigurationRevisionId,
                     [IngestionEntityKindContract.Place, IngestionEntityKindContract.Provider],
                     AggregateRevision: 1));
+        }
 
         public DateTimeOffset GetUtcNow() => UtcNow;
 
         public Guid CreateId() => Guid.CreateVersion7();
+
+        private static void EnsureSameCommandDigest(string storedDigest, string requestDigest)
+        {
+            if (!string.Equals(storedDigest, requestDigest, StringComparison.Ordinal))
+            {
+                throw new IngestionApplicationException(
+                    "Ingestion.Commands",
+                    "INGESTION_IDEMPOTENCY_DIGEST_CONFLICT",
+                    409,
+                    "The Idempotency-Key was already used for a different request.",
+                    "Reuse the key only with the exact original request or submit a new stable key.");
+            }
+        }
     }
 
     private sealed class TestAuthenticationHandler(
