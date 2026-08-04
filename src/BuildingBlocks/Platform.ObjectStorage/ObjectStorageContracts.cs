@@ -13,7 +13,7 @@ public sealed record ScopedObjectUrl(Uri Url, DateTimeOffset ExpiresAtUtc);
 /// <summary>Technical object-storage boundary; business prefixes and retention remain context-owned.</summary>
 public interface IObjectStore
 {
-    Task<StoredObjectDescriptor> PutVerifiedAsync(
+    public Task<StoredObjectDescriptor> PutVerifiedAsync(
         string key,
         Stream content,
         long expectedSize,
@@ -21,23 +21,23 @@ public interface IObjectStore
         string contentType,
         CancellationToken cancellationToken);
 
-    Task<StoredObjectDescriptor> HeadAsync(string key, CancellationToken cancellationToken);
+    public Task<StoredObjectDescriptor> HeadAsync(string key, CancellationToken cancellationToken);
 
-    Task<Stream> OpenReadVerifiedAsync(
+    public Task<Stream> OpenReadVerifiedAsync(
         string key,
         string expectedSha256,
         CancellationToken cancellationToken);
 
-    Task<ScopedObjectUrl> CreateScopedReadUrlAsync(
+    public Task<ScopedObjectUrl> CreateScopedReadUrlAsync(
         string key,
         TimeSpan lifetime,
         CancellationToken cancellationToken);
 
-    Task<ScopedObjectUrl> CreateScopedWriteUrlAsync(
+    public Task<ScopedObjectUrl> CreateScopedWriteUrlAsync(
         string key,
         string contentType,
         TimeSpan lifetime,
         CancellationToken cancellationToken);
 
-    Task DeleteAsync(string key, CancellationToken cancellationToken);
+    public Task DeleteAsync(string key, CancellationToken cancellationToken);
 }
