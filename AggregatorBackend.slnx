@@ -20,6 +20,11 @@
     <Project Path="src/Query/Query.Contracts/Query.Contracts.csproj" />
     <Project Path="src/Query/Query.Application/Query.Application.csproj" />
   </Folder>
+  <Folder Name="/src/Ingestion/">
+    <Project Path="src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Application/Ingestion.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
   </Folder>
@@ -34,5 +39,9 @@
   <Folder Name="/tests/Query/">
     <Project Path="tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj" />
     <Project Path="tests/Query/Query.Application.Tests/Query.Application.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Ingestion/">
+    <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj" />
   </Folder>
 </Solution>
