@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Promotion.Contracts/Promotion.Contracts.csproj" />
+  </ItemGroup>
+</Project>
