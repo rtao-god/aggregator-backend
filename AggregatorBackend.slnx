@@ -32,6 +32,11 @@
     <Project Path="src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
     <Project Path="src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
     <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Collector.Application/Ingestion.Collector.Application.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Collector.Infrastructure/Ingestion.Collector.Infrastructure.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Collector.Api/Ingestion.Collector.Api.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Collector.Migrations/Ingestion.Collector.Migrations.csproj" />
   </Folder>
   <Folder Name="/src/Analytics/">
     <Project Path="src/Analytics/Analytics.Domain/Analytics.Domain.csproj" />
