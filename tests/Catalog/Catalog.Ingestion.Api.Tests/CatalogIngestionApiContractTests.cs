@@ -124,7 +124,7 @@ public sealed class CatalogIngestionApiContractTests
         Assert.NotNull(replay);
         Assert.Equal(first, replay);
         Assert.Equal(1, factory.Store.MutationCount);
-        Assert.Equal(CatalogIngestionOutcomeStateContract.DraftCreated, first.State);
+        Assert.Equal(CatalogIngestionOutcomeStateContract.DraftCreated, first!.State);
     }
 
     private static CatalogIngestionUpsertDraftCommand CreateCommand()

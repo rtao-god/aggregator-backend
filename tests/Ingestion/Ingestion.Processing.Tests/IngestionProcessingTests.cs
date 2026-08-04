@@ -43,7 +43,7 @@ public sealed class IngestionProcessingTests
         Assert.True(processed);
         Assert.Null(store.FailureCode);
         var result = Assert.IsType<IngestionProcessingSnapshot>(store.ValidationResult);
-        Assert.Equal(3, result.Decisions.Count);
+        Assert.Collection(result.Decisions, _ => { }, _ => { }, _ => { });
         Assert.Equal(
             [
                 IngestionProcessingDecisionContract.Accepted,
@@ -54,7 +54,7 @@ public sealed class IngestionProcessingTests
                 .OrderBy(decision => decision.ItemKey, StringComparer.Ordinal)
                 .Select(decision => decision.Decision)
                 .ToArray());
-        Assert.All(result.Decisions, decision => Assert.False(string.IsNullOrWhiteSpace(decision.ItemDigest)));
+        Assert.All(result.Decisions, decision => Assert.NotEmpty(decision.ItemDigest));
     }
 
     [Fact]

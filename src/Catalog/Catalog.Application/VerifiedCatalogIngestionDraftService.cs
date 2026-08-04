@@ -3,6 +3,14 @@ using Aggregator.Catalog.Domain;
 
 namespace Aggregator.Catalog.Application;
 
+public interface ICatalogIngestionDraftCommandHandler
+{
+    public Task<CatalogIngestionCommandOutcome> ExecuteAsync(
+        CatalogIngestionUpsertDraftCommand command,
+        string callerIdentity,
+        CancellationToken cancellationToken);
+}
+
 public interface ICatalogIngestionTargetProjectionWriter
 {
     public Task UpsertAsync(
@@ -18,7 +26,7 @@ public sealed class VerifiedCatalogIngestionDraftService(
     ICatalogRepository catalogRepository,
     ICatalogIngestionTargetProjectionWriter targetProjectionWriter,
     CatalogIngestionDraftService draftService,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider) : ICatalogIngestionDraftCommandHandler
 {
     public async Task<CatalogIngestionCommandOutcome> ExecuteAsync(
         CatalogIngestionUpsertDraftCommand command,

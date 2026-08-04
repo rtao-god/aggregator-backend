@@ -20,7 +20,7 @@ public static class CatalogIngestionOperationIds
 
 [ApiController]
 [Route("api/catalog-command/ingestion")]
-public sealed class CatalogIngestionDraftController(CatalogIngestionDraftService service) : ControllerBase
+public sealed class CatalogIngestionDraftController(ICatalogIngestionDraftCommandHandler service) : ControllerBase
 {
     [HttpPost("drafts", Name = CatalogIngestionOperationIds.UpsertDraft)]
     [Authorize(Policy = CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand)]

@@ -54,7 +54,11 @@ public sealed class CatalogIngestionApiFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICatalogIngestionDraftStore>();
+            services.RemoveAll<ICatalogIngestionDraftCommandHandler>();
             services.AddSingleton<ICatalogIngestionDraftStore>(Store);
+            services.AddSingleton<ICatalogIngestionDraftCommandHandler>(
+                provider => new TestCommandHandler(
+                    new CatalogIngestionDraftService(provider.GetRequiredService<ICatalogIngestionDraftStore>())));
             services
                 .AddAuthentication(options =>
                 {
@@ -114,12 +118,22 @@ public sealed class CatalogIngestionApiFactory : WebApplicationFactory<Program>
         }
     }
 
+    private sealed class TestCommandHandler(CatalogIngestionDraftService service)
+        : ICatalogIngestionDraftCommandHandler
+    {
+        public Task<CatalogIngestionCommandOutcome> ExecuteAsync(
+            CatalogIngestionUpsertDraftCommand command,
+            string callerIdentity,
+            CancellationToken cancellationToken) =>
+            service.ExecuteAsync(command, callerIdentity, cancellationToken);
+    }
+
     private sealed class TestAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string Scheme = "CatalogIngestionApiTest";
+        public new const string Scheme = "CatalogIngestionApiTest";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {

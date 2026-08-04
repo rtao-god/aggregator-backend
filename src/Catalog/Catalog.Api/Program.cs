@@ -41,7 +41,9 @@ public partial class Program
         builder.Services.AddCatalogApplication();
         builder.Services.AddCatalogInfrastructure(builder.Configuration);
         builder.Services.AddCatalogIngestionInfrastructure(builder.Configuration);
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<CatalogIngestionDraftService>();
+        builder.Services.AddScoped<ICatalogIngestionDraftCommandHandler, VerifiedCatalogIngestionDraftService>();
         builder.Services.AddPlatformObservability(builder.Configuration, "catalog-command-api");
         builder.Services.AddRateLimiter(options =>
             options.AddFixedWindowLimiter(

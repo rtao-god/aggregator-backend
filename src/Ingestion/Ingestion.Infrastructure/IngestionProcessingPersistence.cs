@@ -1046,8 +1046,6 @@ public static class IngestionProcessingInfrastructureExtensions
 
 internal static class ProcessingDocument
 {
-    private static readonly JsonSerializerOptions Options = CreateOptions();
-
     public static byte[] Serialize<T>(T value) =>
         IngestionCanonicalJson.Serialize(value);
 
@@ -1056,13 +1054,6 @@ internal static class ProcessingDocument
 
     public static string ComputeDigest(ReadOnlySpan<byte> document) =>
         IngestionCanonicalJson.ComputeDigest(document);
-
-    private static JsonSerializerOptions CreateOptions()
-    {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, false));
-        return options;
-    }
 }
 
 internal sealed class ProcessingImportBatchRow
