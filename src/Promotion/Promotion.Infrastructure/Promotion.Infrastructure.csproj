@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Promotion.Application/Promotion.Application.csproj" />
+    <ProjectReference Include="../Promotion.Contracts/Promotion.Contracts.csproj" />
+    <ProjectReference Include="../Promotion.Domain/Promotion.Domain.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj" />
+  </ItemGroup>
+</Project>
