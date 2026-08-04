@@ -50,9 +50,9 @@ public sealed class S3CatalogPublicationArtifactStore(
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
-        if (objectKey.StartsWith('/', StringComparison.Ordinal) ||
+        if (objectKey.StartsWith("/", StringComparison.Ordinal) ||
             objectKey.Contains("..", StringComparison.Ordinal) ||
-            objectKey.Contains('\\', StringComparison.Ordinal))
+            objectKey.Contains("\\", StringComparison.Ordinal))
         {
             throw new ArgumentException("Object key must be a normalized relative key.", nameof(objectKey));
         }
@@ -91,7 +91,8 @@ public sealed class S3CatalogPublicationArtifactStore(
             ChecksumSHA256 = Convert.ToBase64String(expectedDigestBytes),
         };
         request.Metadata["sha256"] = sha256Digest;
-        request.Metadata["contract"] = "aggregator-catalog-publication-v1";
+        request.Metadata["contract"] = "aggregator-catalog-publication";
+        request.Metadata["contract-revision"] = "1";
         _ = await client.PutObjectAsync(request, cancellationToken);
 
         var stored = await client.GetObjectMetadataAsync(

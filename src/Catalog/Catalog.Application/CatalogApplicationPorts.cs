@@ -3,28 +3,30 @@ using Aggregator.Catalog.Domain;
 
 namespace Aggregator.Catalog.Application;
 
+/// <summary>Creates application-owned business identifiers.</summary>
 public interface ICatalogIdSource
 {
-    Guid Next();
+    public Guid Next();
 }
 
+/// <summary>Persists Catalog aggregates and their transactional outbox effects.</summary>
 public interface ICatalogRepository
 {
-    Task AddConfigurationAsync(
+    public Task AddConfigurationAsync(
         ProductConfiguration configuration,
         byte[] canonicalDocument,
         DateTimeOffset importedAtUtc,
         CancellationToken cancellationToken);
 
-    Task<ProductConfiguration?> GetConfigurationAsync(
+    public Task<ProductConfiguration?> GetConfigurationAsync(
         Guid configurationRevisionId,
         CancellationToken cancellationToken);
 
-    Task<ProductConfiguration?> GetActiveConfigurationAsync(
+    public Task<ProductConfiguration?> GetActiveConfigurationAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
-    Task ActivateConfigurationAsync(
+    public Task ActivateConfigurationAsync(
         CatalogKey catalogKey,
         Guid configurationRevisionId,
         Guid expectedConfigurationRevisionId,
@@ -32,74 +34,77 @@ public interface ICatalogRepository
         DateTimeOffset activatedAtUtc,
         CancellationToken cancellationToken);
 
-    Task AddListingAsync(Listing listing, CancellationToken cancellationToken);
+    public Task AddListingAsync(Listing listing, CancellationToken cancellationToken);
 
-    Task<Listing?> GetListingAsync(Guid listingId, CancellationToken cancellationToken);
+    public Task<Listing?> GetListingAsync(Guid listingId, CancellationToken cancellationToken);
 
-    Task<ListingRevision?> GetListingRevisionAsync(Guid revisionId, CancellationToken cancellationToken);
+    public Task<ListingRevision?> GetListingRevisionAsync(
+        Guid revisionId,
+        CancellationToken cancellationToken);
 
-    Task AddListingRevisionAsync(
+    public Task AddListingRevisionAsync(
         Listing listing,
         ListingRevision revision,
         CancellationToken cancellationToken);
 
-    Task AddEditorialDecisionAsync(
+    public Task AddEditorialDecisionAsync(
         Listing listing,
         EditorialDecision decision,
         CancellationToken cancellationToken);
 
-    Task ArchiveListingAsync(Listing listing, CancellationToken cancellationToken);
+    public Task ArchiveListingAsync(Listing listing, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<PublicationSelectionState>> GetPublicationSelectionsAsync(
+    public Task<IReadOnlyList<PublicationSelectionState>> GetPublicationSelectionsAsync(
         CatalogKey catalogKey,
         IReadOnlyList<PublicationSelectionContract> selections,
         CancellationToken cancellationToken);
 
-    Task<long> GetNextPublicationSequenceAsync(
+    public Task<long> GetNextPublicationSequenceAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
-    Task<Guid?> GetCurrentPublicationIdAsync(
+    public Task<Guid?> GetCurrentPublicationIdAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
-    Task<CatalogPublication?> GetPublicationAsync(
+    public Task<CatalogPublication?> GetPublicationAsync(
         Guid publicationId,
         CancellationToken cancellationToken);
 
-    Task CommitPublicationAsync(
+    public Task CommitPublicationAsync(
         CatalogPublication publication,
         Guid? expectedCurrentPublicationId,
         IReadOnlyList<Listing> listings,
         CatalogOutboxMessage outboxMessage,
         CancellationToken cancellationToken);
 
-    Task ActivateExistingPublicationAsync(
+    public Task ActivateExistingPublicationAsync(
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer pointer,
         CatalogOutboxMessage outboxMessage,
         CancellationToken cancellationToken);
 
-    Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken);
+    public Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken);
 
-    Task<ListingClaim?> GetClaimAsync(Guid claimId, CancellationToken cancellationToken);
+    public Task<ListingClaim?> GetClaimAsync(Guid claimId, CancellationToken cancellationToken);
 
-    Task CompleteClaimVerificationAsync(
+    public Task CompleteClaimVerificationAsync(
         ListingClaim claim,
         ListingAccessGrant grant,
         CatalogOutboxMessage outboxMessage,
         CancellationToken cancellationToken);
 
-    Task SaveClaimDecisionAsync(
+    public Task SaveClaimDecisionAsync(
         ListingClaim claim,
         CatalogOutboxMessage? outboxMessage,
         CancellationToken cancellationToken);
 }
 
+/// <summary>Stores one immutable publication artifact and proves its exact digest before Catalog activation.</summary>
 public interface ICatalogPublicationArtifactStore
 {
-    Task PutVerifiedAsync(
+    public Task PutVerifiedAsync(
         string objectKey,
         ReadOnlyMemory<byte> content,
         string sha256Digest,
@@ -133,15 +138,25 @@ public sealed record CatalogActor(Guid Id)
 public sealed class CatalogNotFoundException : InvalidOperationException
 {
     public CatalogNotFoundException(string resourceType, object resourceId)
-        : base($"{resourceType} '{resourceId}' was not found.")
+        : base(CreateMessage(resourceType, resourceId))
     {
-        ResourceType = resourceType;
-        ResourceId = resourceId.ToString() ?? throw new ArgumentException("Resource ID cannot be rendered.", nameof(resourceId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
+        ArgumentNullException.ThrowIfNull(resourceId);
+        ResourceType = resourceType.Trim();
+        ResourceId = resourceId.ToString()
+            ?? throw new ArgumentException("Resource ID cannot be rendered.", nameof(resourceId));
     }
 
     public string ResourceType { get; }
 
     public string ResourceId { get; }
+
+    private static string CreateMessage(string resourceType, object resourceId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceType);
+        ArgumentNullException.ThrowIfNull(resourceId);
+        return $"{resourceType.Trim()} '{resourceId}' was not found.";
+    }
 }
 
 public sealed class CatalogConflictException : InvalidOperationException
