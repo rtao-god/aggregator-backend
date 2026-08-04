@@ -7,7 +7,16 @@
     <Project Path="src/BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
     <Project Path="src/BuildingBlocks/Platform.Security/Platform.Security.csproj" />
   </Folder>
+  <Folder Name="/src/Catalog/">
+    <Project Path="src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
+    <Project Path="src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+    <Project Path="src/Catalog/Catalog.Application/Catalog.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Catalog/">
+    <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
   </Folder>
 </Solution>
