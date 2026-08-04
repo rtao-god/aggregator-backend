@@ -10,9 +10,22 @@ Promotion is the canonical owner of product definitions, manual entitlements, li
 - `Promotion.Contracts`: explicit admin API contracts plus entitlement and sponsored-placement integration events.
 - `Promotion.Application`: idempotent owner commands, deterministic request and revision digests, resource validation, capacity checks, exact contract mapping, and transactional outbox effects.
 - `Promotion.Infrastructure`: Promotion-only PostgreSQL persistence, local Catalog eligibility projection, atomic idempotency/outbox transactions, overlap enforcement, and readiness.
-- `Promotion.Api`: authenticated product, entitlement and placement command/read endpoints with resource-scoped policies, request limits, rate limits, typed errors, and read-only health.
-- `Promotion.Worker`: bounded outbox delivery and owner-scheduled entitlement/placement transitions.
+- `Promotion.Api`: authenticated product, entitlement and placement command/read endpoints with scoped policies, request limits, rate limits, typed errors, and read-only health.
 - `Promotion.Migrations`: one-shot schema owner; runtime hosts never apply DDL.
+
+A worker project is introduced only with the first real persisted activation/expiry or outbox-dispatch composition root. No placeholder host represents that missing runtime owner.
+
+## API boundary
+
+- Audience: `aggregator-promotion`.
+- Listing management scope: `promotion.manage-listing`.
+- Catalog placement/product scope: `promotion.manage-catalog`.
+- Read scope: `promotion.read`.
+- Development contract-document scope: `promotion.test-contracts`.
+- Every mutating command requires one exact `Idempotency-Key` and an authenticated internal `actor_id` mapping.
+- Product, entitlement, placement and placement-calendar reads remain read-only.
+- Numeric enum tokens and undeclared JSON members are rejected by the active wire contract.
+- `/health/live` and `/health/ready` are anonymous read-only probes; they never migrate, activate, expire or repair Promotion state.
 
 ## Active owner flow
 
@@ -46,4 +59,6 @@ Catalog eligibility event
 
 - Domain tests cover immutable revisions, contact prerequisites, entitlement terminal states, listing eligibility, hard expiry and capacity overlap semantics.
 - Application tests cover exact command replay, outbox separation, missing eligibility fail-closed behavior and capacity conflict before persistence.
-- PostgreSQL exclusion, idempotency, outbox atomicity, API authorization, worker expiry and Query overlay integration are proved by the infrastructure/API/worker/integration stages.
+- Infrastructure tests inspect Promotion PostgreSQL ownership, optimistic concurrency, immutable revision rows, command-result identity and the placement overlap exclusion contract.
+- API tests cover anonymous denial, missing actor mapping, required idempotency, numeric-enum rejection, undeclared-field rejection, exact create/replay identity, authorized read and anonymous liveness.
+- Real PostgreSQL/RabbitMQ delivery, worker expiry and Query overlay end-to-end proof remain owned by the integration stages and are not inferred from in-memory API proof.
