@@ -1,6 +1,7 @@
 namespace Aggregator.Promotion.Application;
 
-internal static class PromotionOutboxMessageFactory
+/// <summary>Creates canonical Promotion outbox messages from producer-owned integration events.</summary>
+public static class PromotionOutboxMessageFactory
 {
     public static PromotionOutboxMessage Create<TEvent>(
         Guid eventId,
