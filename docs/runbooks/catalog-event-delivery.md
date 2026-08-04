@@ -13,7 +13,7 @@ Neither the API nor the worker applies migrations. A failed migration is a deplo
 Environment-variable form:
 
 ```text
-ConnectionStrings__Catalog=Host=...;Database=...;Username=...;Password=...
+ConnectionStrings__Catalog=Host=...;Database=...;Username=...;Password=${CATALOG_DB_PASSWORD}
 Messaging__BrokerUri=amqps://...
 Messaging__Exchange=platform.events
 CatalogWorker__DispatcherIdentity=catalog-worker-<stable-instance-name>
