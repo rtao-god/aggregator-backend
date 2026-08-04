@@ -30,40 +30,41 @@ public sealed class SponsoredListingsController(
         RejectUnknownQueryKeys();
         if (string.IsNullOrWhiteSpace(catalogKey) || catalogKey.Trim().Length > 96)
         {
-            return BadRequest(Failure(
+            throw Failure(
                 "QUERY_SPONSORED_CATALOG_INVALID",
+                StatusCodes.Status400BadRequest,
                 "Catalog key is required and must not exceed 96 characters.",
-                "Submit the exact catalog key returned by Query."));
+                "Submit the exact catalog key returned by Query.");
         }
 
         if (publicReadRevisionId == Guid.Empty)
         {
-            return BadRequest(Failure(
+            throw Failure(
                 "QUERY_SPONSORED_REVISION_INVALID",
+                StatusCodes.Status400BadRequest,
                 "Public read revision ID is required.",
-                "Submit the exact revision rendered with the organic result."));
+                "Submit the exact revision rendered with the organic result.");
         }
 
         if (string.IsNullOrWhiteSpace(locale) || locale.Trim().Length > 35)
         {
-            return BadRequest(Failure(
+            throw Failure(
                 "QUERY_SPONSORED_LOCALE_INVALID",
+                StatusCodes.Status400BadRequest,
                 "Locale is required and must not exceed 35 characters.",
-                "Submit the exact locale used for the organic result."));
+                "Submit the exact locale used for the organic result.");
         }
 
-        SponsoredListingSearchResponse response;
+        var normalizedCatalogKey = catalogKey.Trim();
+        var normalizedLocale = locale.Trim();
+        SponsoredListingSearchResponse? response;
         try
         {
             response = await store.ReadAsync(
-                catalogKey.Trim(),
+                normalizedCatalogKey,
                 publicReadRevisionId,
-                locale.Trim(),
-                cancellationToken)
-                ?? new SponsoredListingSearchResponse(
-                    OverlayId: null,
-                    publicReadRevisionId,
-                    Sponsored: []);
+                normalizedLocale,
+                cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -75,16 +76,31 @@ public sealed class SponsoredListingsController(
                 "Restore the Query Promotion projection and retry the exact public read revision.",
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
-                    ["catalogKey"] = catalogKey.Trim(),
+                    ["catalogKey"] = normalizedCatalogKey,
                     ["publicReadRevisionId"] = publicReadRevisionId,
                 },
                 exception);
         }
 
+        if (response is null)
+        {
+            throw Failure(
+                "QUERY_SPONSORED_OVERLAY_UNAVAILABLE",
+                StatusCodes.Status503ServiceUnavailable,
+                "No sealed Promotion overlay exists for the requested public read revision.",
+                "Project an explicit empty or populated Promotion overlay before serving this revision.",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["catalogKey"] = normalizedCatalogKey,
+                    ["publicReadRevisionId"] = publicReadRevisionId,
+                    ["locale"] = normalizedLocale,
+                });
+        }
+
         var etag = ComputeEtag(
             publicReadRevisionId,
             response.OverlayId,
-            locale.Trim());
+            normalizedLocale);
         Response.Headers.ETag = etag;
         Response.Headers.CacheControl = "public, max-age=30, stale-while-revalidate=120";
         Response.Headers["X-Public-Read-Revision-Id"] = publicReadRevisionId.ToString("D");
@@ -113,8 +129,7 @@ public sealed class SponsoredListingsController(
             return;
         }
 
-        throw new QueryReadException(
-            "Query.PromotionPublicRead",
+        throw Failure(
             "QUERY_FILTER_UNSUPPORTED",
             StatusCodes.Status400BadRequest,
             $"Unsupported sponsored query parameters: {string.Join(", ", unknown)}.",
@@ -136,13 +151,17 @@ public sealed class SponsoredListingsController(
         return $"\"{Convert.ToHexStringLower(SHA256.HashData(bytes))}\"";
     }
 
-    private static object Failure(string code, string detail, string requiredAction) => new
-    {
-        type = $"https://errors.example/query/{code.Replace('_', '-')}",
-        title = detail,
-        status = StatusCodes.Status400BadRequest,
-        owner = "Query.PromotionPublicRead",
-        code,
-        requiredAction,
-    };
+    private static QueryReadException Failure(
+        string code,
+        int statusCode,
+        string detail,
+        string requiredAction,
+        IReadOnlyDictionary<string, object?>? context = null) =>
+        new(
+            "Query.PromotionPublicRead",
+            code,
+            statusCode,
+            detail,
+            requiredAction,
+            context ?? new Dictionary<string, object?>(StringComparer.Ordinal));
 }
