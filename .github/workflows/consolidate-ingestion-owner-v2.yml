@@ -1,0 +1,185 @@
+name: Retry canonical Ingestion owner consolidation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/consolidate-ingestion-owner-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: consolidate-ingestion-owner
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  consolidate-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Apply the reviewed Ingestion consolidation script
+        shell: bash
+        run: |
+          python3 - <<'BOOTSTRAP'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/consolidate-ingestion-owner.yml').read_text(encoding='utf-8')
+          marker = "          python3 - <<'PY'\n"
+          start = source.index(marker) + len(marker)
+          end = source.index('          PY\n', start)
+          script = textwrap.dedent(source[start:end])
+          missing_generated_doc = "    'docs/generated/ingestion-worker-generation.md',\n"
+          if script.count(missing_generated_doc) != 1:
+              raise RuntimeError('The reviewed consolidation script no longer has the expected generated-doc entry.')
+          script = script.replace(missing_generated_doc, '')
+          exec(compile(script, 'consolidate-ingestion-owner.py', 'exec'))
+          BOOTSTRAP
+
+      - name: Prove duplicate production owners are unreachable
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'IngestionPackagePayloadValidator|IngestionPackageProcessingService|IIngestionPackageWorkRepository|IngestionPackageWorkClaim|AggregatorCandidatePayloadContract' \
+            src/Ingestion tests/Ingestion; then
+            echo 'An obsolete Ingestion validation owner remains reachable.' >&2
+            exit 1
+          fi
+          test ! -e tools/IngestionWorkerGenerator/Program.cs
+          test ! -e .github/workflows/generate-ingestion-worker.yml
+          test ! -e .github/workflows/generate-ingestion-worker-v2.yml
+
+      - name: Restore Ingestion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Ingestion tests/Ingestion -name '*.csproj' -type f | sort)
+          test "${#projects[@]}" -gt 0
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+          dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
+
+      - name: Format changed Ingestion projects
+        shell: bash
+        run: |
+          projects=(
+            src/Ingestion/Ingestion.Application/Ingestion.Application.csproj
+            src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj
+            src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
+            src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
+            tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj
+            tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj
+          )
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --no-restore
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build Ingestion production graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
+
+      - name: Test complete Ingestion owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find tests/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger 'console;verbosity=normal' /m:1 /nr:false
+          done
+
+      - name: Prove architecture boundary
+        shell: bash
+        run: |
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-restore -warnaserror --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Commit proven owner consolidation and remove both one-shot workflows
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- \
+              src/Ingestion tests/Ingestion .codex/modules/ingestion.md \
+              compose.yml deploy/compose.complete.yaml \
+              AggregatorBackend.slnx AggregatorBackend.All.slnx AggregatorBackend.Runtime.slnx \
+              tools/IngestionWorkerGenerator \
+              tools/completion/normalize_ingestion_worker_generator.py \
+              tools/completion/normalize_ingestion_worker_terminal.py)
+            test -z "$affected" || {
+              printf 'Ingestion owner changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm \
+            .github/workflows/consolidate-ingestion-owner.yml \
+            .github/workflows/consolidate-ingestion-owner-v2.yml
+          paths=(
+            src/Ingestion
+            tests/Ingestion
+            .codex/modules/ingestion.md
+            compose.yml
+            deploy/compose.complete.yaml
+            AggregatorBackend.slnx
+            AggregatorBackend.All.slnx
+            AggregatorBackend.Runtime.slnx
+            tools/IngestionWorkerGenerator
+            tools/completion/normalize_ingestion_worker_generator.py
+            tools/completion/normalize_ingestion_worker_terminal.py
+            .github/workflows/consolidate-ingestion-owner.yml
+            .github/workflows/consolidate-ingestion-owner-v2.yml
+          )
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Consolidate canonical Ingestion processing owner' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Canonical Ingestion owner proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/ingestion-owner'
+            });
