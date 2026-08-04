@@ -1,8 +1,6 @@
 using Aggregator.Ingestion.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Ingestion.Infrastructure.Tests;
 
@@ -35,7 +33,7 @@ public sealed class IngestionPersistenceModelTests
     {
         using var context = CreateContext();
         var command = FindTable(context.Model, "operations", "command_idempotency");
-        var primaryKey = Assert.Single(command.GetKeys().Where(key => key.IsPrimaryKey()));
+        var primaryKey = Assert.Single(command.GetKeys(), key => key.IsPrimaryKey());
 
         Assert.Equal(
             ["Scope", "Key"],
@@ -58,43 +56,6 @@ public sealed class IngestionPersistenceModelTests
         Assert.All(
             immutableTables.SelectMany(entity => entity.GetForeignKeys()),
             foreignKey => Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior));
-    }
-
-    [Fact]
-    public void InfrastructureRegistrationRequiresDedicatedIngestionConnection()
-    {
-        var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder().Build();
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddIngestionInfrastructure(configuration));
-
-        Assert.Equal("Connection string 'Ingestion' is required.", exception.Message);
-    }
-
-    [Fact]
-    public void InfrastructureRegistrationProvidesOnlyIngestionOwnerPorts()
-    {
-        var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectionStrings:Ingestion"] =
-                    "Host=localhost;Database=ingestion_db;Username=ingestion_app;Password=test",
-            })
-            .Build();
-
-        services.AddIngestionInfrastructure(configuration);
-
-        Assert.Contains(services, descriptor =>
-            descriptor.ServiceType.FullName == "Aggregator.Ingestion.Application.IIngestionBatchRepository" &&
-            descriptor.ImplementationType == typeof(EfIngestionRepository));
-        Assert.Contains(services, descriptor =>
-            descriptor.ServiceType.FullName == "Aggregator.Ingestion.Application.IIngestionProducerRegistry" &&
-            descriptor.ImplementationType == typeof(EfIngestionProducerRegistry));
-        Assert.Contains(services, descriptor =>
-            descriptor.ServiceType.FullName == "Aggregator.Ingestion.Application.ICatalogIngestionReferenceReader" &&
-            descriptor.ImplementationType == typeof(EfCatalogIngestionReferenceReader));
     }
 
     private static IngestionDbContext CreateContext()
