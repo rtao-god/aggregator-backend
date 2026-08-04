@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Query.Application/Query.Application.csproj" />
+    <ProjectReference Include="../Query.Domain/Query.Domain.csproj" />
+    <ProjectReference Include="../Query.Contracts/Query.Contracts.csproj" />
+    <ProjectReference Include="../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
+  </ItemGroup>
+</Project>
