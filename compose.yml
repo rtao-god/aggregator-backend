@@ -1,0 +1,298 @@
+name: aggregator-backend
+
+x-postgres-health: &postgres-health
+  test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+  interval: 3s
+  timeout: 3s
+  retries: 30
+  start_period: 5s
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [backend]
+
+x-dotnet-build: &dotnet-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  catalog-db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: catalog
+      POSTGRES_USER: catalog_owner
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog-local-password}
+    healthcheck: *postgres-health
+    volumes: [catalog-db:/var/lib/postgresql/data]
+    networks: [backend]
+
+  ingestion-db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: ingestion
+      POSTGRES_USER: ingestion_owner
+      POSTGRES_PASSWORD: ${INGESTION_DB_PASSWORD:-ingestion-local-password}
+    healthcheck: *postgres-health
+    volumes: [ingestion-db:/var/lib/postgresql/data]
+    networks: [backend]
+
+  query-db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: query
+      POSTGRES_USER: query_owner
+      POSTGRES_PASSWORD: ${QUERY_DB_PASSWORD:-query-local-password}
+    healthcheck: *postgres-health
+    volumes: [query-db:/var/lib/postgresql/data]
+    networks: [backend]
+
+  analytics-db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: analytics
+      POSTGRES_USER: analytics_owner
+      POSTGRES_PASSWORD: ${ANALYTICS_DB_PASSWORD:-analytics-local-password}
+    healthcheck: *postgres-health
+    volumes: [analytics-db:/var/lib/postgresql/data]
+    networks: [backend]
+
+  promotion-db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: promotion
+      POSTGRES_USER: promotion_owner
+      POSTGRES_PASSWORD: ${PROMOTION_DB_PASSWORD:-promotion-local-password}
+    healthcheck: *postgres-health
+    volumes: [promotion-db:/var/lib/postgresql/data]
+    networks: [backend]
+
+  rabbitmq:
+    image: rabbitmq:4.2.2-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-aggregator}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-aggregator-local-password}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes: [rabbitmq:/var/lib/rabbitmq]
+    networks: [backend]
+
+  object-storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "127.0.0.1:${OBJECT_STORAGE_CONSOLE_PORT:-19001}:9001"
+    volumes: [object-storage:/data]
+    networks: [backend]
+
+  object-storage-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      object-storage:
+        condition: service_healthy
+    environment:
+      ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://object-storage:9000 "$${ACCESS_KEY}" "$${SECRET_KEY}"
+        mc mb --ignore-existing local/aggregator
+        mc anonymous set none local/aggregator
+    restart: "no"
+    networks: [backend]
+
+  catalog-migrations:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj
+        ENTRY_DLL: Catalog.Migrations.dll
+    environment:
+      CATALOG_MIGRATOR_CONNECTION_STRING: Host=catalog-db;Port=5432;Database=catalog;Username=catalog_owner;Password=${CATALOG_DB_PASSWORD:-catalog-local-password}
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  ingestion-migrations:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj
+        ENTRY_DLL: Ingestion.Migrations.dll
+    environment:
+      INGESTION_MIGRATOR_CONNECTION_STRING: Host=ingestion-db;Port=5432;Database=ingestion;Username=ingestion_owner;Password=${INGESTION_DB_PASSWORD:-ingestion-local-password}
+    depends_on:
+      ingestion-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  query-migrations:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Query/Query.Migrations/Query.Migrations.csproj
+        ENTRY_DLL: Query.Migrations.dll
+    environment:
+      QUERY_MIGRATOR_CONNECTION_STRING: Host=query-db;Port=5432;Database=query;Username=query_owner;Password=${QUERY_DB_PASSWORD:-query-local-password}
+    depends_on:
+      query-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  analytics-migrations:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj
+        ENTRY_DLL: Analytics.Migrations.dll
+    environment:
+      ANALYTICS_MIGRATOR_CONNECTION_STRING: Host=analytics-db;Port=5432;Database=analytics;Username=analytics_owner;Password=${ANALYTICS_DB_PASSWORD:-analytics-local-password}
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  promotion-migrations:
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj
+        ENTRY_DLL: Promotion.Migrations.dll
+    environment:
+      PROMOTION_MIGRATOR_CONNECTION_STRING: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
+    depends_on:
+      promotion-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  catalog-api:
+    <<: *service-defaults
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Catalog/Catalog.Api/Catalog.Api.csproj
+        ENTRY_DLL: Catalog.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Catalog: Host=catalog-db;Port=5432;Database=catalog;Username=catalog_owner;Password=${CATALOG_DB_PASSWORD:-catalog-local-password}
+      Catalog__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Catalog__ObjectStorage__BucketName: aggregator
+      Catalog__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      Catalog__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+      Authentication__Authority: ${AUTHORITY:-http://identity.invalid}
+      Authentication__RequireHttpsMetadata: "false"
+    depends_on:
+      catalog-migrations:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${CATALOG_API_PORT:-18081}:8080"
+
+  ingestion-api:
+    <<: *service-defaults
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
+        ENTRY_DLL: Ingestion.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Ingestion: Host=ingestion-db;Port=5432;Database=ingestion;Username=ingestion_owner;Password=${INGESTION_DB_PASSWORD:-ingestion-local-password}
+      Ingestion__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Ingestion__ObjectStorage__Region: us-east-1
+      Ingestion__ObjectStorage__Bucket: aggregator
+      Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+      Authentication__Authority: ${AUTHORITY:-http://identity.invalid}
+      Authentication__RequireHttpsMetadata: "false"
+    depends_on:
+      ingestion-migrations:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${INGESTION_API_PORT:-18082}:8080"
+
+  query-api:
+    <<: *service-defaults
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Query/Query.Api/Query.Api.csproj
+        ENTRY_DLL: Query.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Query: Host=query-db;Port=5432;Database=query;Username=query_owner;Password=${QUERY_DB_PASSWORD:-query-local-password}
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${QUERY_API_PORT:-18083}:8080"
+
+  analytics-api:
+    <<: *service-defaults
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Analytics/Analytics.Api/Analytics.Api.csproj
+        ENTRY_DLL: Analytics.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Analytics: Host=analytics-db;Port=5432;Database=analytics;Username=analytics_owner;Password=${ANALYTICS_DB_PASSWORD:-analytics-local-password}
+    depends_on:
+      analytics-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${ANALYTICS_API_PORT:-18084}:8080"
+
+  promotion-api:
+    <<: *service-defaults
+    build:
+      <<: *dotnet-build
+      args:
+        PROJECT: src/Promotion/Promotion.Api/Promotion.Api.csproj
+        ENTRY_DLL: Promotion.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
+      Authentication__Authority: ${AUTHORITY:-http://identity.invalid}
+      Authentication__RequireHttpsMetadata: "false"
+    depends_on:
+      promotion-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${PROMOTION_API_PORT:-18085}:8080"
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  catalog-db:
+  ingestion-db:
+  query-db:
+  analytics-db:
+  promotion-db:
+  rabbitmq:
+  object-storage:
