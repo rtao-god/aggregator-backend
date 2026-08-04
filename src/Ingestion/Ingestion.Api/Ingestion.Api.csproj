@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="../Ingestion.Application/Ingestion.Application.csproj" />
     <ProjectReference Include="../Ingestion.Contracts/Ingestion.Contracts.csproj" />
+    <ProjectReference Include="../Ingestion.Domain/Ingestion.Domain.csproj" />
     <ProjectReference Include="../Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj" />
