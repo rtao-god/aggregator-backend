@@ -1,0 +1,72 @@
+name: generate-analytics-runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "tools/completion/generate_analytics_runtime.py"
+      - "src/Analytics/Analytics.Application/**"
+      - "src/Analytics/Analytics.Contracts/**"
+      - "src/Analytics/Analytics.Domain/**"
+      - "src/Analytics/Analytics.Infrastructure/**"
+      - "src/Catalog/Catalog.Migrations/**"
+      - ".github/workflows/generate-analytics-runtime.yml"
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: generate-analytics-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+      - name: Generate strongly typed Analytics runtime
+        run: python3 tools/completion/generate_analytics_runtime.py
+      - name: Format generated projects
+        run: |
+          dotnet format src/Analytics/Analytics.Api/Analytics.Api.csproj
+          dotnet format src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj
+      - name: Compile generated Analytics owners
+        run: |
+          dotnet build src/Analytics/Analytics.Api/Analytics.Api.csproj -warnaserror
+          dotnet build src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj -warnaserror
+      - name: Commit generated owner source
+        run: |
+          if git diff --quiet -- src/Analytics/Analytics.Api src/Analytics/Analytics.Migrations docs/generated/analytics-runtime-generation.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/Analytics/Analytics.Api src/Analytics/Analytics.Migrations docs/generated/analytics-runtime-generation.md
+          git commit -m "Generate strongly typed Analytics runtime"
+          git push origin HEAD:main
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Analytics runtime generation: ${process.env.JOB_STATUS}`,
+              context: 'ci/analytics-runtime-generation'
+            });
