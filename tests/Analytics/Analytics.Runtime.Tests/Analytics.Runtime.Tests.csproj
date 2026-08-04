@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Analytics/Analytics.Application/Analytics.Application.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Domain/Analytics.Domain.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Worker/Analytics.Worker.csproj" />
+  </ItemGroup>
+</Project>
