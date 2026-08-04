@@ -56,7 +56,8 @@ public sealed record SponsoredPlacementItem(
     DateTimeOffset EndsAtUtc,
     string Disclosure);
 
-public sealed record SponsoredPlacementResponse(
+/// <summary>Read-only sponsored items effective for one exact catalog placement at one UTC instant.</summary>
+public sealed record SponsoredPlacementFeedResponse(
     string CatalogKey,
     string PlacementKey,
     DateTimeOffset EffectiveAtUtc,
