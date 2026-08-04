@@ -64,6 +64,7 @@ public sealed record CatalogCommandIdentity(string Scope, string Key, string Req
                 "Submit the command with one stable Idempotency-Key.");
         }
 
+        ArgumentNullException.ThrowIfNull(requestDigest);
         if (requestDigest.Length != 64 || requestDigest.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
         {
             throw new CatalogCommandException(

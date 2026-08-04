@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace Aggregator.Catalog.Domain;
@@ -20,7 +21,10 @@ public sealed class CatalogDomainException : Exception
 
 internal static class CatalogTextRules
 {
-    public static void RequireText(string value, string parameterName, int maximumLength = 500)
+    public static void RequireText(
+        [NotNull] string? value,
+        string parameterName,
+        int maximumLength = 500)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -33,7 +37,7 @@ internal static class CatalogTextRules
         }
     }
 
-    public static void RequireKey(string value, string parameterName)
+    public static void RequireKey([NotNull] string? value, string parameterName)
     {
         RequireText(value, parameterName, 100);
         if (!char.IsAsciiLetter(value[0]) || char.IsUpper(value[0]))
@@ -52,7 +56,7 @@ internal static class CatalogTextRules
         }
     }
 
-    public static void RequireLocale(string value, string parameterName)
+    public static void RequireLocale([NotNull] string? value, string parameterName)
     {
         RequireText(value, parameterName, 35);
         try
@@ -73,7 +77,7 @@ internal static class CatalogTextRules
         }
     }
 
-    public static void RequireDigest(string value, string parameterName)
+    public static void RequireDigest([NotNull] string? value, string parameterName)
     {
         RequireText(value, parameterName, 64);
         if (value.Length != 64 || value.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
