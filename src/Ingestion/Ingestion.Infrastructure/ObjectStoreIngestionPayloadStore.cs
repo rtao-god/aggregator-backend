@@ -66,15 +66,30 @@ public sealed class ObjectStoreIngestionPayloadStore : IIngestionPayloadStore
                 "Correct the composition root to supply a UTC clock.");
         }
 
-        var uploadUri = await _objectStore.CreateScopedWriteAsync(
+        var upload = await _objectStore.CreateScopedWriteUrlAsync(
             objectKey,
             contentType,
             lifetime,
             cancellationToken);
+        if (upload.ExpiresAtUtc != issuedAtUtc.Add(lifetime))
+        {
+            throw new IngestionApplicationException(
+                "Ingestion.ObjectStorage",
+                "INGESTION_UPLOAD_EXPIRY_MISMATCH",
+                500,
+                "The object-store authorization expiry does not match the requested Ingestion lifetime.",
+                "Correct the object-store adapter to preserve the exact scoped authorization lifetime.",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["expectedExpiresAtUtc"] = issuedAtUtc.Add(lifetime),
+                    ["actualExpiresAtUtc"] = upload.ExpiresAtUtc,
+                });
+        }
+
         return new IngestionUploadAuthorization(
-            uploadUri,
+            upload.Url,
             objectKey,
-            issuedAtUtc.Add(lifetime),
+            upload.ExpiresAtUtc,
             contentType,
             maximumSize);
     }
@@ -139,7 +154,7 @@ public sealed class ObjectStoreIngestionPayloadStore : IIngestionPayloadStore
                 expectedContentDigest,
                 descriptor.Size,
                 descriptor.ContentType,
-                descriptor.LastModifiedAtUtc);
+                descriptor.LastModifiedUtc);
         }
         catch (IngestionApplicationException)
         {
