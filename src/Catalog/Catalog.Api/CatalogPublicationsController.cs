@@ -19,6 +19,7 @@ public sealed class CatalogPublicationsController(CatalogPublicationService serv
         [FromBody] CreateCatalogPublicationRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (!string.Equals(catalogKey, request.CatalogKey, StringComparison.Ordinal))
         {
             throw new CatalogContractException(
@@ -39,10 +40,13 @@ public sealed class CatalogPublicationsController(CatalogPublicationService serv
     public async Task<ActionResult<CatalogPublicationResponse>> RollbackAsync(
         string catalogKey,
         [FromBody] RollbackPublicationRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.RollbackAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.RollbackAsync(
             catalogKey,
             request,
             CatalogActorAccessor.Require(HttpContext),
             cancellationToken));
+    }
 }
