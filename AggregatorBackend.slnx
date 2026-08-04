@@ -22,6 +22,7 @@
     <Project Path="src/Query/Query.Application/Query.Application.csproj" />
     <Project Path="src/Query/Query.Infrastructure/Query.Infrastructure.csproj" />
     <Project Path="src/Query/Query.Api/Query.Api.csproj" />
+    <Project Path="src/Query/Query.Worker/Query.Worker.csproj" />
     <Project Path="src/Query/Query.Migrations/Query.Migrations.csproj" />
   </Folder>
   <Folder Name="/src/Ingestion/">
@@ -63,6 +64,7 @@
     <Project Path="tests/Query/Query.Application.Tests/Query.Application.Tests.csproj" />
     <Project Path="tests/Query/Query.Infrastructure.Tests/Query.Infrastructure.Tests.csproj" />
     <Project Path="tests/Query/Query.Api.Tests/Query.Api.Tests.csproj" />
+    <Project Path="tests/Query/Query.Worker.Tests/Query.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Ingestion/">
     <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
