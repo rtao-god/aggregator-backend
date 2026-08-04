@@ -140,11 +140,15 @@ def normalize_application_source() -> None:
     )
     source = replace_required(
         source,
-        """    public static string ComputeDigest<T>(T value) =>
-        ComputeDigest(Serialize(value));""",
-        """    public static string ComputeDigest<T>(T value) =>
-        ComputeDigest(Serialize(value).AsSpan());""",
+        "public static string ComputeDigest<T>(T value) => ComputeDigest(Serialize(value));",
+        "public static string ComputeDigest<T>(T value) => ComputeDigest(Serialize(value).AsSpan());",
         "canonical digest byte-span overload",
+    )
+    source = replace_required(
+        source,
+        "            ComputeDigest(bytes),",
+        "            ComputeDigest(bytes.AsSpan()),",
+        "outbox digest byte-span overload",
     )
     APPLICATION_SOURCE.write_text(source, encoding="utf-8", newline="\n")
 
