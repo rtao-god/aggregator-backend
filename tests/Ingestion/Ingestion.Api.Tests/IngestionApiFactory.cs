@@ -101,7 +101,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
     {
         private readonly object _gate = new();
         private readonly Dictionary<Guid, IngestionBatchSnapshot> _batches = [];
-        private readonly Dictionary<(string Scope, string Key), (string Digest, Guid BatchId)> _commands = [];
+        private readonly Dictionary<(string Scope, string Key), StoredCommand> _commands = [];
         private readonly Dictionary<(string Producer, Guid CollectorExportId), Guid> _exports = [];
         private int _uploadAuthorizationCount;
         private int _uploadVerificationCount;
@@ -157,7 +157,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                     EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
                     return Task.FromResult(
                         new IngestionBatchRegistrationResult(
-                            _batches[existingCommand.BatchId],
+                            existingCommand.Result,
                             true));
                 }
 
@@ -178,7 +178,9 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
 
                 var snapshot = IngestionBatchSnapshot.From(batch);
                 _batches.Add(snapshot.Id.Value, snapshot);
-                _commands.Add(commandKey, (commandIdentity.RequestDigest, snapshot.Id.Value));
+                _commands.Add(
+                    commandKey,
+                    new StoredCommand(commandIdentity.RequestDigest, snapshot));
                 _exports.Add(exportKey, snapshot.Id.Value);
                 LastCallerServiceIdentity = callerServiceIdentity;
                 return Task.FromResult(new IngestionBatchRegistrationResult(snapshot, false));
@@ -214,7 +216,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                 }
 
                 EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
-                return Task.FromResult<IngestionBatchSnapshot?>(_batches[existingCommand.BatchId]);
+                return Task.FromResult<IngestionBatchSnapshot?>(existingCommand.Result);
             }
         }
 
@@ -235,7 +237,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                 {
                     EnsureSameCommandDigest(existingCommand.Digest, commandIdentity.RequestDigest);
                     return Task.FromResult(new IngestionBatchCommandResult(
-                        _batches[existingCommand.BatchId],
+                        existingCommand.Result,
                         true));
                 }
 
@@ -261,7 +263,9 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
 
                 var snapshot = IngestionBatchSnapshot.From(batch);
                 _batches[batch.Id.Value] = snapshot;
-                _commands.Add(commandKey, (commandIdentity.RequestDigest, batch.Id.Value));
+                _commands.Add(
+                    commandKey,
+                    new StoredCommand(commandIdentity.RequestDigest, snapshot));
                 LastCallerServiceIdentity = callerServiceIdentity;
                 return Task.FromResult(new IngestionBatchCommandResult(snapshot, false));
             }
@@ -368,6 +372,8 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                     "Reuse the key only with the exact original request or submit a new stable key.");
             }
         }
+
+        private sealed record StoredCommand(string Digest, IngestionBatchSnapshot Result);
     }
 
     private sealed class TestAuthenticationHandler(
