@@ -18,7 +18,7 @@ public sealed record AnalyticsAntiAbuseTokenResponse(
 
 public sealed record AnalyticsAntiAbuseOptions
 {
-    public required byte[] SigningKey { get; init; }
+    public required ReadOnlyMemory<byte> SigningKey { get; init; }
 
     public TimeSpan TokenLifetime { get; init; } = TimeSpan.FromMinutes(2);
 
@@ -57,7 +57,6 @@ public sealed record AnalyticsAntiAbuseOptions
 
     public void Validate()
     {
-        ArgumentNullException.ThrowIfNull(SigningKey);
         if (SigningKey.Length < 32)
         {
             throw new InvalidOperationException(
@@ -143,7 +142,7 @@ public sealed class AnalyticsAntiAbuseProofService(
                 "Request a fresh proof and submit it unchanged with the exact interaction.");
         }
 
-        var separatorIndex = antiAbuseToken.IndexOf('.', StringComparison.Ordinal);
+        var separatorIndex = antiAbuseToken.IndexOf('.');
         if (separatorIndex <= 0 || separatorIndex == antiAbuseToken.Length - 1)
         {
             throw InvalidToken();
@@ -192,7 +191,7 @@ public sealed class AnalyticsAntiAbuseProofService(
             CultureInfo.InvariantCulture,
             $"{clientEventId:D}\n{occurredAtUtc:O}\n{expiresUnixSeconds}");
         return Convert.ToHexStringLower(
-            HMACSHA256.HashData(options.SigningKey, Encoding.UTF8.GetBytes(canonical)));
+            HMACSHA256.HashData(options.SigningKey.Span, Encoding.UTF8.GetBytes(canonical)));
     }
 
     private static AnalyticsCommandException InvalidToken() =>
