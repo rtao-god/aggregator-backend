@@ -153,7 +153,10 @@ public interface IIngestionBatchRepository
     public Task<IngestionBatchSnapshot?> ReadAsync(
         ImportBatchId batchId,
         CancellationToken cancellationToken);
+}
 
+public interface IIngestionBatchLifecycleRepository
+{
     public Task<IngestionBatchSnapshot?> ReadCommandResultAsync(
         IngestionCommandIdentity commandIdentity,
         CancellationToken cancellationToken);
