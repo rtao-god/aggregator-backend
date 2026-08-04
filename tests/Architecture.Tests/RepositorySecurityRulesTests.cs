@@ -181,14 +181,14 @@ public sealed partial class RepositorySecurityRulesTests
 
     private static bool HasAuthorizationBeforeControllerDeclaration(string source)
     {
-        var declaration = source.IndexOf("Controller", StringComparison.Ordinal);
-        if (declaration < 0)
+        var declaration = ControllerDeclarationRegex().Match(source);
+        if (!declaration.Success)
         {
             return false;
         }
 
-        var prefixStart = Math.Max(0, declaration - 2000);
-        return AuthorizationAttributeRegex().IsMatch(source[prefixStart..declaration]);
+        var prefixStart = Math.Max(0, declaration.Index - 2000);
+        return AuthorizationAttributeRegex().IsMatch(source[prefixStart..declaration.Index]);
     }
 
     private static IEnumerable<string> EnumerateSourceFiles(
@@ -271,6 +271,9 @@ public sealed partial class RepositorySecurityRulesTests
 
     [GeneratedRegex(@"\[(?:HttpPost|HttpPut|HttpPatch|HttpDelete)(?:Attribute)?(?:\([^\]]*\))?\][\s\S]{0,1800}?\b(?:public|internal)\s+(?:async\s+)?", RegexOptions.CultureInvariant)]
     private static partial Regex MutationMethodRegex();
+
+    [GeneratedRegex(@"\b(?:public|internal)\s+(?:(?:sealed|abstract|partial)\s+)*class\s+\w*Controller\b", RegexOptions.CultureInvariant)]
+    private static partial Regex ControllerDeclarationRegex();
 
     [GeneratedRegex(@"\[Authorize(?:Attribute)?\s*\([^\]]*(?:Policy\s*=|policy\s*:)[^\]]+\)\]", RegexOptions.CultureInvariant)]
     private static partial Regex AuthorizationAttributeRegex();
