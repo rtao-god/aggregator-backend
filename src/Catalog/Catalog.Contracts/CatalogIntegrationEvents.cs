@@ -7,6 +7,13 @@ public static class CatalogIntegrationEventTypes
     public const string ListingClaimRevoked = "catalog.listing-claim.revoked";
 }
 
+public static class CatalogIntegrationEventContracts
+{
+    public const string PublicationActivated = "aggregator.catalog.publication-activated@1";
+    public const string ListingClaimVerified = "aggregator.catalog.listing-claim-verified@1";
+    public const string ListingClaimRevoked = "aggregator.catalog.listing-claim-revoked@1";
+}
+
 public enum PublicationActivationKindContract
 {
     Publication = 1,
