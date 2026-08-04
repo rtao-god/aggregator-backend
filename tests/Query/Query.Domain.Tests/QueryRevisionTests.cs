@@ -14,6 +14,7 @@ public sealed class QueryRevisionTests
         var exception = Assert.Throws<QueryDomainException>(() => QueryBaseProjection.Create(
             Guid.Parse("0198a100-0000-7000-8000-000000000010"),
             "berlin-recording-services",
+            LocalePolicy(),
             Guid.Parse("0198a100-0000-7000-8000-000000000011"),
             new string('a', 64),
             1,
@@ -26,6 +27,40 @@ public sealed class QueryRevisionTests
     }
 
     [Fact]
+    public void BaseProjectionRejectsDocumentWithoutDefaultLocale()
+    {
+        var publishedAt = new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var document = QueryListingDocument.Create(
+            Guid.Parse("0198a100-0000-7000-8000-000000000012"),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            QueryListingKind.Place,
+            [new QueryLocalizedDocument("en-GB", "/en-GB/listings/studio", "Studio", QueryFieldState.Missing, null)],
+            ["recording-studio"],
+            [],
+            new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.5m, 13.4m, "mitte"),
+            [],
+            [],
+            new string('f', 64),
+            publishedAt);
+
+        var exception = Assert.Throws<QueryDomainException>(() => QueryBaseProjection.Create(
+            Guid.Parse("0198a100-0000-7000-8000-000000000013"),
+            "berlin-recording-services",
+            LocalePolicy(),
+            Guid.Parse("0198a100-0000-7000-8000-000000000014"),
+            new string('a', 64),
+            1,
+            "builder",
+            publishedAt,
+            [document],
+            new string('b', 64)));
+
+        Assert.Equal("QUERY_DEFAULT_LOCALE_DOCUMENT_MISSING", exception.Code);
+    }
+
+    [Fact]
     public void PublicReadRevisionRejectsComponentsFromDifferentCatalogs()
     {
         var timestamp = new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
@@ -33,6 +68,7 @@ public sealed class QueryRevisionTests
         var projection = QueryBaseProjection.Create(
             Guid.Parse("0198a100-0000-7000-8000-000000000021"),
             "catalog-one",
+            LocalePolicy(),
             Guid.Parse("0198a100-0000-7000-8000-000000000022"),
             new string('a', 64),
             1,
@@ -65,6 +101,9 @@ public sealed class QueryRevisionTests
 
         Assert.Equal("QUERY_COMPONENT_CATALOG_MISMATCH", exception.Code);
     }
+
+    private static QueryLocalePolicy LocalePolicy() =>
+        QueryLocalePolicy.Create("de-DE", ["de-DE", "en-GB"]);
 
     private static QueryListingDocument CreateDocument(Guid listingId, string routePath, DateTimeOffset publishedAt) =>
         QueryListingDocument.Create(
