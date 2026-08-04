@@ -1,5 +1,6 @@
 using Aggregator.Ingestion.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Ingestion.Infrastructure.Tests;
@@ -10,7 +11,8 @@ public sealed class IngestionPersistenceModelTests
     public void BatchModelOwnsConcurrencyAndSemanticUniqueness()
     {
         using var context = CreateContext();
-        var batch = FindTable(context.Model, "batches", "import_batch");
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var batch = FindTable(model, "batches", "import_batch");
         var aggregateRevision = batch.FindProperty("AggregateRevision");
 
         Assert.NotNull(aggregateRevision);
