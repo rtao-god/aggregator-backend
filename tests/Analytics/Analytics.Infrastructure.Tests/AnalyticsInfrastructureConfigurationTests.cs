@@ -29,7 +29,7 @@ public sealed class AnalyticsInfrastructureConfigurationTests
 
         public IEnumerable<IConfigurationSection> GetChildren() => [];
 
-        public IChangeToken GetReloadToken() => NullChangeToken.Singleton;
+        public IChangeToken GetReloadToken() => NeverChangeToken.Instance;
 
         public IConfigurationSection GetSection(string key) =>
             new EmptyConfigurationSection(key, key);
@@ -51,9 +51,34 @@ public sealed class AnalyticsInfrastructureConfigurationTests
 
         public IEnumerable<IConfigurationSection> GetChildren() => [];
 
-        public IChangeToken GetReloadToken() => NullChangeToken.Singleton;
+        public IChangeToken GetReloadToken() => NeverChangeToken.Instance;
 
         public IConfigurationSection GetSection(string key) =>
             new EmptyConfigurationSection(key, $"{Path}:{key}");
+    }
+
+    private sealed class NeverChangeToken : IChangeToken
+    {
+        public static NeverChangeToken Instance { get; } = new();
+
+        public bool HasChanged => false;
+
+        public bool ActiveChangeCallbacks => false;
+
+        public IDisposable RegisterChangeCallback(Action<object?> callback, object? state)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+            _ = state;
+            return NoopDisposable.Instance;
+        }
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static NoopDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
     }
 }
