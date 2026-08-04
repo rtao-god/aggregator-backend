@@ -1,6 +1,7 @@
 namespace Aggregator.Promotion.Api;
 
-internal static class PromotionAuthorizationPolicies
+/// <summary>Canonical OAuth scope names enforced by the Promotion API.</summary>
+public static class PromotionAuthorizationPolicies
 {
     public const string ManageListing = "promotion.manage-listing";
     public const string ManageCatalog = "promotion.manage-catalog";
