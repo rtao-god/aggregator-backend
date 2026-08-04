@@ -195,6 +195,8 @@ CREATE TABLE operations.command_idempotency
     key text NOT NULL,
     request_digest character(64) NOT NULL,
     batch_id uuid NOT NULL,
+    result_document bytea NOT NULL,
+    result_digest character(64) NOT NULL,
     caller_service_identity text NOT NULL,
     created_at_utc timestamp with time zone NOT NULL,
     CONSTRAINT pk_command_idempotency PRIMARY KEY (scope, key),
@@ -208,6 +210,10 @@ CREATE TABLE operations.command_idempotency
         CHECK (length(key) BETWEEN 1 AND 200),
     CONSTRAINT ck_command_idempotency_digest
         CHECK (request_digest ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_command_idempotency_result_document
+        CHECK (octet_length(result_document) > 0),
+    CONSTRAINT ck_command_idempotency_result_digest
+        CHECK (result_digest ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_command_idempotency_caller
         CHECK (length(caller_service_identity) BETWEEN 1 AND 200)
 );
