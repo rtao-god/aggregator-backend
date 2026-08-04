@@ -11,6 +11,10 @@ public static class IngestionOperationIds
     public const string RegisterBatch = "RegisterIngestionBatch";
 
     public const string GetBatch = "GetIngestionBatch";
+
+    public const string PrepareBatchUpload = "PrepareIngestionBatchUpload";
+
+    public const string CompleteBatchUpload = "CompleteIngestionBatchUpload";
 }
 
 [ApiController]
@@ -18,7 +22,9 @@ public static class IngestionOperationIds
 [EnableRateLimiting(IngestionRateLimitPolicies.BatchCommands)]
 public sealed class IngestionBatchesController(
     RegisterIngestionBatchService registrationService,
-    ReadIngestionBatchService readService) : ControllerBase
+    ReadIngestionBatchService readService,
+    PrepareIngestionUploadService prepareUploadService,
+    CompleteIngestionUploadService completeUploadService) : ControllerBase
 {
     [HttpPost(Name = IngestionOperationIds.RegisterBatch)]
     [Authorize(Policy = IngestionAuthorizationPolicies.Upload)]
@@ -76,6 +82,42 @@ public sealed class IngestionBatchesController(
         return Ok(batch);
     }
 
+    [HttpPost("{batchId:guid}/upload-request", Name = IngestionOperationIds.PrepareBatchUpload)]
+    [Authorize(Policy = IngestionAuthorizationPolicies.Upload)]
+    [ProducesResponseType<IngestionUploadAuthorizationDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IngestionUploadAuthorizationDto>> PrepareUploadAsync(
+        Guid batchId,
+        [FromBody] PrepareIngestionUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await prepareUploadService.PrepareAsync(
+            new PrepareIngestionUploadCommand(
+                batchId,
+                request.ExpectedAggregateRevision,
+                RequireIdempotencyKey(Request),
+                IngestionServiceIdentityAccessor.Require(User)),
+            cancellationToken));
+    }
+
+    [HttpPost("{batchId:guid}/upload-complete", Name = IngestionOperationIds.CompleteBatchUpload)]
+    [Authorize(Policy = IngestionAuthorizationPolicies.Upload)]
+    [ProducesResponseType<IngestionBatchCommandResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IngestionBatchCommandResponse>> CompleteUploadAsync(
+        Guid batchId,
+        [FromBody] CompleteIngestionUploadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await completeUploadService.CompleteAsync(
+            new CompleteIngestionUploadCommand(
+                batchId,
+                request.ExpectedAggregateRevision,
+                RequireIdempotencyKey(Request),
+                IngestionServiceIdentityAccessor.Require(User)),
+            cancellationToken));
+    }
+
     private static string RequireIdempotencyKey(HttpRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -88,7 +130,7 @@ public sealed class IngestionBatchesController(
                 "INGESTION_IDEMPOTENCY_KEY_REQUIRED",
                 StatusCodes.Status400BadRequest,
                 "Exactly one non-empty Idempotency-Key header is required.",
-                "Retry with one stable Idempotency-Key for this registration command.");
+                "Retry with one stable Idempotency-Key for this command.");
         }
 
         return values[0]!;
