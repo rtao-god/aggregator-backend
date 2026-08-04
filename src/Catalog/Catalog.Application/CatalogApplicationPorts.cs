@@ -115,12 +115,16 @@ public sealed record PublicationSelectionState(
     Listing Listing,
     ListingRevision Revision);
 
+/// <summary>Producer-owned event write persisted atomically with the Catalog business transition.</summary>
 public sealed record CatalogOutboxMessage(
     Guid Id,
     string EventType,
-    int EventRevision,
+    string ContractIdentity,
     string Payload,
-    DateTimeOffset OccurredAtUtc);
+    string PayloadDigest,
+    DateTimeOffset OccurredAtUtc,
+    string CorrelationId,
+    Guid? CausationId);
 
 public sealed record CatalogActor(Guid Id)
 {
