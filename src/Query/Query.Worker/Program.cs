@@ -30,6 +30,35 @@ var workerOptions = new QueryWorkerOptions
         $"{QueryWorkerOptions.SectionName}:PrefetchCount"),
 };
 workerOptions.Validate();
+var promotionBrokerUriValue = builder.Configuration[
+    $"{QueryPromotionWorkerOptions.SectionName}:BrokerUri"];
+var promotionWorkerOptions = new QueryPromotionWorkerOptions
+{
+    BrokerUri = promotionBrokerUriValue is null
+        ? workerOptions.BrokerUri
+        : new Uri(
+            RequireConfiguration(
+                promotionBrokerUriValue,
+                $"{QueryPromotionWorkerOptions.SectionName}:BrokerUri"),
+            UriKind.Absolute),
+    Exchange = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:Exchange"]
+        ?? workerOptions.Exchange,
+    Queue = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:Queue"]
+        ?? "query.promotion-overlay-projection",
+    DeadLetterExchange = builder.Configuration[
+        $"{QueryPromotionWorkerOptions.SectionName}:DeadLetterExchange"]
+        ?? "aggregator.dead-letter",
+    DeadLetterQueue = builder.Configuration[
+        $"{QueryPromotionWorkerOptions.SectionName}:DeadLetterQueue"]
+        ?? "query.promotion-overlay-projection.dead-letter",
+    RoutingKey = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:RoutingKey"]
+        ?? "promotion.overlay.activated",
+    PrefetchCount = ParseUShort(
+        builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:PrefetchCount"],
+        8,
+        $"{QueryPromotionWorkerOptions.SectionName}:PrefetchCount"),
+};
+promotionWorkerOptions.Validate();
 var objectStoreOptions = new S3ObjectStoreOptions
 {
     ServiceUrl = new Uri(
@@ -54,12 +83,14 @@ var objectStoreOptions = new S3ObjectStoreOptions
 };
 objectStoreOptions.Validate();
 
-builder.Services.AddQueryDatabase(new QueryDatabaseOptions
-{
-    ConnectionString = queryConnectionString,
-});
+builder.Services
+    .AddQueryDatabase(new QueryDatabaseOptions
+    {
+        ConnectionString = queryConnectionString,
+    })
+    .AddQueryPromotionOverlayProjection()
+    .AddQueryWorker(workerOptions, promotionWorkerOptions);
 builder.Services.AddPlatformObservability(builder.Configuration, "query-projection-worker");
-builder.Services.AddSingleton(workerOptions);
 builder.Services.AddSingleton<IObjectStore>(_ => new S3ObjectStore(objectStoreOptions));
 builder.Services.AddSingleton<IQueryClock, SystemQueryClock>();
 builder.Services.AddSingleton<IQueryIdFactory, UuidV7QueryIdFactory>();
@@ -82,7 +113,6 @@ var projectionStoreType = typeof(QueryDatabaseOptions).Assembly
         typeof(IQueryProjectionStore).IsAssignableFrom(type));
 builder.Services.AddScoped(typeof(IQueryProjectionStore), projectionStoreType);
 builder.Services.AddScoped<QueryProjectionService>();
-builder.Services.AddHostedService<CatalogPublicationProjectionWorker>();
 
 await builder.Build().RunAsync();
 
