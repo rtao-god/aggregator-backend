@@ -312,19 +312,35 @@ internal sealed class CatalogListingAccessScopeRow
 
 internal sealed class CatalogOutboxRow
 {
-    public Guid Id { get; set; }
+    public Guid MessageId { get; set; }
 
-    public required string EventType { get; set; }
+    public required string RoutingKey { get; set; }
 
-    public int EventRevision { get; set; }
+    public required string ContractIdentity { get; set; }
 
-    public required string Payload { get; set; }
+    public required string PayloadJson { get; set; }
+
+    public required string PayloadDigest { get; set; }
 
     public DateTimeOffset OccurredAtUtc { get; set; }
 
-    public DateTimeOffset? PublishedAtUtc { get; set; }
+    public required string CorrelationId { get; set; }
 
-    public int AttemptCount { get; set; }
+    public Guid? CausationId { get; set; }
+
+    public Guid? LeaseToken { get; set; }
+
+    public string? LeasedBy { get; set; }
+
+    public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+
+    public int DeliveryAttempts { get; set; }
+
+    public DateTimeOffset? DispatchedAtUtc { get; set; }
 
     public string? LastError { get; set; }
+
+    public DateTimeOffset? DeadLetteredAtUtc { get; set; }
+
+    public string? DeadLetterReason { get; set; }
 }
