@@ -86,6 +86,19 @@ jobs:
               encoding='utf-8',
               newline='\n')
 
+          api_factory_path = Path(
+              'tests/Promotion/Promotion.Api.Tests/PromotionApiFactory.cs')
+          api_factory = api_factory_path.read_text(encoding='utf-8')
+          old_exception = 'new PromotionCampaignApplicationException('
+          new_exception = 'new PromotionApplicationException('
+          if api_factory.count(old_exception) != 1:
+              raise RuntimeError(
+                  'Expected exactly one obsolete Promotion campaign exception in the API test boundary.')
+          api_factory_path.write_text(
+              api_factory.replace(old_exception, new_exception),
+              encoding='utf-8',
+              newline='\n')
+
           removed_solution_reference = 0
           project_line = (
               '    <Project Path="tests/Promotion/Promotion.Runtime.Tests/'
