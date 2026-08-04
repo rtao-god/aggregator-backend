@@ -1,0 +1,88 @@
+<Solution>
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj" />
+    <Project Path="src/BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj" />
+    <Project Path="src/BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj" />
+    <Project Path="src/BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
+    <Project Path="src/BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
+    <Project Path="src/BuildingBlocks/Platform.Security/Platform.Security.csproj" />
+  </Folder>
+  <Folder Name="/src/Catalog/">
+    <Project Path="src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
+    <Project Path="src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+    <Project Path="src/Catalog/Catalog.Application/Catalog.Application.csproj" />
+    <Project Path="src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
+    <Project Path="src/Catalog/Catalog.Api/Catalog.Api.csproj" />
+    <Project Path="src/Catalog/Catalog.Worker/Catalog.Worker.csproj" />
+    <Project Path="src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj" />
+  </Folder>
+  <Folder Name="/src/Query/">
+    <Project Path="src/Query/Query.Domain/Query.Domain.csproj" />
+    <Project Path="src/Query/Query.Contracts/Query.Contracts.csproj" />
+    <Project Path="src/Query/Query.Application/Query.Application.csproj" />
+    <Project Path="src/Query/Query.Infrastructure/Query.Infrastructure.csproj" />
+    <Project Path="src/Query/Query.Api/Query.Api.csproj" />
+    <Project Path="src/Query/Query.Worker/Query.Worker.csproj" />
+    <Project Path="src/Query/Query.Migrations/Query.Migrations.csproj" />
+  </Folder>
+  <Folder Name="/src/Ingestion/">
+    <Project Path="src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Application/Ingestion.Application.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
+    <Project Path="src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj" />
+  </Folder>
+  <Folder Name="/src/Analytics/">
+    <Project Path="src/Analytics/Analytics.Domain/Analytics.Domain.csproj" />
+    <Project Path="src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <Project Path="src/Analytics/Analytics.Application/Analytics.Application.csproj" />
+    <Project Path="src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Promotion/">
+    <Project Path="src/Promotion/Promotion.Domain/Promotion.Domain.csproj" />
+    <Project Path="src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+    <Project Path="src/Promotion/Promotion.Application/Promotion.Application.csproj" />
+    <Project Path="src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj" />
+    <Project Path="src/Promotion/Promotion.Api/Promotion.Api.csproj" />
+    <Project Path="src/Promotion/Promotion.Worker/Promotion.Worker.csproj" />
+    <Project Path="src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj" />
+  </Folder>
+  <Folder Name="/tests/BuildingBlocks/">
+    <Project Path="tests/BuildingBlocks/Platform.Messaging.Tests/Platform.Messaging.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Catalog/">
+    <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Worker.Tests/Catalog.Worker.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Query/">
+    <Project Path="tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj" />
+    <Project Path="tests/Query/Query.Application.Tests/Query.Application.Tests.csproj" />
+    <Project Path="tests/Query/Query.Infrastructure.Tests/Query.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Query/Query.Api.Tests/Query.Api.Tests.csproj" />
+    <Project Path="tests/Query/Query.Worker.Tests/Query.Worker.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Ingestion/">
+    <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Analytics/">
+    <Project Path="tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj" />
+    <Project Path="tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj" />
+    <Project Path="tests/Analytics/Analytics.Infrastructure.Tests/Analytics.Infrastructure.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Promotion/">
+    <Project Path="tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Architecture/">
+    <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
+  </Folder>
+</Solution>
