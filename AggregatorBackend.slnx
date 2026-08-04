@@ -15,6 +15,11 @@
     <Project Path="src/Catalog/Catalog.Api/Catalog.Api.csproj" />
     <Project Path="src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj" />
   </Folder>
+  <Folder Name="/src/Query/">
+    <Project Path="src/Query/Query.Domain/Query.Domain.csproj" />
+    <Project Path="src/Query/Query.Contracts/Query.Contracts.csproj" />
+    <Project Path="src/Query/Query.Application/Query.Application.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
   </Folder>
@@ -22,5 +27,9 @@
     <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Query/">
+    <Project Path="tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj" />
+    <Project Path="tests/Query/Query.Application.Tests/Query.Application.Tests.csproj" />
   </Folder>
 </Solution>
