@@ -193,16 +193,25 @@ public sealed partial class EfCatalogRepository
 
     private void AddOutbox(CatalogOutboxMessage message)
     {
+        ArgumentNullException.ThrowIfNull(message);
         _dbContext.OutboxMessages.Add(new CatalogOutboxRow
         {
-            Id = message.Id,
-            EventType = message.EventType,
-            EventRevision = message.EventRevision,
-            Payload = message.Payload,
+            MessageId = message.Id,
+            RoutingKey = message.EventType,
+            ContractIdentity = message.ContractIdentity,
+            PayloadJson = message.Payload,
+            PayloadDigest = message.PayloadDigest,
             OccurredAtUtc = message.OccurredAtUtc,
-            PublishedAtUtc = null,
-            AttemptCount = 0,
+            CorrelationId = message.CorrelationId,
+            CausationId = message.CausationId,
+            LeaseToken = null,
+            LeasedBy = null,
+            LeaseExpiresAtUtc = null,
+            DeliveryAttempts = 0,
+            DispatchedAtUtc = null,
             LastError = null,
+            DeadLetteredAtUtc = null,
+            DeadLetterReason = null,
         });
     }
 
