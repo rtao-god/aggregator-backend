@@ -261,13 +261,6 @@ private static CatalogMediaAsset Restore(
             variant.Height,
             variant.CreatedAtUtc)));
 
-private static CatalogMediaApplicationException StaleLease(Guid assetId) =>
-    Failure(
-        "CATALOG_MEDIA_STALE_PROCESSING_LEASE",
-        $"Media processing lease for asset '{assetId}' is no longer current.",
-        "Discard the worker result and reacquire the asset.",
-        409);
-
 private static CatalogMediaApplicationException Failure(
     string code,
     string message,

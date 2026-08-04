@@ -309,6 +309,7 @@ public static class CatalogIngestionInfrastructureExtensions
             options.UseNpgsql(connectionString));
         services.AddScoped<ICatalogIngestionDraftStore, EfCatalogIngestionDraftStore>();
         services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
+        services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
         return services;
     }
 }
