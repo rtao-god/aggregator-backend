@@ -20,6 +20,16 @@ dotnet_diagnostic.CA1062.severity = error
 dotnet_diagnostic.CA2007.severity = none
 dotnet_diagnostic.CA1848.severity = suggestion
 
+# These owner enums intentionally expose the exact product contract vocabulary `decimal`.
+[src/Catalog/Catalog.Domain/KeysAndConfiguration.cs]
+dotnet_diagnostic.CA1720.severity = none
+
+[src/Catalog/Catalog.Domain/ProvenanceAndContent.cs]
+dotnet_diagnostic.CA1720.severity = none
+
+[src/Catalog/Catalog.Contracts/CatalogApiContracts.cs]
+dotnet_diagnostic.CA1720.severity = none
+
 [*.{json,jsonc,yaml,yml,md}]
 indent_style = space
 indent_size = 2
