@@ -22,6 +22,40 @@ public static class IngestionCanonicalJson
         return buffer.ToArray();
     }
 
+    public static T Deserialize<T>(ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+        {
+            throw new IngestionApplicationException(
+                "Ingestion.Serialization",
+                "INGESTION_DOCUMENT_EMPTY",
+                500,
+                "A persisted canonical Ingestion document is empty.",
+                "Restore the exact owner document from a verified database backup.");
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(value, SerializerOptions)
+                ?? throw new IngestionApplicationException(
+                    "Ingestion.Serialization",
+                    "INGESTION_DOCUMENT_NULL",
+                    500,
+                    "A persisted canonical Ingestion document deserialized to null.",
+                    "Restore the exact owner document from a verified database backup.");
+        }
+        catch (JsonException exception)
+        {
+            throw new IngestionApplicationException(
+                "Ingestion.Serialization",
+                "INGESTION_DOCUMENT_INVALID",
+                500,
+                "A persisted canonical Ingestion document is invalid for its owner contract.",
+                "Restore the exact owner document from a verified database backup.",
+                innerException: exception);
+        }
+    }
+
     public static string ComputeDigest<T>(T value) =>
         Convert.ToHexString(SHA256.HashData(Serialize(value))).ToLowerInvariant();
 
