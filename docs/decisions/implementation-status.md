@@ -34,7 +34,8 @@ This document records implemented production owners and exact remaining work. An
 - [x] Backend-owned `aggregator-candidate-ingestion` manifest and item contract.
 - [x] Import-batch lifecycle, optimistic concurrency, terminal integrity failures, and immutable item-decision supersession.
 - [x] Canonical package hashing, fail-closed package integrity, explicit accepted/review/rejected item decisions, producer authorization, and exact Catalog configuration projection validation.
-- [ ] Ingestion PostgreSQL persistence, upload/object verification, API/worker composition roots, review and commit workflow, Catalog command delivery ledger, migrations, generated contract artifacts, and integration proof.
+- [x] Ingestion-only EF Core/PostgreSQL registration model, atomic idempotent repository, producer and Catalog-reference projections, one-shot migration command, immutable package constraints, and static persistence-model proof.
+- [ ] Upload/object verification, API/worker composition roots, review and commit workflow, Catalog command delivery ledger, generated contract artifacts, PostgreSQL integration proof, and end-to-end collector fixture delivery.
 
 ## Context completion
 
