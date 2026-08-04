@@ -139,6 +139,8 @@ public sealed record IngestionBatchSnapshot(
 
 public sealed record IngestionBatchRegistrationResult(IngestionBatchSnapshot Batch, bool Replayed);
 
+public sealed record IngestionBatchCommandResult(IngestionBatchSnapshot Batch, bool Replayed);
+
 public interface IIngestionBatchRepository
 {
     public Task<IngestionBatchRegistrationResult> RegisterAsync(
@@ -150,5 +152,47 @@ public interface IIngestionBatchRepository
 
     public Task<IngestionBatchSnapshot?> ReadAsync(
         ImportBatchId batchId,
+        CancellationToken cancellationToken);
+
+    public Task<IngestionBatchSnapshot?> ReadCommandResultAsync(
+        IngestionCommandIdentity commandIdentity,
+        CancellationToken cancellationToken);
+
+    public Task<IngestionBatchCommandResult> SaveLifecycleAsync(
+        ImportBatch batch,
+        long expectedStoredAggregateRevision,
+        IngestionCommandIdentity commandIdentity,
+        string callerServiceIdentity,
+        CancellationToken cancellationToken);
+}
+
+public sealed record IngestionUploadAuthorization(
+    Uri UploadUri,
+    string ObjectKey,
+    DateTimeOffset ExpiresAtUtc,
+    string ContentType,
+    long MaximumSize);
+
+public sealed record IngestionPayloadDescriptor(
+    string ObjectKey,
+    string ContentDigest,
+    long Size,
+    string ContentType,
+    DateTimeOffset LastModifiedAtUtc);
+
+public interface IIngestionPayloadStore
+{
+    public Task<IngestionUploadAuthorization> CreateUploadAuthorizationAsync(
+        string objectKey,
+        string contentType,
+        long maximumSize,
+        TimeSpan lifetime,
+        CancellationToken cancellationToken);
+
+    public Task<IngestionPayloadDescriptor> VerifyUploadedAsync(
+        string objectKey,
+        string expectedContentDigest,
+        long expectedSize,
+        string expectedContentType,
         CancellationToken cancellationToken);
 }
