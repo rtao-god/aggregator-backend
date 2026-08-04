@@ -1,3 +1,4 @@
+using System.Globalization;
 using Aggregator.Analytics.Contracts;
 using Aggregator.Analytics.Domain;
 
@@ -61,7 +62,7 @@ public sealed class ReadDailyListingMetricsService(
             if (!byDate.TryAdd(item.Date, item))
             {
                 throw CorruptStore(
-                    $"Analytics metrics store returned duplicate aggregate date '{item.Date:yyyy-MM-dd}'.",
+                    $"Analytics metrics store returned duplicate aggregate date '{FormatDate(item.Date)}'.",
                     normalizedCatalogKey,
                     listingId,
                     request,
@@ -86,7 +87,7 @@ public sealed class ReadDailyListingMetricsService(
                     ["listingId"] = listingId,
                     ["fromInclusive"] = request.FromInclusive,
                     ["toExclusive"] = request.ToExclusive,
-                    ["missingDates"] = missingDates.Select(date => date.ToString("yyyy-MM-dd", null)).ToArray(),
+                    ["missingDates"] = missingDates.Select(FormatDate).ToArray(),
                 });
         }
 
@@ -103,6 +104,9 @@ public sealed class ReadDailyListingMetricsService(
             yield return date;
         }
     }
+
+    private static string FormatDate(DateOnly date) =>
+        date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static AnalyticsCommandException InvalidRequest(string code, string message) =>
         new(
