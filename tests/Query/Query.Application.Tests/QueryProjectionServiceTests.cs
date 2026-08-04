@@ -43,6 +43,8 @@ public sealed class QueryProjectionServiceTests
         Assert.NotNull(store.Activation);
         Assert.Equal(publicationId, result.PublicReadRevision.SourcePublicationId);
         Assert.Single(store.Activation.BaseProjection.Documents);
+        Assert.Equal("de-DE", store.Activation.BaseProjection.LocalePolicy.DefaultLocale);
+        Assert.Equal(["de-DE", "en-GB"], store.Activation.BaseProjection.LocalePolicy.SupportedLocales);
         Assert.Equal(eventId, store.InboxMessage?.EventId);
     }
 
@@ -90,6 +92,8 @@ public sealed class QueryProjectionServiceTests
             CatalogPublicationArtifactContract.Revision,
             publicationId,
             "berlin-recording-services",
+            "de-DE",
+            ["en-GB", "de-DE"],
             configurationId,
             1,
             timestamp,
