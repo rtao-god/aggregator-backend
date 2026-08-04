@@ -23,7 +23,7 @@ public enum ImportBatchState
 }
 
 /// <summary>Owns the durable lifecycle of one exact collector package after registration.</summary>
-public sealed class ImportBatch
+public sealed partial class ImportBatch
 {
     private ImportBatch(
         ImportBatchId id,
