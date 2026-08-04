@@ -1,0 +1,98 @@
+{
+  "contracts": [
+    {
+      "name": "collector-candidate-command",
+      "file": "src/Ingestion/Ingestion.Collector.Contracts/CollectorCandidateContracts.cs",
+      "required": [
+        "public enum CollectorCandidateKindContract",
+        "public sealed record SubmitCollectorCandidateRequest(",
+        "Guid CommandId,",
+        "DateTimeOffset ObservedAtUtc,",
+        "string EvidenceDigest);",
+        "public sealed record CollectorCandidateResponse(",
+        "Guid SubjectRevisionId,",
+        "string ContentDigest,",
+        "bool Replayed);"
+      ]
+    },
+    {
+      "name": "analytics-interaction-command",
+      "file": "src/Analytics/Analytics.Contracts/AnalyticsRuntimeContracts.cs",
+      "required": [
+        "public enum AnalyticsInteractionKindContract",
+        "public sealed record RecordAnalyticsInteractionRequest(",
+        "Guid PublicReadRevisionId,",
+        "string SessionKey,",
+        "public sealed record AnalyticsInteractionReceipt(",
+        "bool Replayed);",
+        "public sealed record AnalyticsListingMetricsResponse("
+      ]
+    },
+    {
+      "name": "promotion-overlay-activation",
+      "file": "src/Promotion/Promotion.Contracts/PromotionOverlayContracts.cs",
+      "required": [
+        "public const string ActivationEvent = \"aggregator.promotion.overlay-activated@1\";",
+        "public const string RoutingKey = \"promotion.overlay.activated\";",
+        "public sealed record PublishPromotionOverlayRequest(",
+        "Guid SourcePublicReadRevisionId,",
+        "Guid? ExpectedCurrentOverlayId,",
+        "public sealed record PromotionOverlayActivated(",
+        "long ActivationRevision,",
+        "public sealed record SponsoredListingSearchResponse(",
+        "Guid? OverlayId,"
+      ]
+    },
+    {
+      "name": "catalog-publication-activation",
+      "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
+      "required": [
+        "public const string PublicationActivated = \"catalog.publication.activated\";",
+        "public sealed record CatalogPublicationActivated(",
+        "long ActivationRevision,",
+        "PublicationActivationKindContract ActivationKind,"
+      ]
+    }
+  ],
+  "http": [
+    {
+      "file": "src/Ingestion/Ingestion.Collector.Api/CollectorCandidatesController.cs",
+      "required": [
+        "[Route(\"api/collector-candidates\")]",
+        "[Authorize(Policy = \"ingestion.submit\")]",
+        "[HttpPost(Name = \"SubmitCollectorCandidate\")]"
+      ]
+    },
+    {
+      "file": "src/Analytics/Analytics.Api/AnalyticsController.cs",
+      "required": [
+        "[Route(\"api/analytics\")]",
+        "[HttpPost(\"interactions\", Name = \"RecordAnalyticsInteraction\")]",
+        "[HttpGet(\"catalogs/{catalogKey}/listings/{listingId:guid}/metrics\", Name = \"GetAnalyticsListingMetrics\")]"
+      ]
+    },
+    {
+      "file": "src/Promotion/Promotion.Overlay.Api/PromotionOverlayController.cs",
+      "required": [
+        "[Route(\"api/promotion-overlays\")]",
+        "[Authorize(Policy = PromotionOverlayAuthorizationPolicies.Publish)]",
+        "[HttpPost(Name = \"PublishPromotionOverlay\")]"
+      ]
+    },
+    {
+      "file": "src/Query/Query.Api/SponsoredListingsController.cs",
+      "required": [
+        "[Route(\"api/catalog-query/catalogs/{catalogKey}/sponsored\")]",
+        "[HttpGet(Name = \"GetSponsoredListings\")]",
+        "publicReadRevisionId",
+        "X-Promotion-Overlay-Id"
+      ]
+    }
+  ],
+  "strictJsonPrograms": [
+    "src/Ingestion/Ingestion.Collector.Api/Program.cs",
+    "src/Analytics/Analytics.Api/Program.cs",
+    "src/Promotion/Promotion.Overlay.Api/Program.cs",
+    "src/Query/Query.Api/Program.cs"
+  ]
+}
