@@ -24,11 +24,11 @@ public sealed record OutboxDispatcherOptions
 
     public required string Schema { get; init; }
 
-    public required string Exchange { get; init; }
-
     public required string DispatcherIdentity { get; init; }
 
     public int BatchSize { get; init; } = 50;
+
+    public int MaximumDeliveryAttempts { get; init; } = 8;
 
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(2);
 
@@ -38,11 +38,17 @@ public sealed record OutboxDispatcherOptions
     {
         RequireText(ConnectionString, nameof(ConnectionString));
         RequireSqlIdentifier(Schema, nameof(Schema));
-        RequireText(Exchange, nameof(Exchange));
         RequireText(DispatcherIdentity, nameof(DispatcherIdentity));
         if (BatchSize is < 1 or > 500)
         {
             throw new ArgumentOutOfRangeException(nameof(BatchSize), "BatchSize must be between 1 and 500.");
+        }
+
+        if (MaximumDeliveryAttempts is < 1 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaximumDeliveryAttempts),
+                "MaximumDeliveryAttempts must be between 1 and 100.");
         }
 
         if (LeaseDuration <= TimeSpan.Zero || LeaseDuration > TimeSpan.FromMinutes(15))
@@ -67,7 +73,8 @@ public sealed record OutboxDispatcherOptions
     private static void RequireSqlIdentifier(string value, string parameterName)
     {
         RequireText(value, parameterName);
-        if (!(char.IsAsciiLetter(value[0]) || value[0] == '_') || value.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '_')))
+        if (!(char.IsAsciiLetter(value[0]) || value[0] == '_') ||
+            value.Any(character => !(char.IsAsciiLetterOrDigit(character) || character == '_')))
         {
             throw new ArgumentException("A safe unquoted PostgreSQL identifier is required.", parameterName);
         }
