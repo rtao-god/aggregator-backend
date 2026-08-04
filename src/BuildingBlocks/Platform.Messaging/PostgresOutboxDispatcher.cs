@@ -8,14 +8,19 @@ public sealed class PostgresOutboxDispatcher
 {
     private readonly OutboxDispatcherOptions _options;
     private readonly IIntegrationEventPublisher _publisher;
+    private readonly TimeProvider _timeProvider;
+    private readonly string _qualifiedTable;
 
     public PostgresOutboxDispatcher(
         OutboxDispatcherOptions options,
-        IIntegrationEventPublisher publisher)
+        IIntegrationEventPublisher publisher,
+        TimeProvider? timeProvider = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _options.Validate();
         _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _qualifiedTable = $"\"{_options.Schema}\".\"outbox_message\"";
     }
 
     public async Task<int> DispatchOnceAsync(CancellationToken cancellationToken)
@@ -27,11 +32,20 @@ public sealed class PostgresOutboxDispatcher
             try
             {
                 await _publisher.PublishAsync(message, cancellationToken);
-                await MarkDispatchedAsync(message.MessageId, leaseToken, cancellationToken);
+                await MarkDispatchedAsync(
+                    message.MessageId,
+                    leaseToken,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                await MarkFailedAsync(message.MessageId, leaseToken, exception, cancellationToken);
+                await MarkFailedAsync(
+                    message.MessageId,
+                    leaseToken,
+                    exception,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
                 throw;
             }
         }
@@ -39,50 +53,91 @@ public sealed class PostgresOutboxDispatcher
         return messages.Count;
     }
 
-    private async Task<IReadOnlyList<OutboxMessage>> LeaseAsync(Guid leaseToken, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<OutboxMessage>> LeaseAsync(
+        Guid leaseToken,
+        CancellationToken cancellationToken)
     {
-        var table = $"{_options.Schema}.outbox_message";
-        var sql = $"""
-            with claim as (
-                select message_id
-                from {table}
-                where dispatched_at_utc is null
-                  and (lease_expires_at_utc is null or lease_expires_at_utc <= @now)
-                order by occurred_at_utc, message_id
-                for update skip locked
-                limit @batchSize
-            )
-            update {table} message
-            set lease_token = @leaseToken,
-                leased_by = @leasedBy,
-                lease_expires_at_utc = @leaseExpiresAtUtc,
-                delivery_attempts = delivery_attempts + 1
-            from claim
-            where message.message_id = claim.message_id
-            returning message.message_id,
-                      message.routing_key,
-                      message.contract_identity,
-                      message.payload_json,
-                      message.payload_digest,
-                      message.occurred_at_utc,
-                      message.correlation_id,
-                      message.causation_id;
-            """;
-
+        var leasedAtUtc = _timeProvider.GetUtcNow();
+        var result = new List<OutboxMessage>(_options.BatchSize);
         await using var connection = new NpgsqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        var now = DateTimeOffset.UtcNow;
-        command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
-        command.Parameters.AddWithValue("batchSize", NpgsqlDbType.Integer, _options.BatchSize);
-        command.Parameters.AddWithValue("leaseToken", NpgsqlDbType.Uuid, leaseToken);
-        command.Parameters.AddWithValue("leasedBy", NpgsqlDbType.Text, _options.DispatcherIdentity);
-        command.Parameters.AddWithValue("leaseExpiresAtUtc", NpgsqlDbType.TimestampTz, now + _options.LeaseDuration);
 
-        var result = new List<OutboxMessage>();
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        await using (var exhaustedCommand = connection.CreateCommand())
         {
+            exhaustedCommand.Transaction = transaction;
+            exhaustedCommand.CommandText = $"""
+                UPDATE {_qualifiedTable}
+                SET lease_token = NULL,
+                    leased_by = NULL,
+                    lease_expires_at_utc = NULL,
+                    dead_lettered_at_utc = @deadLetteredAtUtc,
+                    dead_letter_reason = COALESCE(
+                        last_error,
+                        'Delivery attempt budget was exhausted before the message reached the broker.')
+                WHERE dispatched_at_utc IS NULL
+                  AND dead_lettered_at_utc IS NULL
+                  AND delivery_attempts >= @maximumDeliveryAttempts
+                  AND (lease_expires_at_utc IS NULL OR lease_expires_at_utc <= @deadLetteredAtUtc);
+                """;
+            exhaustedCommand.Parameters.AddWithValue(
+                "deadLetteredAtUtc",
+                NpgsqlDbType.TimestampTz,
+                leasedAtUtc);
+            exhaustedCommand.Parameters.AddWithValue(
+                "maximumDeliveryAttempts",
+                NpgsqlDbType.Integer,
+                _options.MaximumDeliveryAttempts);
+            await exhaustedCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = $"""
+                WITH claim AS
+                (
+                    SELECT message_id
+                    FROM {_qualifiedTable}
+                    WHERE dispatched_at_utc IS NULL
+                      AND dead_lettered_at_utc IS NULL
+                      AND delivery_attempts < @maximumDeliveryAttempts
+                      AND (lease_expires_at_utc IS NULL OR lease_expires_at_utc <= @leasedAtUtc)
+                    ORDER BY occurred_at_utc, message_id
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT @batchSize
+                )
+                UPDATE {_qualifiedTable} AS message
+                SET lease_token = @leaseToken,
+                    leased_by = @leasedBy,
+                    lease_expires_at_utc = @leaseExpiresAtUtc,
+                    delivery_attempts = message.delivery_attempts + 1,
+                    last_error = NULL
+                FROM claim
+                WHERE message.message_id = claim.message_id
+                RETURNING message.message_id,
+                          message.routing_key,
+                          message.contract_identity,
+                          message.payload_json,
+                          message.payload_digest,
+                          message.occurred_at_utc,
+                          message.correlation_id,
+                          message.causation_id;
+                """;
+            command.Parameters.AddWithValue(
+                "maximumDeliveryAttempts",
+                NpgsqlDbType.Integer,
+                _options.MaximumDeliveryAttempts);
+            command.Parameters.AddWithValue("leasedAtUtc", NpgsqlDbType.TimestampTz, leasedAtUtc);
+            command.Parameters.AddWithValue("batchSize", NpgsqlDbType.Integer, _options.BatchSize);
+            command.Parameters.AddWithValue("leaseToken", NpgsqlDbType.Uuid, leaseToken);
+            command.Parameters.AddWithValue("leasedBy", NpgsqlDbType.Text, _options.DispatcherIdentity);
+            command.Parameters.AddWithValue(
+                "leaseExpiresAtUtc",
+                NpgsqlDbType.TimestampTz,
+                leasedAtUtc + _options.LeaseDuration);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
                 result.Add(new OutboxMessage(
@@ -101,75 +156,87 @@ public sealed class PostgresOutboxDispatcher
         return result;
     }
 
-    private async Task MarkDispatchedAsync(Guid messageId, Guid leaseToken, CancellationToken cancellationToken)
+    private async Task MarkDispatchedAsync(
+        Guid messageId,
+        Guid leaseToken,
+        DateTimeOffset dispatchedAtUtc,
+        CancellationToken cancellationToken)
     {
-        var table = $"{_options.Schema}.outbox_message";
-        var sql = $"""
-            update {table}
-            set dispatched_at_utc = @dispatchedAtUtc,
-                lease_token = null,
-                leased_by = null,
-                lease_expires_at_utc = null,
-                last_error = null
-            where message_id = @messageId
-              and lease_token = @leaseToken
-              and dispatched_at_utc is null;
+        await using var connection = new NpgsqlConnection(_options.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE {_qualifiedTable}
+            SET dispatched_at_utc = @dispatchedAtUtc,
+                lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at_utc = NULL,
+                last_error = NULL
+            WHERE message_id = @messageId
+              AND lease_token = @leaseToken
+              AND dispatched_at_utc IS NULL
+              AND dead_lettered_at_utc IS NULL;
             """;
-        await ExecuteTransitionAsync(sql, messageId, leaseToken, null, cancellationToken);
+        command.Parameters.AddWithValue("messageId", NpgsqlDbType.Uuid, messageId);
+        command.Parameters.AddWithValue("leaseToken", NpgsqlDbType.Uuid, leaseToken);
+        command.Parameters.AddWithValue("dispatchedAtUtc", NpgsqlDbType.TimestampTz, dispatchedAtUtc);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected != 1)
+        {
+            throw new InvalidOperationException(
+                $"Outbox transition for message '{messageId}' was rejected because the lease no longer belongs to this dispatcher.");
+        }
     }
 
     private async Task MarkFailedAsync(
         Guid messageId,
         Guid leaseToken,
         Exception exception,
+        DateTimeOffset failedAtUtc,
         CancellationToken cancellationToken)
     {
-        var table = $"{_options.Schema}.outbox_message";
-        var sql = $"""
-            update {table}
-            set lease_token = null,
-                leased_by = null,
-                lease_expires_at_utc = null,
-                last_error = @lastError
-            where message_id = @messageId
-              and lease_token = @leaseToken
-              and dispatched_at_utc is null;
-            """;
         var error = $"{exception.GetType().Name}: {exception.Message}";
         if (error.Length > 2000)
         {
             error = error[..2000];
         }
 
-        await ExecuteTransitionAsync(sql, messageId, leaseToken, error, cancellationToken);
-    }
-
-    private async Task ExecuteTransitionAsync(
-        string sql,
-        Guid messageId,
-        Guid leaseToken,
-        string? lastError,
-        CancellationToken cancellationToken)
-    {
         await using var connection = new NpgsqlConnection(_options.ConnectionString);
         await connection.OpenAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE {_qualifiedTable}
+            SET lease_token = NULL,
+                leased_by = NULL,
+                lease_expires_at_utc = NULL,
+                last_error = @lastError,
+                dead_lettered_at_utc = CASE
+                    WHEN delivery_attempts >= @maximumDeliveryAttempts THEN @failedAtUtc
+                    ELSE dead_lettered_at_utc
+                END,
+                dead_letter_reason = CASE
+                    WHEN delivery_attempts >= @maximumDeliveryAttempts THEN @lastError
+                    ELSE dead_letter_reason
+                END
+            WHERE message_id = @messageId
+              AND lease_token = @leaseToken
+              AND dispatched_at_utc IS NULL
+              AND dead_lettered_at_utc IS NULL;
+            """;
         command.Parameters.AddWithValue("messageId", NpgsqlDbType.Uuid, messageId);
         command.Parameters.AddWithValue("leaseToken", NpgsqlDbType.Uuid, leaseToken);
-        if (lastError is null)
-        {
-            command.Parameters.AddWithValue("dispatchedAtUtc", NpgsqlDbType.TimestampTz, DateTimeOffset.UtcNow);
-        }
-        else
-        {
-            command.Parameters.AddWithValue("lastError", NpgsqlDbType.Text, lastError);
-        }
-
+        command.Parameters.AddWithValue("lastError", NpgsqlDbType.Text, error);
+        command.Parameters.AddWithValue(
+            "maximumDeliveryAttempts",
+            NpgsqlDbType.Integer,
+            _options.MaximumDeliveryAttempts);
+        command.Parameters.AddWithValue("failedAtUtc", NpgsqlDbType.TimestampTz, failedAtUtc);
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
         if (affected != 1)
         {
             throw new InvalidOperationException(
-                $"Outbox transition for message '{messageId}' was rejected because the lease no longer belongs to this dispatcher.");
+                $"Outbox failure transition for message '{messageId}' was rejected because the lease no longer belongs to this dispatcher.",
+                exception);
         }
     }
 }
