@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.12
+ARG DOTNET_SDK_IMAGE
+ARG DOTNET_RUNTIME_IMAGE
+
+FROM ${DOTNET_SDK_IMAGE} AS build
+WORKDIR /src
+COPY . .
+ARG PROJECT
+RUN test -n "$PROJECT" \
+    && dotnet restore "$PROJECT" \
+    && dotnet publish "$PROJECT" \
+        --no-restore \
+        --configuration Release \
+        --output /out/app \
+        -warnaserror \
+        /p:UseAppHost=false \
+    && dotnet restore tools/HealthProbe/HealthProbe.csproj \
+    && dotnet publish tools/HealthProbe/HealthProbe.csproj \
+        --no-restore \
+        --configuration Release \
+        --output /out/health \
+        -warnaserror \
+        /p:UseAppHost=false
+
+FROM ${DOTNET_RUNTIME_IMAGE} AS runtime
+WORKDIR /app
+RUN addgroup --system --gid 10001 aggregator \
+    && adduser --system --uid 10001 --ingroup aggregator --home /app aggregator
+COPY --from=build --chown=aggregator:aggregator /out/app/ /app/
+COPY --from=build --chown=aggregator:aggregator /out/health/ /health/
+COPY --chown=aggregator:aggregator deploy/entrypoint.sh /entrypoint.sh
+RUN chmod 0555 /entrypoint.sh
+USER 10001:10001
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    DOTNET_EnableDiagnostics=0 \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint.sh"]
