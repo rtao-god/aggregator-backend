@@ -6,51 +6,59 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Aggregator.Analytics.Api;
 
-public static class AnalyticsOperationIds
-{
-    public const string RecordObservation = "RecordAnalyticsObservation";
-
-    public const string ReadMetrics = "ReadAnalyticsMetrics";
-}
-
 [ApiController]
 [Route("api/analytics")]
-public sealed class AnalyticsObservationsController(
-    RecordAnalyticsObservationService observationService,
-    ReadAnalyticsMetricsService metricsService) : ControllerBase
+public sealed class AnalyticsInteractionsController(
+    SubmitInteractionEventService interactionService,
+    AnalyticsAntiAbuseProofService antiAbuseProofService) : ControllerBase
 {
-    [HttpPost("observations", Name = AnalyticsOperationIds.RecordObservation)]
-    [Authorize(Policy = AnalyticsAuthorizationPolicies.Write)]
-    [EnableRateLimiting(AnalyticsRateLimitPolicies.Write)]
-    [ProducesResponseType<AnalyticsObservationReceipt>(StatusCodes.Status201Created)]
-    [ProducesResponseType<AnalyticsObservationReceipt>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<AnalyticsObservationReceipt>> RecordAsync(
-        [FromBody] RecordAnalyticsObservationRequest request,
+    [HttpPost("anti-abuse-tokens", Name = AnalyticsOperationIds.IssueAntiAbuseToken)]
+    [AllowAnonymous]
+    [EnableRateLimiting(AnalyticsRateLimitPolicies.AntiAbuseTokens)]
+    [ProducesResponseType<AnalyticsAntiAbuseTokenResponse>(StatusCodes.Status200OK)]
+    public ActionResult<AnalyticsAntiAbuseTokenResponse> IssueAntiAbuseToken(
+        [FromBody] IssueAnalyticsAntiAbuseTokenRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(antiAbuseProofService.Issue(request));
+    }
+
+    [HttpPost("interaction-events", Name = AnalyticsOperationIds.SubmitInteractionEvent)]
+    [AllowAnonymous]
+    [EnableRateLimiting(AnalyticsRateLimitPolicies.InteractionEvents)]
+    [ProducesResponseType<InteractionEventResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<InteractionEventResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<InteractionEventResponse>> SubmitAsync(
+        [FromBody] SubmitInteractionEventRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var receipt = await observationService.RecordAsync(request, cancellationToken);
-        return receipt.Replayed
-            ? Ok(receipt)
-            : StatusCode(StatusCodes.Status201Created, receipt);
+        var response = await interactionService.SubmitAsync(request, cancellationToken);
+        return response.AcceptanceState == InteractionAcceptanceStateContract.AlreadyApplied
+            ? Ok(response)
+            : StatusCode(StatusCodes.Status201Created, response);
     }
+}
 
-    [HttpGet(
-        "catalogs/{catalogKey}/public-read-revisions/{publicReadRevisionId:guid}/metrics",
-        Name = AnalyticsOperationIds.ReadMetrics)]
-    [Authorize(Policy = AnalyticsAuthorizationPolicies.Read)]
-    [EnableRateLimiting(AnalyticsRateLimitPolicies.Read)]
-    [ProducesResponseType<AnalyticsMetricsResponse>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<AnalyticsMetricsResponse>> ReadMetricsAsync(
-        string catalogKey,
-        Guid publicReadRevisionId,
-        [FromQuery] DateOnly fromDate,
-        [FromQuery] DateOnly toDate,
+[ApiController]
+[Route("api/analytics/listings/{listingId:guid}")]
+[Authorize(Policy = AnalyticsAuthorizationPolicies.ViewListing)]
+[EnableRateLimiting(AnalyticsRateLimitPolicies.Metrics)]
+public sealed class AnalyticsMetricsController(
+    ReadDailyListingMetricsService metricsService) : ControllerBase
+{
+    [HttpGet("daily-metrics", Name = AnalyticsOperationIds.ReadDailyListingMetrics)]
+    [ProducesResponseType<IReadOnlyList<DailyListingMetricsResponse>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<DailyListingMetricsResponse>>> ReadDailyAsync(
+        Guid listingId,
+        [FromQuery] string catalogKey,
+        [FromQuery] DateOnly fromInclusive,
+        [FromQuery] DateOnly toExclusive,
         CancellationToken cancellationToken) =>
         Ok(await metricsService.ReadAsync(
+            AnalyticsActorAccessor.Require(HttpContext),
             catalogKey,
-            publicReadRevisionId,
-            fromDate,
-            toDate,
+            listingId,
+            new DailyMetricsRangeRequest(fromInclusive, toExclusive),
             cancellationToken));
 }
