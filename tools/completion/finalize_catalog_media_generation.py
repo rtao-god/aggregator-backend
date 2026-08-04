@@ -67,6 +67,23 @@ def normalize_application_source() -> None:
         raise RuntimeError("Generated Catalog media application source is missing.")
 
     source = APPLICATION_SOURCE.read_text(encoding="utf-8")
+    source = replace_required(
+        source,
+        """public sealed record CatalogMediaProcessingLease(
+    Guid AssetId,
+    Guid LeaseToken,
+    int AttemptCount,
+    DateTimeOffset LeaseExpiresAtUtc,
+    CatalogMediaAsset Asset);""",
+        """public sealed record CatalogMediaProcessingLease(
+    Guid AssetId,
+    Guid LeaseToken,
+    int AttemptCount,
+    DateTimeOffset LeaseExpiresAtUtc,
+    long StoredAggregateRevision,
+    CatalogMediaAsset Asset);""",
+        "processing lease aggregate revision",
+    )
     source = add_interface_accessibility(source)
     source = source.replace("        string error,\n", "        string failure,\n")
     source = replace_required(
