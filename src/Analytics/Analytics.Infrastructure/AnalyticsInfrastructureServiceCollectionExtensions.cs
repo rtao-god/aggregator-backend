@@ -35,6 +35,7 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
             services.GetRequiredService<EfAnalyticsRepository>());
         services.AddScoped<IListingMetricsAuthorizer>(services =>
             services.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<IAnalyticsAggregateWriter, EfAnalyticsAggregateWriter>();
         services.AddScoped<AnalyticsReadinessProbe>();
         services.AddSingleton<IAnalyticsIdSource, UuidV7AnalyticsIdSource>();
         return services;
