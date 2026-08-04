@@ -164,10 +164,10 @@ internal sealed class EfAnalyticsAggregateWriter(
             calculatedAtUtc);
     }
 
-    private static IReadOnlyList<PublicReadInterval> BuildReferenceIntervals(
-        IReadOnlyCollection<AnalyticsPublicReadReferenceRow> references)
+    private static List<PublicReadInterval> BuildReferenceIntervals(
+        AnalyticsPublicReadReferenceRow[] references)
     {
-        var intervals = new List<PublicReadInterval>(references.Count);
+        var intervals = new List<PublicReadInterval>(references.Length);
         foreach (var catalogGroup in references
                      .GroupBy(row => row.CatalogKey)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
@@ -191,9 +191,9 @@ internal sealed class EfAnalyticsAggregateWriter(
     }
 
     private static void ValidateEvents(
-        IReadOnlyCollection<AnalyticsInteractionEventRow> events,
-        IReadOnlyCollection<PublicReadInterval> intervals,
-        IReadOnlyDictionary<Guid, HashSet<Guid>> memberships)
+        AnalyticsInteractionEventRow[] events,
+        List<PublicReadInterval> intervals,
+        Dictionary<Guid, HashSet<Guid>> memberships)
     {
         var intervalByRevision = intervals.ToDictionary(
             interval => interval.Reference.PublicReadRevisionId);
@@ -223,8 +223,7 @@ internal sealed class EfAnalyticsAggregateWriter(
         }
     }
 
-    private static InteractionCounts Count(
-        IReadOnlyCollection<AnalyticsInteractionEventRow> events)
+    private static InteractionCounts Count(AnalyticsInteractionEventRow[] events)
     {
         long organicImpressions = 0;
         long sponsoredImpressions = 0;
@@ -304,8 +303,8 @@ internal sealed class EfAnalyticsAggregateWriter(
         DateOnly date,
         string catalogKey,
         Guid listingId,
-        IReadOnlyCollection<PublicReadInterval> activeIntervals,
-        IReadOnlyCollection<AnalyticsInteractionEventRow> events)
+        PublicReadInterval[] activeIntervals,
+        AnalyticsInteractionEventRow[] events)
     {
         var source = new StringBuilder();
         source.Append(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
