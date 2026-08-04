@@ -1,0 +1,122 @@
+services:
+  catalog-event-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Catalog/Catalog.Event.Worker/Catalog.Event.Worker.csproj
+        ENTRY_DLL: Catalog.Event.Worker.dll
+    environment:
+      ConnectionStrings__Catalog: Host=catalog-db;Port=5432;Database=catalog;Username=catalog_owner;Password=${CATALOG_DB_PASSWORD:-catalog-local-password}
+      Catalog__EventWorker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
+      Catalog__EventWorker__Exchange: aggregator.events
+      Catalog__EventWorker__WorkerId: catalog-event-outbox
+      Catalog__EventWorker__PollInterval: 00:00:01
+      Catalog__EventWorker__LeaseDuration: 00:00:30
+      Catalog__EventWorker__MaximumAttempts: "10"
+    depends_on:
+      catalog-migrations:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [backend]
+
+  query-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Query/Query.Worker/Query.Worker.csproj
+        ENTRY_DLL: Query.Worker.dll
+    environment:
+      ConnectionStrings__Query: Host=query-db;Port=5432;Database=query;Username=query_owner;Password=${QUERY_DB_PASSWORD:-query-local-password}
+      Query__Worker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
+      Query__Worker__Exchange: aggregator.events
+      Query__Worker__Queue: query.catalog-publication-projection
+      Query__Worker__DeadLetterExchange: aggregator.dead-letter
+      Query__Worker__DeadLetterQueue: query.catalog-publication-projection.dead-letter
+      Query__Worker__RoutingKey: catalog.publication.activated
+      Query__Worker__PrefetchCount: "8"
+      Query__PromotionWorker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
+      Query__PromotionWorker__Exchange: aggregator.events
+      Query__PromotionWorker__Queue: query.promotion-overlay-projection
+      Query__PromotionWorker__DeadLetterExchange: aggregator.dead-letter
+      Query__PromotionWorker__DeadLetterQueue: query.promotion-overlay-projection.dead-letter
+      Query__PromotionWorker__RoutingKey: promotion.overlay.activated
+      Query__PromotionWorker__PrefetchCount: "8"
+      Query__ObjectStorage__ServiceUrl: http://object-storage:9000
+      Query__ObjectStorage__Region: us-east-1
+      Query__ObjectStorage__Bucket: aggregator
+      Query__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+      Query__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+      Query__ObjectStorage__ForcePathStyle: "true"
+      Query__PublicationArtifact__AllowedObjectPrefix: catalog/
+      Query__PublicationArtifact__MaximumArtifactBytes: "67108864"
+    depends_on:
+      query-migrations:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [backend]
+
+  promotion-overlay-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Promotion/Promotion.Overlay.Migrations/Promotion.Overlay.Migrations.csproj
+        ENTRY_DLL: Promotion.Overlay.Migrations.dll
+    environment:
+      PROMOTION_OVERLAY_MIGRATOR_CONNECTION_STRING: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
+    depends_on:
+      promotion-db:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  promotion-overlay-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Promotion/Promotion.Overlay.Api/Promotion.Overlay.Api.csproj
+        ENTRY_DLL: Promotion.Overlay.Api.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
+      Authentication__Authority: ${AUTHORITY:-http://identity.invalid}
+      Authentication__RequireHttpsMetadata: "false"
+    depends_on:
+      promotion-overlay-migrations:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${PROMOTION_OVERLAY_API_PORT:-18086}:8080"
+    restart: unless-stopped
+    networks: [backend]
+
+  promotion-overlay-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PROJECT: src/Promotion/Promotion.Overlay.Worker/Promotion.Overlay.Worker.csproj
+        ENTRY_DLL: Promotion.Overlay.Worker.dll
+    environment:
+      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
+      Promotion__OverlayWorker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
+      Promotion__OverlayWorker__Exchange: aggregator.events
+      Promotion__OverlayWorker__WorkerId: promotion-overlay-outbox
+      Promotion__OverlayWorker__PollInterval: 00:00:01
+      Promotion__OverlayWorker__LeaseDuration: 00:00:30
+      Promotion__OverlayWorker__MaximumAttempts: "10"
+    depends_on:
+      promotion-overlay-migrations:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [backend]
