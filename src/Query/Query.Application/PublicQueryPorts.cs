@@ -13,14 +13,14 @@ public sealed record PublicReadDocumentSnapshot(
 
 public interface IPublicQueryStore
 {
-    Task<PublicReadPageSnapshot?> ReadPageAsync(
+    public Task<PublicReadPageSnapshot?> ReadPageAsync(
         string catalogKey,
         Guid? afterListingId,
         int maximumDocuments,
         string? categoryKey,
         CancellationToken cancellationToken);
 
-    Task<PublicReadDocumentSnapshot?> ReadByRouteAsync(
+    public Task<PublicReadDocumentSnapshot?> ReadByRouteAsync(
         string catalogKey,
         string routePath,
         CancellationToken cancellationToken);
