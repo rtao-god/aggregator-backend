@@ -1,15 +1,15 @@
-using Aggregator.Ingestion.Application;
+using System.Buffers;
+using System.Security.Cryptography;
 using Platform.ObjectStorage;
 
 namespace Aggregator.Ingestion.Infrastructure;
 
-/// <summary>Reads only the exact registered quarantine object after metadata and stream digest proof.</summary>
-public sealed class IngestionPackageObjectReader(IObjectStore objectStore) : IIngestionPackageObjectReader
+/// <summary>Reads one exact verified Ingestion package object without selecting a latest or adjacent artifact.</summary>
+public sealed class IngestionPackageObjectReader(IObjectStore objectStore)
 {
     private const string QuarantinePrefix = "ingestion/quarantine/";
-    private readonly IObjectStore _objectStore = objectStore ?? throw new ArgumentNullException(nameof(objectStore));
 
-    public async Task<byte[]> ReadExactAsync(
+    public async Task<byte[]> ReadVerifiedAsync(
         string objectKey,
         string expectedDigest,
         long expectedSize,
@@ -17,53 +17,63 @@ public sealed class IngestionPackageObjectReader(IObjectStore objectStore) : IIn
         CancellationToken cancellationToken)
     {
         ValidateIdentity(objectKey, expectedDigest, expectedSize, maximumSize);
-        var descriptor = await _objectStore.HeadAsync(objectKey, cancellationToken);
-        if (!string.Equals(descriptor.Key, objectKey, StringComparison.Ordinal) ||
-            descriptor.Size != expectedSize ||
-            !string.Equals(descriptor.Sha256, expectedDigest, StringComparison.Ordinal) ||
-            !string.Equals(descriptor.ContentType, "application/json", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new IngestionPackageIntegrityException(
-                "INGESTION_PAYLOAD_OBJECT_IDENTITY_MISMATCH",
-                "The stored package metadata does not match the exact registered object identity.");
-        }
-
-        await using var stream = await _objectStore.OpenReadVerifiedAsync(
-            objectKey,
-            expectedDigest,
-            cancellationToken);
-        using var buffer = expectedSize <= int.MaxValue
-            ? new MemoryStream((int)expectedSize)
-            : new MemoryStream();
-        var chunk = new byte[81920];
-        long total = 0;
-        while (true)
-        {
-            var read = await stream.ReadAsync(chunk, cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            total += read;
-            if (total > maximumSize || total > expectedSize)
-            {
-                throw new IngestionPackageIntegrityException(
-                    "INGESTION_PAYLOAD_SIZE_EXCEEDED",
-                    "The stored package exceeds its registered or configured maximum size.");
-            }
-
-            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
-        }
-
-        if (total != expectedSize)
+        var metadata = await objectStore.HeadAsync(objectKey, cancellationToken)
+            ?? throw new IngestionPackageIntegrityException(
+                "INGESTION_PAYLOAD_OBJECT_MISSING",
+                $"Ingestion package object '{objectKey}' does not exist.");
+        if (metadata.Size != expectedSize)
         {
             throw new IngestionPackageIntegrityException(
                 "INGESTION_PAYLOAD_SIZE_MISMATCH",
-                $"Expected package size {expectedSize}, actual size {total}.");
+                $"Expected package size {expectedSize}, actual size {metadata.Size}.");
         }
 
-        return buffer.ToArray();
+        await using var stream = await objectStore.OpenReadAsync(objectKey, cancellationToken);
+        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        await using var buffer = new MemoryStream(
+            expectedSize <= int.MaxValue
+                ? checked((int)expectedSize)
+                : 0);
+        var rented = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
+        {
+            long total = 0;
+            int read;
+            while ((read = await stream.ReadAsync(rented.AsMemory(), cancellationToken)) > 0)
+            {
+                total += read;
+                if (total > maximumSize || total > expectedSize)
+                {
+                    throw new IngestionPackageIntegrityException(
+                        "INGESTION_PAYLOAD_SIZE_MISMATCH",
+                        "The package object exceeded its registered or configured size while reading.");
+                }
+
+                digest.AppendData(rented, 0, read);
+                await buffer.WriteAsync(rented.AsMemory(0, read), cancellationToken);
+            }
+
+            var actualDigest = Convert.ToHexStringLower(digest.GetHashAndReset());
+            if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
+            {
+                throw new IngestionPackageIntegrityException(
+                    "INGESTION_PAYLOAD_DIGEST_MISMATCH",
+                    $"Expected package digest '{expectedDigest}', actual '{actualDigest}'.");
+            }
+
+            if (total != expectedSize)
+            {
+                throw new IngestionPackageIntegrityException(
+                    "INGESTION_PAYLOAD_SIZE_MISMATCH",
+                    $"Expected package size {expectedSize}, actual size {total}.");
+            }
+
+            return buffer.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     private static void ValidateIdentity(
@@ -77,7 +87,7 @@ public sealed class IngestionPackageObjectReader(IObjectStore objectStore) : IIn
             objectKey.Length > 1024 ||
             objectKey.Contains("..", StringComparison.Ordinal) ||
             objectKey.Contains('\\') ||
-            objectKey.EndsWith('/', StringComparison.Ordinal))
+            objectKey.EndsWith("/", StringComparison.Ordinal))
         {
             throw new IngestionPackageIntegrityException(
                 "INGESTION_PAYLOAD_OBJECT_KEY_INVALID",
@@ -99,4 +109,10 @@ public sealed class IngestionPackageObjectReader(IObjectStore objectStore) : IIn
                 "The registered package object size is invalid or exceeds the configured limit.");
         }
     }
+}
+
+public sealed class IngestionPackageIntegrityException(string code, string message)
+    : InvalidOperationException(message)
+{
+    public string Code { get; } = code;
 }
