@@ -46,14 +46,15 @@ public sealed class CatalogConfigurationService(
     }
 
     public async Task<ProductConfigurationRevisionResponse> ActivateAsync(
-        CatalogKey catalogKey,
+        string catalogKeyValue,
         ActivateProductConfigurationRequest request,
         CatalogActor actor,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(catalogKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKeyValue);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        var catalogKey = CatalogKey.Create(catalogKeyValue);
 
         var configuration = await repository.GetConfigurationAsync(
                 request.TargetConfigurationRevisionId,

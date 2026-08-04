@@ -156,14 +156,15 @@ public sealed class CatalogPublicationService(
     }
 
     public async Task<CatalogPublicationResponse> RollbackAsync(
-        CatalogKey catalogKey,
+        string catalogKeyValue,
         RollbackPublicationRequest request,
         CatalogActor actor,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(catalogKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKeyValue);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        var catalogKey = CatalogKey.Create(catalogKeyValue);
         if (request.TargetPublicationId == request.ExpectedCurrentPublicationId)
         {
             throw new CatalogContractException(

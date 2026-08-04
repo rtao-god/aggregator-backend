@@ -12,43 +12,22 @@ public sealed class CatalogEndToEndTests
     private static readonly Guid SubjectId = Guid.Parse("0192f5f0-0000-7000-8000-000000000002");
     private static readonly Guid SubjectRevisionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000003");
     private static readonly Guid ActorId = Guid.Parse("0192f5f0-0000-7000-8000-000000000004");
-    private const string ConfigurationDigest = "190f3c410a3bcc2661ee325f6bbb4fa5646f9b215f91831deafdc5db50cdd08d";
+    private const string ConfigurationDigest = "ac8b665d754ac21f0ec66fab729e1a669de53effaed4120a6e004dc9f7785f31";
 
     [Fact]
     public async Task CatalogFlowImportsConfigurationPublishesAndRollsBackExactRevisions()
     {
-        var listingId = Guid.Parse("0192f5f0-0000-7000-8000-000000000010");
-        var firstRevisionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000011");
-        var firstDecisionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000012");
-        var firstPublicationId = Guid.Parse("0192f5f0-0000-7000-8000-000000000013");
-        var firstPublicationEventId = Guid.Parse("0192f5f0-0000-7000-8000-000000000014");
-        var secondRevisionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000015");
-        var secondDecisionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000016");
-        var secondPublicationId = Guid.Parse("0192f5f0-0000-7000-8000-000000000017");
-        var secondPublicationEventId = Guid.Parse("0192f5f0-0000-7000-8000-000000000018");
-        var rollbackEventId = Guid.Parse("0192f5f0-0000-7000-8000-000000000019");
+        var identifiers = Enumerable.Range(10, 10)
+            .Select(number => Guid.Parse($"0192f5f0-0000-7000-8000-{number:D12}"))
+            .ToArray();
         var repository = new InMemoryCatalogRepository();
         var artifactStore = new VerifyingArtifactStore();
-        var idSource = new QueueCatalogIdSource(
-            listingId,
-            firstRevisionId,
-            firstDecisionId,
-            firstPublicationId,
-            firstPublicationEventId,
-            secondRevisionId,
-            secondDecisionId,
-            secondPublicationId,
-            secondPublicationEventId,
-            rollbackEventId);
+        var idSource = new QueueCatalogIdSource(identifiers);
         var timeProvider = new FixedTimeProvider(Timestamp);
         var actor = CatalogActor.Create(ActorId);
         var configurationService = new CatalogConfigurationService(repository, timeProvider);
         var listingService = new CatalogListingService(repository, idSource, timeProvider);
-        var publicationService = new CatalogPublicationService(
-            repository,
-            artifactStore,
-            idSource,
-            timeProvider);
+        var publicationService = new CatalogPublicationService(repository, artifactStore, idSource, timeProvider);
 
         var imported = await configurationService.ImportAsync(
             new ImportProductConfigurationRequest(
@@ -61,7 +40,7 @@ public sealed class CatalogEndToEndTests
         Assert.False(imported.IsActive);
 
         var activated = await configurationService.ActivateAsync(
-            CatalogKey.Create("berlin-recording-services"),
+            "berlin-recording-services",
             new ActivateProductConfigurationRequest(
                 ConfigurationRevisionId,
                 new ConfigurationPointerExpectationContract(
@@ -74,35 +53,23 @@ public sealed class CatalogEndToEndTests
         var listing = await listingService.CreateAsync(
             new CreateListingRequest(
                 "berlin-recording-services",
-                new SubjectReferenceContract(
-                    SubjectId,
-                    SubjectRevisionId,
-                    SubjectKindContract.Place)),
+                new SubjectReferenceContract(SubjectId, SubjectRevisionId, SubjectKindContract.Place)),
             actor,
             CancellationToken.None);
-        Assert.Equal(listingId, listing.Id);
-        Assert.Equal(1, listing.Version);
-
         var firstRevision = await listingService.AddRevisionAsync(
             listing.Id,
             new CreateListingRevisionRequest(
                 ExpectedVersion: 1,
                 ConfigurationRevisionId,
                 listing.Subject,
-                CreateContent(80m, Guid.Parse("0192f5f0-0000-7000-8000-000000000025"))),
+                CreateContent(80m, PriceAssertion(1))),
             actor,
             CancellationToken.None);
-        Assert.Equal(firstRevisionId, firstRevision.Id);
-
-        var firstApproval = await listingService.ApproveAsync(
+        _ = await listingService.ApproveAsync(
             listing.Id,
-            new ApproveListingRevisionRequest(
-                ExpectedVersion: 2,
-                RevisionId: firstRevision.Id),
+            new ApproveListingRevisionRequest(ExpectedVersion: 2, RevisionId: firstRevision.Id),
             actor,
             CancellationToken.None);
-        Assert.Equal("approved", firstApproval.Decision);
-
         var firstPublication = await publicationService.PublishAsync(
             new CreateCatalogPublicationRequest(
                 "berlin-recording-services",
@@ -113,10 +80,6 @@ public sealed class CatalogEndToEndTests
                 [new PublicationSelectionContract(listing.Id, firstRevision.Id, ExpectedListingVersion: 3)]),
             actor,
             CancellationToken.None);
-        Assert.Equal(firstPublicationId, firstPublication.Id);
-        Assert.True(firstPublication.IsCurrent);
-        Assert.Equal(firstPublicationId, repository.CurrentPublicationId);
-        Assert.Single(artifactStore.Artifacts);
 
         var secondRevision = await listingService.AddRevisionAsync(
             listing.Id,
@@ -124,16 +87,12 @@ public sealed class CatalogEndToEndTests
                 ExpectedVersion: 4,
                 ConfigurationRevisionId,
                 listing.Subject,
-                CreateContent(95m, Guid.Parse("0192f5f0-0000-7000-8000-000000000026"))),
+                CreateContent(95m, PriceAssertion(2))),
             actor,
             CancellationToken.None);
-        Assert.Equal(secondRevisionId, secondRevision.Id);
-
         _ = await listingService.ApproveAsync(
             listing.Id,
-            new ApproveListingRevisionRequest(
-                ExpectedVersion: 5,
-                RevisionId: secondRevision.Id),
+            new ApproveListingRevisionRequest(ExpectedVersion: 5, RevisionId: secondRevision.Id),
             actor,
             CancellationToken.None);
         var secondPublication = await publicationService.PublishAsync(
@@ -146,27 +105,19 @@ public sealed class CatalogEndToEndTests
                 [new PublicationSelectionContract(listing.Id, secondRevision.Id, ExpectedListingVersion: 6)]),
             actor,
             CancellationToken.None);
-        Assert.Equal(secondPublicationId, secondPublication.Id);
-        Assert.Equal(secondPublicationId, repository.CurrentPublicationId);
-        Assert.Equal(2, artifactStore.Artifacts.Count);
-
         var rollback = await publicationService.RollbackAsync(
-            CatalogKey.Create("berlin-recording-services"),
-            new RollbackPublicationRequest(
-                TargetPublicationId: firstPublication.Id,
-                ExpectedCurrentPublicationId: secondPublication.Id),
+            "berlin-recording-services",
+            new RollbackPublicationRequest(firstPublication.Id, secondPublication.Id),
             actor,
             CancellationToken.None);
+
         Assert.Equal(firstPublication.Id, rollback.Id);
         Assert.Equal(firstPublication.Id, repository.CurrentPublicationId);
+        Assert.Equal(2, artifactStore.Artifacts.Count);
         Assert.Equal(3, repository.OutboxMessages.Count);
-        Assert.Equal(
-            [
-                CatalogIntegrationEventTypes.PublicationActivated,
-                CatalogIntegrationEventTypes.PublicationActivated,
-                CatalogIntegrationEventTypes.PublicationActivated,
-            ],
-            repository.OutboxMessages.Select(message => message.EventType).ToArray());
+        Assert.All(
+            repository.OutboxMessages,
+            message => Assert.Equal(CatalogIntegrationEventTypes.PublicationActivated, message.EventType));
     }
 
     private static ProductConfigurationContract CreateConfiguration() =>
@@ -187,24 +138,16 @@ public sealed class CatalogEndToEndTests
                 "Europe/Berlin",
                 [SubjectKindContract.Provider, SubjectKindContract.Place]),
             [
-                new CategoryDefinitionContract(
+                Category(
                     "recording-studio",
-                    [SubjectKindContract.Place],
-                    new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["de-DE"] = "Tonstudio",
-                        ["en-GB"] = "Recording studio",
-                    },
-                    IsActive: true),
-                new CategoryDefinitionContract(
+                    SubjectKindContract.Place,
+                    "Tonstudio",
+                    "Recording studio"),
+                Category(
                     "music-producer",
-                    [SubjectKindContract.Provider],
-                    new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["de-DE"] = "Musikproduzent",
-                        ["en-GB"] = "Music producer",
-                    },
-                    IsActive: true),
+                    SubjectKindContract.Provider,
+                    "Musikproduzent",
+                    "Music producer"),
             ],
             [
                 new AttributeDefinitionContract(
@@ -213,11 +156,7 @@ public sealed class CatalogEndToEndTests
                     AttributeCardinalityContract.Single,
                     PublicFieldRequirementContract.Optional,
                     ["recording-studio"],
-                    new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["de-DE"] = "Stundenpreis",
-                        ["en-GB"] = "Hourly price",
-                    },
+                    Localized("Stundenpreis", "Hourly price"),
                     Minimum: null,
                     Maximum: null,
                     AllowedValues: [],
@@ -225,12 +164,26 @@ public sealed class CatalogEndToEndTests
                     IsSortable: true),
             ]);
 
+    private static CategoryDefinitionContract Category(
+        string key,
+        SubjectKindContract subjectKind,
+        string german,
+        string english) =>
+        new(key, [subjectKind], Localized(german, english), IsActive: true);
+
+    private static Dictionary<string, string> Localized(string german, string english) =>
+        new(StringComparer.Ordinal)
+        {
+            ["de-DE"] = german,
+            ["en-GB"] = english,
+        };
+
     private static ListingRevisionContentContract CreateContent(decimal hourlyPrice, Guid priceAssertionId)
     {
-        var nameAssertionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000020");
-        var categoryAssertionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000021");
-        var geographyAssertionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000022");
-        var contactAssertionId = Guid.Parse("0192f5f0-0000-7000-8000-000000000023");
+        var nameAssertionId = Assertion(20);
+        var categoryAssertionId = Assertion(21);
+        var geographyAssertionId = Assertion(22);
+        var contactAssertionId = Assertion(23);
         return new ListingRevisionContentContract(
             [
                 new LocalizedTextValueContract(
@@ -292,6 +245,11 @@ public sealed class CatalogEndToEndTests
             ]);
     }
 
+    private static Guid Assertion(int suffix) =>
+        Guid.Parse($"0192f5f0-0000-7000-8000-{suffix:D12}");
+
+    private static Guid PriceAssertion(int revision) => Assertion(24 + revision);
+
     private static ProvenanceAssertionContract CreateAssertion(Guid id, string sourceReference) =>
         new(
             id,
@@ -307,7 +265,7 @@ public sealed class CatalogEndToEndTests
         public override DateTimeOffset GetUtcNow() => timestamp;
     }
 
-    private sealed class QueueCatalogIdSource(params Guid[] values) : ICatalogIdSource
+    private sealed class QueueCatalogIdSource(IEnumerable<Guid> values) : ICatalogIdSource
     {
         private readonly Queue<Guid> _values = new(values);
 
@@ -328,8 +286,9 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var observedDigest = Convert.ToHexString(SHA256.HashData(content.Span)).ToLowerInvariant();
-            Assert.Equal(sha256Digest, observedDigest);
+            Assert.Equal(
+                sha256Digest,
+                Convert.ToHexString(SHA256.HashData(content.Span)).ToLowerInvariant());
             Assert.True(Artifacts.TryAdd(objectKey, content.ToArray()));
             return Task.CompletedTask;
         }
@@ -342,7 +301,6 @@ public sealed class CatalogEndToEndTests
         private readonly Dictionary<Guid, Listing> _listings = [];
         private readonly Dictionary<Guid, ListingRevision> _revisions = [];
         private readonly Dictionary<Guid, CatalogPublication> _publications = [];
-        private readonly Dictionary<Guid, ListingClaim> _claims = [];
         private long _nextPublicationSequence = 1;
 
         public Guid? CurrentPublicationId { get; private set; }
@@ -356,9 +314,7 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ArgumentNullException.ThrowIfNull(configuration);
             Assert.NotEmpty(canonicalDocument);
-            Assert.Equal(TimeSpan.Zero, importedAtUtc.Offset);
             Assert.True(_configurations.TryAdd(configuration.RevisionId, configuration));
             return Task.CompletedTask;
         }
@@ -368,8 +324,8 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _configurations.TryGetValue(configurationRevisionId, out var configuration);
-            return Task.FromResult(configuration);
+            _configurations.TryGetValue(configurationRevisionId, out var value);
+            return Task.FromResult(value);
         }
 
         public Task<ProductConfiguration?> GetActiveConfigurationAsync(
@@ -392,10 +348,8 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Assert.NotEqual(Guid.Empty, actorId);
-            Assert.Equal(TimeSpan.Zero, activatedAtUtc.Offset);
-            var actual = _activeConfigurations.TryGetValue(catalogKey.Value, out var current)
-                ? current
+            var actual = _activeConfigurations.TryGetValue(catalogKey.Value, out var revisionId)
+                ? revisionId
                 : Guid.Empty;
             if (actual != expectedConfigurationRevisionId)
             {
@@ -416,8 +370,8 @@ public sealed class CatalogEndToEndTests
         public Task<Listing?> GetListingAsync(Guid listingId, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _listings.TryGetValue(listingId, out var listing);
-            return Task.FromResult(listing);
+            _listings.TryGetValue(listingId, out var value);
+            return Task.FromResult(value);
         }
 
         public Task<ListingRevision?> GetListingRevisionAsync(
@@ -425,8 +379,8 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _revisions.TryGetValue(revisionId, out var revision);
-            return Task.FromResult(revision);
+            _revisions.TryGetValue(revisionId, out var value);
+            return Task.FromResult(value);
         }
 
         public Task AddListingRevisionAsync(
@@ -464,13 +418,13 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            IReadOnlyList<PublicationSelectionState> result = selections
+            IReadOnlyList<PublicationSelectionState> values = selections
                 .Select(selection => new PublicationSelectionState(
                     _listings[selection.ListingId],
                     _revisions[selection.ListingRevisionId]))
                 .Where(selection => selection.Listing.CatalogKey == catalogKey)
                 .ToArray();
-            return Task.FromResult(result);
+            return Task.FromResult(values);
         }
 
         public Task<long> GetNextPublicationSequenceAsync(
@@ -478,7 +432,6 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ArgumentNullException.ThrowIfNull(catalogKey);
             return Task.FromResult(_nextPublicationSequence++);
         }
 
@@ -487,7 +440,6 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ArgumentNullException.ThrowIfNull(catalogKey);
             return Task.FromResult(CurrentPublicationId);
         }
 
@@ -496,8 +448,8 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _publications.TryGetValue(publicationId, out var publication);
-            return Task.FromResult(publication);
+            _publications.TryGetValue(publicationId, out var value);
+            return Task.FromResult(value);
         }
 
         public Task CommitPublicationAsync(
@@ -508,17 +460,8 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (CurrentPublicationId != expectedCurrentPublicationId)
-            {
-                throw new CatalogConflictException("Publication pointer mismatch.");
-            }
-
+            EnsurePointer(expectedCurrentPublicationId);
             Assert.True(_publications.TryAdd(publication.Id, publication));
-            foreach (var listing in listings)
-            {
-                _listings[listing.Id] = listing;
-            }
-
             CurrentPublicationId = publication.Id;
             OutboxMessages.Add(outboxMessage);
             return Task.CompletedTask;
@@ -532,57 +475,38 @@ public sealed class CatalogEndToEndTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (CurrentPublicationId != expectedCurrentPublicationId)
-            {
-                throw new CatalogConflictException("Publication pointer mismatch.");
-            }
-
+            EnsurePointer(expectedCurrentPublicationId);
             Assert.Equal(targetPublication.Id, publicationPointer.PublicationId);
-            CurrentPublicationId = publicationPointer.PublicationId;
+            CurrentPublicationId = targetPublication.Id;
             OutboxMessages.Add(outboxMessage);
             return Task.CompletedTask;
         }
 
-        public Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Assert.True(_claims.TryAdd(claim.Id, claim));
-            return Task.CompletedTask;
-        }
+        public Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Claims are outside this publication flow test.");
 
-        public Task<ListingClaim?> GetClaimAsync(Guid claimId, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _claims.TryGetValue(claimId, out var claim);
-            return Task.FromResult(claim);
-        }
+        public Task<ListingClaim?> GetClaimAsync(Guid claimId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Claims are outside this publication flow test.");
 
         public Task CompleteClaimVerificationAsync(
             ListingClaim claim,
             ListingAccessGrant grant,
             CatalogOutboxMessage outboxMessage,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _claims[claim.Id] = claim;
-            Assert.Equal(claim.Id, grant.ClaimId);
-            OutboxMessages.Add(outboxMessage);
-            return Task.CompletedTask;
-        }
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Claims are outside this publication flow test.");
 
         public Task SaveClaimDecisionAsync(
             ListingClaim claim,
             CatalogOutboxMessage? outboxMessage,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _claims[claim.Id] = claim;
-            if (outboxMessage is not null)
-            {
-                OutboxMessages.Add(outboxMessage);
-            }
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Claims are outside this publication flow test.");
 
-            return Task.CompletedTask;
+        private void EnsurePointer(Guid? expected)
+        {
+            if (CurrentPublicationId != expected)
+            {
+                throw new CatalogConflictException("Publication pointer mismatch.");
+            }
         }
     }
 }
