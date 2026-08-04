@@ -30,6 +30,10 @@ dotnet_diagnostic.CA1720.severity = none
 [src/Catalog/Catalog.Contracts/CatalogApiContracts.cs]
 dotnet_diagnostic.CA1720.severity = none
 
+# Item validators consume only set semantics; the caller owns deterministic SortedSet ordering.
+[src/Ingestion/Ingestion.Application/IngestionPackageValidator.cs]
+dotnet_diagnostic.CA1859.severity = none
+
 [*.{json,jsonc,yaml,yml,md}]
 indent_style = space
 indent_size = 2
