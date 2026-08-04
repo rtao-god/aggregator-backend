@@ -57,15 +57,50 @@ jobs:
               [System.Text.UTF8Encoding]::new($false))
           }
 
-          Replace-Exact `
-            'src/Ingestion/Ingestion.Application/IngestionPackagePayloadValidator.cs' `
+          $payloadValidator = 'src/Ingestion/Ingestion.Application/IngestionPackagePayloadValidator.cs'
+          Replace-Exact $payloadValidator `
             'IngestionPackageValidationResult' `
             'IngestionPayloadValidationResult' `
             3
+          Replace-Exact $payloadValidator `
+            'if (validatedItems.Count != batch.ExpectedItemCount)' `
+            'if (validatedItems.Length != batch.ExpectedItemCount)' `
+            1
+          Replace-Exact $payloadValidator `
+            'private static IReadOnlyList<AggregatorCandidatePayloadItem> ValidatePackageIdentity(' `
+            'private static AggregatorCandidatePayloadItem[] ValidatePackageIdentity(' `
+            1
+          Replace-Exact $payloadValidator `
+            'Enum.IsDefined(typeof(IngestionPackageEntityKindContract), item.EntityKind)' `
+            'Enum.IsDefined(item.EntityKind)' `
+            1
+          Replace-Exact $payloadValidator `
+            'Enum.IsDefined(typeof(IngestionPackageUsagePolicyContract), evidence.UsagePolicy)' `
+            'Enum.IsDefined(evidence.UsagePolicy)' `
+            1
+          Replace-Exact $payloadValidator `
+            'Enum.IsDefined(typeof(IngestionPackageQualitySeverityContract), issue.Severity)' `
+            'Enum.IsDefined(issue.Severity)' `
+            1
+
           Replace-Exact `
             'src/Ingestion/Ingestion.Application/IngestionPackageProcessingService.cs' `
             'IngestionPackageValidationResult' `
             'IngestionPayloadValidationResult' `
+            1
+
+          $processingServices = 'src/Ingestion/Ingestion.Application/IngestionProcessingServices.cs'
+          Replace-Exact $processingServices `
+            'private static IReadOnlyList<IngestionProcessingDecision> ClassifyItems(' `
+            'private static IngestionProcessingDecision[] ClassifyItems(' `
+            1
+          Replace-Exact $processingServices `
+            '        ISet<string> blocking,' `
+            '        SortedSet<string> blocking,' `
+            1
+          Replace-Exact $processingServices `
+            '        ISet<string> review)' `
+            '        SortedSet<string> review)' `
             1
 
           Get-ChildItem 'src/Ingestion/Ingestion.Infrastructure' -Filter '*.cs' -Recurse | ForEach-Object {
