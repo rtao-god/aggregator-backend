@@ -75,7 +75,7 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
             $"route\n{catalogKey.Trim()}\n{absolutePath}\n{locale.Trim()}");
     }
 
-    private void RejectUnknownQueryKeys(IReadOnlySet<string> allowedKeys)
+    private void RejectUnknownQueryKeys(HashSet<string> allowedKeys)
     {
         var unknownKeys = Request.Query.Keys
             .Where(key => !allowedKeys.Contains(key))
