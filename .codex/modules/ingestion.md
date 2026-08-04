@@ -24,7 +24,7 @@ collector-owned sealed export
 → generated backend ingestion client
 → POST /api/ingestion/batches with exact manifest digest and Idempotency-Key
 → internal service authentication and producer/target Catalog validation
-→ one Ingestion transaction stores batch + manifest + source policies + artifacts + idempotency result
+→ one Ingestion transaction stores batch + manifest + source policies + artifacts + exact command-result document
 → GET /api/ingestion/batches/{batchId} reads only the stored Ingestion projection
 → uploaded-object identity verification
 → package-level integrity validation
@@ -41,7 +41,7 @@ collector-owned sealed export
 - Read scope: `ingestion.read`.
 - Contract document scope: `ingestion.test-contracts` in Development only.
 - Registration requires one exact `Idempotency-Key` and an authenticated OIDC `sub` representing the calling workload identity.
-- New registration returns `201`; exact idempotent replay returns `200` with `replayed = true` and the original batch identity.
+- New registration returns `201`; exact idempotent replay returns `200` with `replayed = true` and the original registration result, even if the mutable batch lifecycle has advanced afterwards.
 - Missing batch is a typed `404`, not a successful empty payload.
 - Numeric enum tokens are rejected; the generated string-enum wire contract is authoritative.
 - Authentication, authorization, model-state, application, and domain failures include owner, code, correlation ID, and required action.
@@ -54,7 +54,7 @@ collector-owned sealed export
 - `contracts`: authorized collector producers and supported backend ingestion revisions;
 - `catalog_projection`: minimal producer-owned Catalog identity/configuration projection consumed locally;
 - `batches`: immutable manifest, source-policy and artifact rows plus mutable batch lifecycle state;
-- `operations`: immutable command idempotency results.
+- `operations`: immutable command request identity plus the exact canonical result document and digest returned by that command.
 
 The app role has no `catalog_db` credentials. Business migrations run only through `Ingestion.Migrations` with `INGESTION_MIGRATOR_CONNECTION_STRING`; API or worker startup never migrates.
 
@@ -67,6 +67,7 @@ The app role has no `catalog_db` credentials. Business migrations run only throu
 - Validation helpers consume set semantics only. The classification owner creates ordinal `SortedSet` collectors so combined reason codes are deterministic without making every helper own collection ordering.
 - Package and item identities are exact and immutable; same semantic command identity with a different request digest is a conflict.
 - Registration replay requires the exact `scope + key + request digest`; the same key with a different digest fails with an explicit conflict.
+- Every replay verifies the immutable result-document digest and returns that stored result, not a later mutable batch projection.
 - Producer plus collector-export identity is unique and cannot create a second batch under another idempotency key.
 - Batch, canonical manifest, source policies, artifacts and idempotency result are committed atomically under serializable isolation.
 - Manifest, policy, artifact and command rows reject update/delete in PostgreSQL; lifecycle changes belong only to the batch row and later owner workflows.
@@ -76,8 +77,8 @@ The app role has no `catalog_db` credentials. Business migrations run only throu
 ## Proof
 
 - Domain tests cover package-level failure states, exact decision coverage, partial Catalog outcomes, immutable item-decision supersession, and stale aggregate revisions.
-- Application tests cover canonical package integrity, duplicate item rejection, post-seal mutation, explicit review/rejection decisions, unknown wire revisions, producer authorization, exact target Catalog configuration identity, every batch-state transport mapping, and absent/existing read semantics.
-- Infrastructure tests inspect the Npgsql EF design model for concurrency, semantic uniqueness, restrictive foreign keys, idempotency ownership, and required dedicated configuration.
+- Application tests cover canonical package integrity, duplicate item rejection, post-seal mutation, explicit review/rejection decisions, unknown wire revisions, producer authorization, exact target Catalog configuration identity, every batch-state transport mapping, absent/existing read semantics, and canonical result-document round trips.
+- Infrastructure tests inspect the Npgsql EF design model for concurrency, semantic uniqueness, restrictive foreign keys, idempotency ownership, exact result-document storage, and required dedicated configuration.
 - API tests cover anonymous and wrong-scope denial, missing workload subject, missing idempotency, numeric-enum rejection, create/replay, exact read, typed missing state, and anonymous read-only liveness.
 - Architecture tests enforce context project boundaries after the projects are included in the solution.
 - PostgreSQL runtime migration/transaction tests and real OIDC/object-store integration remain part of the integration stage; static and in-memory API proof is not reported as those runtime proofs.
