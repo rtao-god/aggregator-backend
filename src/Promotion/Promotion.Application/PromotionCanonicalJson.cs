@@ -5,7 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Aggregator.Promotion.Application;
 
-internal static class PromotionCanonicalJson
+/// <summary>Creates deterministic canonical Promotion JSON and lowercase SHA-256 identities.</summary>
+public static class PromotionCanonicalJson
 {
     private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
 
