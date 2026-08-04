@@ -119,8 +119,8 @@ public sealed class PromotionCampaignsController(PromotionCampaignService servic
         Name = PromotionOperationIds.ReadSponsoredPlacement)]
     [Authorize(Policy = PromotionAuthorizationPolicies.Read)]
     [EnableRateLimiting(PromotionRateLimitPolicies.Reads)]
-    [ProducesResponseType<SponsoredPlacementResponse>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<SponsoredPlacementResponse>> ReadSponsoredPlacementAsync(
+    [ProducesResponseType<SponsoredPlacementFeedResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SponsoredPlacementFeedResponse>> ReadSponsoredPlacementAsync(
         string catalogKey,
         string placementKey,
         [FromQuery] DateTimeOffset? effectiveAtUtc,
