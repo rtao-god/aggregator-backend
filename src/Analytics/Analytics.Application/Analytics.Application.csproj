@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Analytics.Contracts/Analytics.Contracts.csproj" />
+    <ProjectReference Include="../Analytics.Domain/Analytics.Domain.csproj" />
+  </ItemGroup>
+</Project>
