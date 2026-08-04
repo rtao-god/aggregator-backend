@@ -309,8 +309,6 @@ public static class CatalogIngestionInfrastructureExtensions
             options.UseNpgsql(connectionString));
         services.AddScoped<ICatalogIngestionDraftStore, EfCatalogIngestionDraftStore>();
         services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
-        services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
-        services.AddScoped<ICatalogIngestionTargetProjectionWriter, EfCatalogIngestionTargetProjectionWriter>();
         return services;
     }
 }
@@ -319,8 +317,11 @@ internal static class CatalogIngestionDocument
 {
     private static readonly JsonSerializerOptions Options = CreateOptions();
 
-    public static byte[] Serialize<T>(T value) =>
-        JsonSerializer.SerializeToUtf8Bytes(value, Options);
+    public static byte[] Serialize<T>(T value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return JsonSerializer.SerializeToUtf8Bytes(value, Options);
+    }
 
     public static T Deserialize<T>(ReadOnlySpan<byte> document)
     {
