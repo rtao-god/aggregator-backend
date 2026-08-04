@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -37,3 +38,20 @@ jobs:
         run: dotnet test AggregatorBackend.slnx --no-build --logger "console;verbosity=normal"
       - name: Architecture proof
         run: dotnet test tests/Architecture.Tests/Architecture.Tests.csproj --no-build --logger "console;verbosity=normal"
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Workflow ${context.runId}: ${process.env.JOB_STATUS}`,
+              context: 'ci/connector-report'
+            });
