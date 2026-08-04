@@ -14,6 +14,8 @@ internal sealed class AnalyticsInteractionEventRow
 
     public Guid PublicReadRevisionId { get; set; }
 
+    public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
+
     public DateTimeOffset OccurredAtUtc { get; set; }
 
     public DateTimeOffset ReceivedAtUtc { get; set; }
@@ -38,6 +40,8 @@ internal sealed class AnalyticsInteractionEventRow
 internal sealed class AnalyticsInteractionCampaignParameterRow
 {
     public Guid EventId { get; set; }
+
+    public AnalyticsInteractionEventRow Event { get; set; } = null!;
 
     public required string ParameterKey { get; set; }
 
@@ -68,6 +72,8 @@ internal sealed class AnalyticsPublicReadReferenceRow
 internal sealed class AnalyticsPublicListingReferenceRow
 {
     public Guid PublicReadRevisionId { get; set; }
+
+    public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
 
     public Guid ListingId { get; set; }
 }
