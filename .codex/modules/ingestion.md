@@ -35,6 +35,7 @@ collector-owned sealed export
 - `research_only` and `forbidden` source policies cannot authorize a production package.
 - `link_only` provenance may support only an external-reference field.
 - An item is never silently skipped; validation produces an explicit accepted, needs-review, or rejected decision with reason codes.
+- Validation helpers consume set semantics only. The classification owner creates ordinal `SortedSet` collectors so combined reason codes are deterministic without making every helper own collection ordering.
 - Package and item identities are exact and immutable; same semantic command identity with a different request digest is a conflict.
 - The target Site, Catalog, and active Catalog configuration revision come from an Ingestion-local projection of producer-owned Catalog events. Ingestion never reads `catalog_db`.
 - Registration creates no Catalog subject, draft, or publication and performs no cross-database work.
