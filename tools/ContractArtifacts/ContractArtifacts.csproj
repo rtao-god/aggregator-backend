@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+    <ProjectReference Include="../../src/Query/Query.Contracts/Query.Contracts.csproj" />
+    <ProjectReference Include="../../src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
+    <ProjectReference Include="../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <ProjectReference Include="../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+  </ItemGroup>
+</Project>
