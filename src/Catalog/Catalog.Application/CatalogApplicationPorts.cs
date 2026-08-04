@@ -63,6 +63,10 @@ public interface ICatalogRepository
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
+    public Task<long> GetNextPublicationActivationRevisionAsync(
+        CatalogKey catalogKey,
+        CancellationToken cancellationToken);
+
     public Task<Guid?> GetCurrentPublicationIdAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
