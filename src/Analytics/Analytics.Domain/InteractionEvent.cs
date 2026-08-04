@@ -63,7 +63,7 @@ public sealed record PlacementContext(
     {
         if (exposureKind == PlacementExposureKind.Sponsored)
         {
-            if (placementId is null or { } when placementId == Guid.Empty)
+            if (placementId is null || placementId == Guid.Empty)
             {
                 throw new AnalyticsDomainException(
                     "ANALYTICS_SPONSORED_PLACEMENT_REQUIRED",
@@ -198,7 +198,7 @@ public sealed class InteractionEvent
         ArgumentNullException.ThrowIfNull(campaignParameters);
         if (RequiresListing(kind))
         {
-            if (listingId is null or { } when listingId == Guid.Empty)
+            if (listingId is null || listingId == Guid.Empty)
             {
                 throw new AnalyticsDomainException(
                     "ANALYTICS_LISTING_REQUIRED",
