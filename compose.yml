@@ -224,6 +224,7 @@ services:
       Ingestion__ObjectStorage__Bucket: aggregator
       Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
       Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+      Ingestion__ObjectStorage__ForcePathStyle: "true"
       Authentication__Authority: ${AUTHORITY:-http://identity.invalid}
       Authentication__RequireHttpsMetadata: "false"
     depends_on:

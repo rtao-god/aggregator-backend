@@ -406,9 +406,11 @@ services:
       <<: *runtime-environment
       ConnectionStrings__Ingestion: Host=postgres;Database=ingestion_db;Username=ingestion_app;Password=${INGESTION_APP_PASSWORD}
       Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333
+      Ingestion__ObjectStorage__Region: ${OBJECT_STORAGE_REGION:-us-east-1}
       Ingestion__ObjectStorage__Bucket: ${INGESTION_BUCKET:-ingestion-packages}
       Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY}
       Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY}
+      Ingestion__ObjectStorage__ForcePathStyle: "true"
     networks: [backend]
 
   ingestion-worker:
@@ -425,11 +427,16 @@ services:
     environment:
       ConnectionStrings__Ingestion: Host=postgres;Database=ingestion_db;Username=ingestion_app;Password=${INGESTION_APP_PASSWORD}
       IngestionWorker__WorkerIdentity: ingestion-validation-worker
+      IngestionWorker__ValidationBatchSize: "10"
+      IngestionWorker__LeaseDuration: "00:05:00"
+      IngestionWorker__EmptyDelay: "00:00:02"
       IngestionWorker__SystemActorId: ${INGESTION_SYSTEM_ACTOR_ID:?INGESTION_SYSTEM_ACTOR_ID is required}
       Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333
+      Ingestion__ObjectStorage__Region: ${OBJECT_STORAGE_REGION:-us-east-1}
       Ingestion__ObjectStorage__Bucket: ${INGESTION_BUCKET:-ingestion-packages}
       Ingestion__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY}
       Ingestion__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY}
+      Ingestion__ObjectStorage__ForcePathStyle: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     networks: [backend]
 

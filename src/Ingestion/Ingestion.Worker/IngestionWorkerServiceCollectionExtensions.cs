@@ -4,10 +4,15 @@ namespace Aggregator.Ingestion.Worker;
 
 public static class IngestionWorkerServiceCollectionExtensions
 {
-    public static IServiceCollection AddIngestionWorker(this IServiceCollection services)
+    public static IServiceCollection AddIngestionWorker(
+        this IServiceCollection services,
+        IngestionWorkerOptions options)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddHostedService<IngestionPackageWorkerService>();
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        services.AddSingleton(options);
+        services.AddHostedService<IngestionValidationWorker>();
         return services;
     }
 }

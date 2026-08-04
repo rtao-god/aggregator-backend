@@ -40,6 +40,7 @@ public partial class Program
         builder.Services.AddOwnerProblemDetails();
         builder.Services.AddIngestionApplication();
         builder.Services.AddIngestionInfrastructure(builder.Configuration);
+        builder.Services.AddIngestionObjectStorage(builder.Configuration);
         builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(builder.Configuration, "ingestion-api");
         builder.Services.AddRateLimiter(options =>

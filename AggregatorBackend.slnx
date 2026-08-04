@@ -107,6 +107,7 @@
     <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj" />
+    <Project Path="tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Promotion/">
     <Project Path="tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj" />

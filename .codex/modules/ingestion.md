@@ -13,10 +13,10 @@ It does not own collector crawling or `collector-candidate-export`, and it canno
 - `Ingestion.Application`: canonical serialization, fail-closed package validation, producer authorization, exact Catalog-reference validation, idempotent registration/upload/commit orchestration, explicit review, Catalog-delivery orchestration, read-only queries, and storage ports.
 - `Ingestion.Infrastructure`: Ingestion-only PostgreSQL models, atomic registration and lifecycle repositories, immutable processing decisions, delivery ledger, command-result persistence, verified quarantine object-store adapter, producer registry, local Catalog-reference projection reader, UUIDv7/UTC adapters, and read-only database readiness.
 - `Ingestion.Api`: authenticated registration, upload authorization/completion, processing read, review and commit commands, typed transport/model/auth failures, rate limiting, read-only health, and development-only protected OpenAPI.
-- `Ingestion.Worker`: bounded validation and Catalog-delivery loops over persisted leases and exact owner state.
-- `Ingestion.Migrations`: one-shot SQL owner for registration, processing, delivery, package-work, constraints, indexes, immutable records, lifecycle-transition enforcement, and migration identity.
+- `Ingestion.Worker`: bounded validation loop over the canonical `processing.validation_job` lease and item-decision ledger. It owns no parallel payload contract or schema.
+- `Ingestion.Migrations`: one-shot SQL owner for registration, canonical processing and delivery, constraints, indexes, immutable records, lifecycle-transition enforcement, migration identity, and explicit removal of the obsolete package-validation tables.
 
-There is one active review/commit implementation: `IngestionProcessingContracts`, `IngestionProcessingServices`, `IngestionProcessingPersistence`, `IngestionProcessingController`, and `Ingestion.Worker`. The superseded parallel review/commit contracts, controller, workflow, migration, tests, and source-mutating CI workflows were removed rather than retained as compatibility code.
+There is one active review/commit implementation: `IngestionProcessingContracts`, `IngestionProcessingServices`, `IngestionProcessingPersistence`, `IngestionProcessingController`, and `Ingestion.Worker`. The superseded parallel review/commit contracts, controller, workflow, tests, source generators, and source-mutating CI workflows were removed rather than retained as compatibility code. The historical migration that created the abandoned package-validation tables is followed by an owner migration that drops them.
 
 ## Active flow
 
@@ -34,7 +34,7 @@ collector-owned sealed export
 → every item receives accepted / needs-review / rejected with reason codes
 → POST /api/ingestion/batches/{batchId}/review supersedes only exact review-required decisions
 → POST /api/ingestion/batches/{batchId}/commit creates one idempotent delivery per selected accepted item
-→ delivery worker publishes typed Catalog draft commands
+→ the canonical delivery service leases typed Catalog draft commands for the broker adapter
 → Catalog remains the final draft owner and cannot be bypassed
 → exact Catalog outcomes close the Ingestion delivery ledger
 ```
@@ -88,7 +88,8 @@ The app role has no `catalog_db` credentials. Business migrations run only throu
 ## Proof
 
 - Domain tests cover lifecycle transitions, exact decision coverage, terminal failures, immutable supersession, partial Catalog outcomes, and stale aggregate revisions.
-- Application and processing tests cover canonical package integrity, duplicate-item rejection, explicit accepted/review/rejected classification, review decision identity, idempotent commit, draft-only Catalog command shape, and bounded worker behavior.
+- Application and processing tests cover canonical package integrity, duplicate-item rejection, explicit accepted/review/rejected classification, review decision identity, idempotent commit, and draft-only Catalog command shape.
+- Worker tests cover strict owner configuration and registration of only the canonical validation hosted service.
 - Infrastructure tests inspect registration and processing PostgreSQL models for concurrency, semantic uniqueness, restrictive foreign keys, immutable result documents, decision supersession and one delivery per item.
 - API tests cover authentication/scope denial, workload identity, required idempotency, numeric-enum rejection, registration/upload/read behavior, review and commit contracts, typed missing state, and anonymous read-only liveness.
 - Catalog ingestion tests prove that delivered commands remain draft-only and are revalidated by the active Catalog configuration owner.

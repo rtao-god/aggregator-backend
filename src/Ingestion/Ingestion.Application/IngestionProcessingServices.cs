@@ -212,7 +212,7 @@ public sealed class ValidateIngestionPackageService(
         }
     }
 
-    private static IReadOnlyList<IngestionProcessingDecision> ClassifyItems(
+    private static IngestionProcessingDecision[] ClassifyItems(
         IReadOnlyList<IngestionCandidatePayloadItem> items,
         DateTimeOffset decidedAtUtc,
         string decidedBy)
@@ -313,8 +313,8 @@ public sealed class ValidateIngestionPackageService(
 
     private static void ValidateField(
         IngestionCandidateFieldContract field,
-        ISet<string> blocking,
-        ISet<string> review)
+        SortedSet<string> blocking,
+        SortedSet<string> review)
     {
         if (string.IsNullOrWhiteSpace(field.FieldKey) || field.FieldKey.Length > 96)
         {

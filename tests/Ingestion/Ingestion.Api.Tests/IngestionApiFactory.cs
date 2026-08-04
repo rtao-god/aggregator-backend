@@ -26,6 +26,12 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         {
             ["ConnectionStrings__Ingestion"] =
                 "Host=127.0.0.1;Port=1;Database=ingestion;Username=test;Password=test;Timeout=1;Command Timeout=1",
+            ["Ingestion__ObjectStorage__ServiceUrl"] = "https://object-store.test",
+            ["Ingestion__ObjectStorage__Region"] = "us-east-1",
+            ["Ingestion__ObjectStorage__Bucket"] = "ingestion-test",
+            ["Ingestion__ObjectStorage__AccessKey"] = "test-access-key",
+            ["Ingestion__ObjectStorage__SecretKey"] = "test-secret-key",
+            ["Ingestion__ObjectStorage__ForcePathStyle"] = "true",
             ["Authentication__Authority"] = "https://issuer.test",
             ["Authentication__RequireHttpsMetadata"] = "false",
         };

@@ -116,9 +116,11 @@ public sealed class RecordingCollectorStore : ICollectorCandidateStore
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(commandDigest);
+        ArgumentNullException.ThrowIfNull(candidate);
         Assert.NotEqual(Guid.Empty, commandId);
         Assert.Equal(64, commandDigest.Length);
-        Candidate = candidate ?? throw new ArgumentNullException(nameof(candidate));
+        Candidate = candidate;
         return Task.FromResult(
             new CollectorCandidateRegistration(candidate, Replayed: false));
     }

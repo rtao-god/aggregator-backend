@@ -229,6 +229,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
         DateTimeOffset completedAtUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(decisions);
         ValidateExactDecisionCoverage(decisions);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,
@@ -335,6 +336,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
         DateTimeOffset reviewedAtUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(reviewDecisions);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,
             cancellationToken);
@@ -407,6 +409,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
         DateTimeOffset requestedAtUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(commandIdentity);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,
             cancellationToken);
