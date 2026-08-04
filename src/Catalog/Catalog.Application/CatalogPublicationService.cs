@@ -136,12 +136,16 @@ public sealed class CatalogPublicationService(
         var expectedCurrentPublicationId = ToInternalExpectation(request.ExpectedCurrent);
         var previousPublicationId = await repository.GetCurrentPublicationIdAsync(catalogKey, cancellationToken);
         EnsurePointerExpectation(previousPublicationId, expectedCurrentPublicationId);
+        var activationRevision = await repository.GetNextPublicationActivationRevisionAsync(
+            catalogKey,
+            cancellationToken);
         var integrationEvent = new CatalogPublicationActivated(
             idSource.CreateId(),
             publication.Id,
             publication.CatalogKey.Value,
             publication.ConfigurationRevisionId,
             publication.Sequence,
+            activationRevision,
             publication.ArtifactKey,
             publication.ArtifactDigest,
             PublicationActivationKindContract.Publication,
@@ -215,12 +219,16 @@ public sealed class CatalogPublicationService(
             target.Sequence,
             activatedAtUtc,
             actor.Id);
+        var activationRevision = await repository.GetNextPublicationActivationRevisionAsync(
+            catalogKey,
+            cancellationToken);
         var integrationEvent = new CatalogPublicationActivated(
             idSource.CreateId(),
             target.Id,
             target.CatalogKey.Value,
             target.ConfigurationRevisionId,
             target.Sequence,
+            activationRevision,
             target.ArtifactKey,
             target.ArtifactDigest,
             PublicationActivationKindContract.Rollback,
