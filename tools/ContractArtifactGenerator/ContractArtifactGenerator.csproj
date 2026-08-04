@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Api/Catalog.Api.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj" />
+    <ProjectReference Include="../../src/Query/Query.Contracts/Query.Contracts.csproj" />
+    <ProjectReference Include="../../src/Query/Query.Api/Query.Api.csproj" />
+    <ProjectReference Include="../../src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
+    <ProjectReference Include="../../src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
+    <ProjectReference Include="../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+    <ProjectReference Include="../../src/Analytics/Analytics.Api/Analytics.Api.csproj" />
+    <ProjectReference Include="../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+    <ProjectReference Include="../../src/Promotion/Promotion.Api/Promotion.Api.csproj" />
+  </ItemGroup>
+</Project>
