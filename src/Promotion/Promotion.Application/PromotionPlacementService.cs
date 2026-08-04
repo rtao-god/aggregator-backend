@@ -468,7 +468,7 @@ public sealed class PromotionPlacementService(
             presentationLabelKey,
         });
 
-    private static IReadOnlyList<string> RequireLocales(IReadOnlyList<string>? localeScope)
+    private static string[] RequireLocales(IReadOnlyList<string>? localeScope)
     {
         if (localeScope is null)
         {
