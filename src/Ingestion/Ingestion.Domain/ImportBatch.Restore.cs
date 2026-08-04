@@ -152,12 +152,12 @@ public sealed partial class ImportBatch
                 "Review-required state must contain at least one item awaiting review.");
         }
 
-        if (state is ImportBatchState.ReadyToCommit
+        if (state is (ImportBatchState.ReadyToCommit
             or ImportBatchState.Committing
             or ImportBatchState.Committed
             or ImportBatchState.PartiallyRejected
             or ImportBatchState.Superseded
-            or ImportBatchState.CommitFailed && reviewRequiredItemCount != 0)
+            or ImportBatchState.CommitFailed) && reviewRequiredItemCount != 0)
         {
             throw new IngestionDomainException(
                 "INGESTION_DECISION_COUNTS_INVALID",
