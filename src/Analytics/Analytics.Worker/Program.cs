@@ -26,8 +26,8 @@ public partial class Program
         options.Validate();
 
         builder.Services.AddSingleton(options);
-        builder.Services.AddAnalyticsRuntimeApplication();
-        builder.Services.AddAnalyticsRuntimeInfrastructure(builder.Configuration);
+        builder.Services.AddAnalyticsApplication();
+        builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(
             builder.Configuration,
             "analytics-aggregation-worker");
@@ -40,30 +40,42 @@ public sealed record AnalyticsAggregationWorkerOptions
 {
     public const string SectionName = "Analytics:Aggregation";
 
-    public int BatchSize { get; init; } = 1_000;
+    public int LookbackDays { get; init; } = 2;
 
-    public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan PollInterval { get; init; } = TimeSpan.FromMinutes(30);
 
     public TimeSpan FailureDelay { get; init; } = TimeSpan.FromSeconds(10);
 
+    public int MaximumConsecutiveFailures { get; init; } = 5;
+
     public void Validate()
     {
-        if (BatchSize is < 1 or > 10_000)
+        if (LookbackDays is < 1 or > 31)
         {
             throw new InvalidOperationException(
-                $"{SectionName}:BatchSize must be between 1 and 10000.");
+                $"{SectionName}:LookbackDays must be between 1 and 31.");
         }
 
-        ValidateDelay(PollInterval, nameof(PollInterval));
-        ValidateDelay(FailureDelay, nameof(FailureDelay));
-    }
-
-    private static void ValidateDelay(TimeSpan value, string name)
-    {
-        if (value < TimeSpan.FromMilliseconds(100) || value > TimeSpan.FromMinutes(5))
+        if (MaximumConsecutiveFailures is < 1 or > 20)
         {
             throw new InvalidOperationException(
-                $"{SectionName}:{name} must be between 100 milliseconds and 5 minutes.");
+                $"{SectionName}:MaximumConsecutiveFailures must be between 1 and 20.");
+        }
+
+        ValidateDelay(PollInterval, nameof(PollInterval), TimeSpan.FromSeconds(1), TimeSpan.FromHours(24));
+        ValidateDelay(FailureDelay, nameof(FailureDelay), TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5));
+    }
+
+    private static void ValidateDelay(
+        TimeSpan value,
+        string name,
+        TimeSpan minimum,
+        TimeSpan maximum)
+    {
+        if (value < minimum || value > maximum)
+        {
+            throw new InvalidOperationException(
+                $"{SectionName}:{name} must be between {minimum} and {maximum}.");
         }
     }
 }
@@ -71,28 +83,32 @@ public sealed record AnalyticsAggregationWorkerOptions
 internal sealed class AnalyticsAggregationWorker(
     IServiceScopeFactory scopeFactory,
     AnalyticsAggregationWorkerOptions options,
+    TimeProvider timeProvider,
     ILogger<AnalyticsAggregationWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var consecutiveFailures = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var service = scope.ServiceProvider
-                    .GetRequiredService<AggregateAnalyticsObservationsService>();
-                var processed = await service.AggregateAsync(
-                    options.BatchSize,
+                    .GetRequiredService<RebuildDailyAnalyticsMetricsService>();
+                var todayUtc = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+                var result = await service.RebuildAsync(
+                    new RebuildDailyAnalyticsMetricsRequest(
+                        todayUtc.AddDays(-options.LookbackDays),
+                        todayUtc),
                     stoppingToken);
-                if (processed > 0)
-                {
-                    logger.LogInformation(
-                        "Aggregated {ObservationCount} Analytics observations.",
-                        processed);
-                    continue;
-                }
-
+                logger.LogInformation(
+                    "Analytics aggregate rebuild materialized {MetricCount} rows and removed {StaleMetricCount} stale rows for [{FromDate}, {ToDate}).",
+                    result.MaterializedMetricCount,
+                    result.RemovedStaleMetricCount,
+                    result.FromInclusive,
+                    result.ToExclusive);
+                consecutiveFailures = 0;
                 await Task.Delay(options.PollInterval, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -101,9 +117,17 @@ internal sealed class AnalyticsAggregationWorker(
             }
             catch (Exception exception)
             {
+                consecutiveFailures++;
                 logger.LogError(
                     exception,
-                    "Analytics aggregation iteration failed; retrying after the bounded failure delay.");
+                    "Analytics aggregate rebuild failed ({FailureCount}/{FailureLimit}).",
+                    consecutiveFailures,
+                    options.MaximumConsecutiveFailures);
+                if (consecutiveFailures >= options.MaximumConsecutiveFailures)
+                {
+                    throw;
+                }
+
                 await Task.Delay(options.FailureDelay, stoppingToken);
             }
         }
