@@ -2,9 +2,9 @@ namespace Aggregator.Catalog.Contracts;
 
 public static class CatalogIntegrationEventTypes
 {
-    public const string PublicationActivatedV1 = "catalog.publication-activated.v1";
-    public const string ListingClaimVerifiedV1 = "catalog.listing-claim-verified.v1";
-    public const string ListingClaimRevokedV1 = "catalog.listing-claim-revoked.v1";
+    public const string PublicationActivated = "catalog.publication.activated";
+    public const string ListingClaimVerified = "catalog.listing-claim.verified";
+    public const string ListingClaimRevoked = "catalog.listing-claim.revoked";
 }
 
 public enum PublicationActivationKindContract
@@ -13,7 +13,7 @@ public enum PublicationActivationKindContract
     Rollback = 2,
 }
 
-public sealed record CatalogPublicationActivatedV1(
+public sealed record CatalogPublicationActivated(
     Guid EventId,
     Guid PublicationId,
     string CatalogKey,
@@ -25,7 +25,7 @@ public sealed record CatalogPublicationActivatedV1(
     Guid? PreviousPublicationId,
     DateTimeOffset OccurredAtUtc);
 
-public sealed record CatalogListingClaimVerifiedV1(
+public sealed record CatalogListingClaimVerified(
     Guid EventId,
     Guid ClaimId,
     Guid GrantId,
@@ -35,7 +35,7 @@ public sealed record CatalogListingClaimVerifiedV1(
     DateTimeOffset? ExpiresAtUtc,
     DateTimeOffset OccurredAtUtc);
 
-public sealed record CatalogListingClaimRevokedV1(
+public sealed record CatalogListingClaimRevoked(
     Guid EventId,
     Guid ClaimId,
     Guid ListingId,

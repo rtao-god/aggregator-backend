@@ -6,7 +6,7 @@ public static class CatalogPublicationArtifactContract
     public const int Revision = 1;
 }
 
-public sealed record CatalogPublicationArtifactV1(
+public sealed record CatalogPublicationArtifact(
     string ContractIdentity,
     int ContractRevision,
     Guid PublicationId,
@@ -14,52 +14,52 @@ public sealed record CatalogPublicationArtifactV1(
     Guid ConfigurationRevisionId,
     long PublicationSequence,
     DateTimeOffset CreatedAtUtc,
-    IReadOnlyList<PublicListingDocumentV1> Listings);
+    IReadOnlyList<PublicListingDocument> Listings);
 
-public sealed record PublicListingDocumentV1(
+public sealed record PublicListingDocument(
     Guid ListingId,
     Guid ListingRevisionId,
     Guid SubjectId,
     Guid SubjectRevisionId,
     SubjectKindContract SubjectKind,
-    IReadOnlyList<PublicLocalizedTextV1> Names,
-    IReadOnlyList<PublicLocalizedTextV1> Descriptions,
+    IReadOnlyList<PublicLocalizedText> Names,
+    IReadOnlyList<PublicLocalizedText> Descriptions,
     IReadOnlyList<string> CategoryKeys,
-    IReadOnlyList<PublicAttributeV1> Attributes,
-    PublicGeographyV1 Geography,
-    IReadOnlyList<PublicContactV1> Contacts,
-    IReadOnlyList<PublicMediaV1> Media,
-    IReadOnlyList<PublicProvenanceSummaryV1> Provenance,
+    IReadOnlyList<PublicAttribute> Attributes,
+    PublicGeography Geography,
+    IReadOnlyList<PublicContact> Contacts,
+    IReadOnlyList<PublicMedia> Media,
+    IReadOnlyList<PublicProvenanceSummary> Provenance,
     string ContentDigest);
 
-public sealed record PublicLocalizedTextV1(
+public sealed record PublicLocalizedText(
     string Locale,
     FieldValueStateContract State,
     string? Value,
     MissingValueReasonContract? MissingReason,
     Guid? AssertionId);
 
-public sealed record PublicAttributeV1(
+public sealed record PublicAttribute(
     string AttributeKey,
     FieldValueStateContract State,
     TypedValueContract? Value,
     MissingValueReasonContract? MissingReason,
     Guid? AssertionId);
 
-public sealed record PublicGeographyV1(
+public sealed record PublicGeography(
     GeographyStateContract State,
     decimal? Latitude,
     decimal? Longitude,
     string? DistrictKey,
     Guid AssertionId);
 
-public sealed record PublicContactV1(
+public sealed record PublicContact(
     ContactKindContract Kind,
     string Target,
     string? Label,
     Guid AssertionId);
 
-public sealed record PublicMediaV1(
+public sealed record PublicMedia(
     Guid MediaId,
     string ObjectUri,
     string ContentType,
@@ -67,7 +67,7 @@ public sealed record PublicMediaV1(
     MediaRightsBasisContract RightsBasis,
     Guid AssertionId);
 
-public sealed record PublicProvenanceSummaryV1(
+public sealed record PublicProvenanceSummary(
     Guid AssertionId,
     SourceKindContract SourceKind,
     DateTimeOffset ObservedAtUtc,

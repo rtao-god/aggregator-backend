@@ -46,7 +46,7 @@ public sealed class CatalogClaimService(
             request.Scopes.Select(CatalogContractMapper.ToDomain),
             verifiedAtUtc,
             request.ExpiresAtUtc);
-        var integrationEvent = new CatalogListingClaimVerifiedV1(
+        var integrationEvent = new CatalogListingClaimVerified(
             idSource.CreateId(),
             claim.Id,
             grant.Id,
@@ -57,7 +57,7 @@ public sealed class CatalogClaimService(
             verifiedAtUtc);
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
-            CatalogIntegrationEventTypes.ListingClaimVerifiedV1,
+            CatalogIntegrationEventTypes.ListingClaimVerified,
             EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             verifiedAtUtc);
@@ -94,7 +94,7 @@ public sealed class CatalogClaimService(
         var claim = await RequireClaimAsync(claimId, cancellationToken);
         var revokedAtUtc = timeProvider.GetUtcNow();
         claim.Revoke(reviewer.Id, request.Reason, revokedAtUtc);
-        var integrationEvent = new CatalogListingClaimRevokedV1(
+        var integrationEvent = new CatalogListingClaimRevoked(
             idSource.CreateId(),
             claim.Id,
             claim.ListingId,
@@ -102,7 +102,7 @@ public sealed class CatalogClaimService(
             revokedAtUtc);
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
-            CatalogIntegrationEventTypes.ListingClaimRevokedV1,
+            CatalogIntegrationEventTypes.ListingClaimRevoked,
             EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             revokedAtUtc);

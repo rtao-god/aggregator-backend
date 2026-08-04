@@ -5,7 +5,7 @@ namespace Aggregator.Catalog.Application;
 
 internal static class CatalogPublicationArtifactFactory
 {
-    public static CatalogPublicationArtifactV1 Create(
+    public static CatalogPublicationArtifact Create(
         Guid publicationId,
         CatalogKey catalogKey,
         Guid configurationRevisionId,
@@ -21,7 +21,7 @@ internal static class CatalogPublicationArtifactFactory
             .Select(selection => CreateDocument(selection.Revision))
             .ToArray();
 
-        return new CatalogPublicationArtifactV1(
+        return new CatalogPublicationArtifact(
             CatalogPublicationArtifactContract.Identity,
             CatalogPublicationArtifactContract.Revision,
             publicationId,
@@ -32,10 +32,10 @@ internal static class CatalogPublicationArtifactFactory
             listings);
     }
 
-    private static PublicListingDocumentV1 CreateDocument(ListingRevision revision)
+    private static PublicListingDocument CreateDocument(ListingRevision revision)
     {
         var content = revision.Content;
-        return new PublicListingDocumentV1(
+        return new PublicListingDocument(
             revision.ListingId,
             revision.Id,
             revision.Subject.SubjectId,
@@ -43,7 +43,7 @@ internal static class CatalogPublicationArtifactFactory
             (SubjectKindContract)revision.Subject.Kind,
             content.Names.Values
                 .OrderBy(value => value.Locale.Value, StringComparer.Ordinal)
-                .Select(value => new PublicLocalizedTextV1(
+                .Select(value => new PublicLocalizedText(
                     value.Locale.Value,
                     (FieldValueStateContract)value.State,
                     value.Value,
@@ -52,7 +52,7 @@ internal static class CatalogPublicationArtifactFactory
                 .ToArray(),
             content.Descriptions.Values
                 .OrderBy(value => value.Locale.Value, StringComparer.Ordinal)
-                .Select(value => new PublicLocalizedTextV1(
+                .Select(value => new PublicLocalizedText(
                     value.Locale.Value,
                     (FieldValueStateContract)value.State,
                     value.Value,
@@ -62,7 +62,7 @@ internal static class CatalogPublicationArtifactFactory
             content.Categories.Select(category => category.CategoryKey.Value).Order(StringComparer.Ordinal).ToArray(),
             content.Attributes.Values
                 .OrderBy(value => value.Key.Value, StringComparer.Ordinal)
-                .Select(value => new PublicAttributeV1(
+                .Select(value => new PublicAttribute(
                     value.Key.Value,
                     (FieldValueStateContract)value.State,
                     value.Value is null
@@ -76,7 +76,7 @@ internal static class CatalogPublicationArtifactFactory
                     value.MissingReason is null ? null : (MissingValueReasonContract)value.MissingReason,
                     value.AssertionId))
                 .ToArray(),
-            new PublicGeographyV1(
+            new PublicGeography(
                 (GeographyStateContract)content.Geography.State,
                 content.Geography.Latitude,
                 content.Geography.Longitude,
@@ -85,7 +85,7 @@ internal static class CatalogPublicationArtifactFactory
             content.Contacts
                 .OrderBy(contact => contact.Kind)
                 .ThenBy(contact => contact.Target.AbsoluteUri, StringComparer.Ordinal)
-                .Select(contact => new PublicContactV1(
+                .Select(contact => new PublicContact(
                     (ContactKindContract)contact.Kind,
                     contact.Target.AbsoluteUri,
                     contact.Label,
@@ -93,7 +93,7 @@ internal static class CatalogPublicationArtifactFactory
                 .ToArray(),
             content.Media
                 .OrderBy(media => media.MediaId)
-                .Select(media => new PublicMediaV1(
+                .Select(media => new PublicMedia(
                     media.MediaId,
                     media.ObjectUri.AbsoluteUri,
                     media.ContentType,
@@ -103,7 +103,7 @@ internal static class CatalogPublicationArtifactFactory
                 .ToArray(),
             content.Assertions.Values
                 .OrderBy(assertion => assertion.Id)
-                .Select(assertion => new PublicProvenanceSummaryV1(
+                .Select(assertion => new PublicProvenanceSummary(
                     assertion.Id,
                     (SourceKindContract)assertion.SourceKind,
                     assertion.ObservedAtUtc,

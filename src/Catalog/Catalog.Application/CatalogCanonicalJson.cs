@@ -22,7 +22,7 @@ internal static class CatalogCanonicalJson
         return Serialize(NormalizeListingContent(content));
     }
 
-    public static byte[] SerializePublication(CatalogPublicationArtifactV1 publication)
+    public static byte[] SerializePublication(CatalogPublicationArtifact publication)
     {
         ArgumentNullException.ThrowIfNull(publication);
         return Serialize(publication);
@@ -179,8 +179,7 @@ internal static class CatalogCanonicalJson
     private static CatalogContractException NullContractItem(string itemKind) =>
         new(
             "catalog.contract_collection_item_null",
-            $"Catalog contract collection contains a null {itemKind}."
-        );
+            $"Catalog contract collection contains a null {itemKind}.");
 
     private static JsonSerializerOptions CreateSerializerOptions()
     {

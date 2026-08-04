@@ -179,9 +179,6 @@ public sealed record ProductConfigurationRevisionResponse(
     DateTimeOffset ImportedAtUtc,
     bool IsActive);
 
-public sealed record ActivateProductConfigurationRequest(
-    Guid ExpectedRevisionId);
-
 public sealed record SubjectReferenceContract(
     Guid SubjectId,
     Guid SubjectRevisionId,
@@ -309,12 +306,6 @@ public sealed record PublicationSelectionContract(
     Guid ListingId,
     Guid ListingRevisionId,
     long ExpectedListingVersion);
-
-public sealed record CreatePublicationRequest(
-    string CatalogKey,
-    Guid ConfigurationRevisionId,
-    Guid? ExpectedCurrentPublicationId,
-    IReadOnlyList<PublicationSelectionContract> Selections);
 
 public sealed record RollbackPublicationRequest(
     Guid TargetPublicationId,

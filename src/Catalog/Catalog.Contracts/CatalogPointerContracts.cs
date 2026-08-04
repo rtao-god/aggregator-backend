@@ -14,11 +14,11 @@ public sealed record ConfigurationPointerExpectationContract(
     PointerExpectationKindContract Kind,
     Guid? ConfigurationRevisionId);
 
-public sealed record ActivateProductConfigurationV1Request(
+public sealed record ActivateProductConfigurationRequest(
     Guid TargetConfigurationRevisionId,
     ConfigurationPointerExpectationContract ExpectedCurrent);
 
-public sealed record CreateCatalogPublicationV1Request(
+public sealed record CreateCatalogPublicationRequest(
     string CatalogKey,
     Guid ConfigurationRevisionId,
     PublicationPointerExpectationContract ExpectedCurrent,

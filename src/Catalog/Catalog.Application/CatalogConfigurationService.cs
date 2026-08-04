@@ -47,7 +47,7 @@ public sealed class CatalogConfigurationService(
 
     public async Task<ProductConfigurationRevisionResponse> ActivateAsync(
         CatalogKey catalogKey,
-        ActivateProductConfigurationV1Request request,
+        ActivateProductConfigurationRequest request,
         CatalogActor actor,
         CancellationToken cancellationToken)
     {

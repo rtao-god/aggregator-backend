@@ -10,7 +10,7 @@ public sealed class CatalogPublicationService(
     TimeProvider timeProvider)
 {
     public async Task<CatalogPublicationResponse> PublishAsync(
-        CreateCatalogPublicationV1Request request,
+        CreateCatalogPublicationRequest request,
         CatalogActor actor,
         CancellationToken cancellationToken)
     {
@@ -128,7 +128,7 @@ public sealed class CatalogPublicationService(
         var expectedCurrentPublicationId = ToInternalExpectation(request.ExpectedCurrent);
         var previousPublicationId = await repository.GetCurrentPublicationIdAsync(catalogKey, cancellationToken);
         EnsurePointerExpectation(previousPublicationId, expectedCurrentPublicationId);
-        var integrationEvent = new CatalogPublicationActivatedV1(
+        var integrationEvent = new CatalogPublicationActivated(
             idSource.CreateId(),
             publication.Id,
             publication.CatalogKey.Value,
@@ -141,7 +141,7 @@ public sealed class CatalogPublicationService(
             createdAtUtc);
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
-            CatalogIntegrationEventTypes.PublicationActivatedV1,
+            CatalogIntegrationEventTypes.PublicationActivated,
             EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             createdAtUtc);
@@ -195,7 +195,7 @@ public sealed class CatalogPublicationService(
             target.Sequence,
             activatedAtUtc,
             actor.Id);
-        var integrationEvent = new CatalogPublicationActivatedV1(
+        var integrationEvent = new CatalogPublicationActivated(
             idSource.CreateId(),
             target.Id,
             target.CatalogKey.Value,
@@ -208,7 +208,7 @@ public sealed class CatalogPublicationService(
             activatedAtUtc);
         var outboxMessage = new CatalogOutboxMessage(
             integrationEvent.EventId,
-            CatalogIntegrationEventTypes.PublicationActivatedV1,
+            CatalogIntegrationEventTypes.PublicationActivated,
             EventRevision: 1,
             CatalogCanonicalJson.SerializeEvent(integrationEvent),
             activatedAtUtc);
