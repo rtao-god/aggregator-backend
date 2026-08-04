@@ -115,6 +115,7 @@ public sealed class CatalogEndToEndTests
         Assert.Equal(firstPublication.Id, repository.CurrentPublicationId);
         Assert.Equal(2, artifactStore.Artifacts.Count);
         Assert.Equal(3, repository.OutboxMessages.Count);
+        Assert.Equal(4, repository.NextPublicationActivationRevision);
         Assert.All(
             repository.OutboxMessages,
             message => Assert.Equal(CatalogIntegrationEventTypes.PublicationActivated, message.EventType));
@@ -302,8 +303,11 @@ public sealed class CatalogEndToEndTests
         private readonly Dictionary<Guid, ListingRevision> _revisions = [];
         private readonly Dictionary<Guid, CatalogPublication> _publications = [];
         private long _nextPublicationSequence = 1;
+        private long _nextPublicationActivationRevision = 1;
 
         public Guid? CurrentPublicationId { get; private set; }
+
+        public long NextPublicationActivationRevision => _nextPublicationActivationRevision;
 
         public List<CatalogOutboxMessage> OutboxMessages { get; } = [];
 
@@ -433,6 +437,14 @@ public sealed class CatalogEndToEndTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_nextPublicationSequence++);
+        }
+
+        public Task<long> GetNextPublicationActivationRevisionAsync(
+            CatalogKey catalogKey,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_nextPublicationActivationRevision++);
         }
 
         public Task<Guid?> GetCurrentPublicationIdAsync(
