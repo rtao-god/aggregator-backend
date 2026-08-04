@@ -82,6 +82,14 @@ jobs:
             'Enum.IsDefined(typeof(IngestionPackageQualitySeverityContract), issue.Severity)' `
             'Enum.IsDefined(issue.Severity)' `
             1
+          Replace-Exact $payloadValidator `
+            'private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();' `
+            'private readonly JsonSerializerOptions _serializerOptions = CreateSerializerOptions();' `
+            1
+          Replace-Exact $payloadValidator `
+            'JsonSerializer.Deserialize<AggregatorCandidatePayload>(payloadBytes, SerializerOptions)' `
+            'JsonSerializer.Deserialize<AggregatorCandidatePayload>(payloadBytes, _serializerOptions)' `
+            1
 
           Replace-Exact `
             'src/Ingestion/Ingestion.Application/IngestionPackageProcessingService.cs' `
