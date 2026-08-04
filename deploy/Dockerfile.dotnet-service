@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG PROJECT_PATH
+ARG BUILD_CONFIGURATION=Release
+WORKDIR /src
+COPY . .
+RUN test -n "${PROJECT_PATH}" \
+    && dotnet restore "${PROJECT_PATH}" \
+    && dotnet publish "${PROJECT_PATH}" \
+        --configuration "${BUILD_CONFIGURATION}" \
+        --no-restore \
+        --output /app/publish \
+        /p:UseAppHost=false
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+ARG ASSEMBLY_NAME
+ENV DOTNET_ASSEMBLY=${ASSEMBLY_NAME}
+WORKDIR /app
+COPY --from=build /app/publish .
+USER $APP_UID
+ENTRYPOINT ["sh", "-c", "test -n \"$DOTNET_ASSEMBLY\" && exec dotnet \"$DOTNET_ASSEMBLY\""]
