@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Aggregator.Ingestion.Contracts;
 
 public static class IngestionCandidatePayloadContract
@@ -9,8 +11,19 @@ public static class IngestionCandidatePayloadContract
 public enum IngestionCandidateFieldValueKindContract
 {
     Text = 1,
+
+    [SuppressMessage(
+        "Naming",
+        "CA1720:Identifier contains type name",
+        Justification = "Integer is the canonical backend ingestion value-kind token.")]
     Integer = 2,
+
+    [SuppressMessage(
+        "Naming",
+        "CA1720:Identifier contains type name",
+        Justification = "Decimal is the canonical backend ingestion value-kind token.")]
     Decimal = 3,
+
     Boolean = 4,
     Date = 5,
     DateTime = 6,
