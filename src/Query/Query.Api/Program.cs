@@ -17,7 +17,8 @@ builder.Services
     {
         ConnectionString = connectionString,
     })
-    .AddQueryPublicReadInfrastructure();
+    .AddQueryPublicReadInfrastructure()
+    .AddQueryPromotionOverlayProjection();
 builder.Services.AddPlatformObservability(builder.Configuration, "catalog-query-api");
 builder.Services
     .AddControllers()
