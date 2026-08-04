@@ -138,6 +138,14 @@ def normalize_application_source() -> None:
 """,
         "strict canonical deserialization",
     )
+    source = replace_required(
+        source,
+        """    public static string ComputeDigest<T>(T value) =>
+        ComputeDigest(Serialize(value));""",
+        """    public static string ComputeDigest<T>(T value) =>
+        ComputeDigest(Serialize(value).AsSpan());""",
+        "canonical digest byte-span overload",
+    )
     APPLICATION_SOURCE.write_text(source, encoding="utf-8", newline="\n")
 
 
