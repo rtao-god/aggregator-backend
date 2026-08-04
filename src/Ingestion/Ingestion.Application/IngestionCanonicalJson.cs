@@ -59,8 +59,26 @@ public static class IngestionCanonicalJson
     public static string ComputeDigest<T>(T value) =>
         Convert.ToHexString(SHA256.HashData(Serialize(value))).ToLowerInvariant();
 
-    public static string ComputeDigest(ReadOnlySpan<byte> value) =>
-        Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
+    public static string ComputeDigest(byte[] value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return ComputeDigest(value.AsSpan());
+    }
+
+    public static string ComputeDigest(ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+        {
+            throw new IngestionApplicationException(
+                "Ingestion.Serialization",
+                "INGESTION_DOCUMENT_EMPTY",
+                500,
+                "A canonical Ingestion document cannot be empty when computing its digest.",
+                "Correct the canonical document producer before persistence or verification.");
+        }
+
+        return Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
+    }
 
     private static JsonSerializerOptions CreateSerializerOptions()
     {
