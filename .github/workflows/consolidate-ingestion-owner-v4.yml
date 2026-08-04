@@ -58,6 +58,33 @@ jobs:
               '[assembly: CollectionBehavior(DisableTestParallelization = true)]\n',
               encoding='utf-8',
               newline='\n')
+
+          collector_factory_path = Path(
+              'tests/Ingestion/Ingestion.Collector.Api.Tests/CollectorApiFactory.cs')
+          collector_factory = collector_factory_path.read_text(encoding='utf-8')
+          old = (
+              '    {\n'
+              '        cancellationToken.ThrowIfCancellationRequested();\n'
+              '        Assert.NotEqual(Guid.Empty, commandId);\n'
+              '        Assert.Equal(64, commandDigest.Length);\n'
+              '        Candidate = candidate ?? throw new ArgumentNullException(nameof(candidate));\n'
+          )
+          new = (
+              '    {\n'
+              '        cancellationToken.ThrowIfCancellationRequested();\n'
+              '        ArgumentNullException.ThrowIfNull(commandDigest);\n'
+              '        ArgumentNullException.ThrowIfNull(candidate);\n'
+              '        Assert.NotEqual(Guid.Empty, commandId);\n'
+              '        Assert.Equal(64, commandDigest.Length);\n'
+              '        Candidate = candidate;\n'
+          )
+          if collector_factory.count(old) != 1:
+              raise RuntimeError(
+                  'Expected exactly one RecordingCollectorStore.RegisterAsync test-boundary anchor.')
+          collector_factory_path.write_text(
+              collector_factory.replace(old, new),
+              encoding='utf-8',
+              newline='\n')
           BOOTSTRAP
 
       - name: Prove duplicate production owners are unreachable
@@ -92,6 +119,7 @@ jobs:
             src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
             src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
             tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj
+            tests/Ingestion/Ingestion.Collector.Api.Tests/Ingestion.Collector.Api.Tests.csproj
             tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj
           )
           for project in "${projects[@]}"; do
