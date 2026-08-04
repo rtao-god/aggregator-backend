@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Aggregator.Analytics.Application;
+using Microsoft.AspNetCore.Mvc;
+using Platform.ProblemDetails;
 
 namespace Aggregator.Analytics.Api;
 
@@ -25,10 +27,15 @@ public sealed class AnalyticsFailureMiddleware
         {
             await _next(context);
         }
-        catch (AnalyticsRuntimeException exception) when (!context.Response.HasStarted)
+        catch (OwnerException)
+        {
+            throw;
+        }
+        catch (AnalyticsCommandException exception) when (!context.Response.HasStarted)
         {
             await WriteAsync(
                 context,
+                exception.Owner,
                 exception.Code,
                 exception.StatusCode,
                 exception.Message,
@@ -40,10 +47,11 @@ public sealed class AnalyticsFailureMiddleware
         {
             await WriteAsync(
                 context,
+                "Analytics.Transport",
                 "ANALYTICS_UNHANDLED_FAILURE",
                 StatusCodes.Status500InternalServerError,
                 "Analytics request processing failed before a typed owner result was produced.",
-                "Inspect the correlated server diagnostic and correct the Analytics owner.",
+                "Inspect the correlated server diagnostic and correct the responsible Analytics owner.",
                 new Dictionary<string, object?>(StringComparer.Ordinal),
                 exception);
         }
@@ -51,6 +59,7 @@ public sealed class AnalyticsFailureMiddleware
 
     private async Task WriteAsync(
         HttpContext context,
+        string owner,
         string code,
         int statusCode,
         string detail,
@@ -58,30 +67,37 @@ public sealed class AnalyticsFailureMiddleware
         IReadOnlyDictionary<string, object?> failureContext,
         Exception exception)
     {
-        var correlationId = Activity.Current?.TraceId.ToString()
+        var correlationAccessor = context.RequestServices.GetRequiredService<ICorrelationContextAccessor>();
+        var correlationId = correlationAccessor.CorrelationId
+            ?? Activity.Current?.TraceId.ToString()
             ?? Guid.CreateVersion7().ToString("D");
         _logger.LogError(
             exception,
-            "Analytics failure {Code} for correlation {CorrelationId}",
+            "Analytics owner failure {Owner} {Code} for correlation {CorrelationId}",
+            owner,
             code,
             correlationId);
+
         context.Response.Clear();
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/problem+json";
         context.Response.Headers["X-Correlation-Id"] = correlationId;
+        var problem = new ProblemDetails
+        {
+            Type = $"https://errors.aggregator.local/analytics/{code}",
+            Title = detail,
+            Status = statusCode,
+            Detail = detail,
+            Instance = context.Request.Path,
+        };
+        problem.Extensions["owner"] = owner;
+        problem.Extensions["code"] = code;
+        problem.Extensions["correlationId"] = correlationId;
+        problem.Extensions["context"] = failureContext;
+        problem.Extensions["requiredAction"] = requiredAction;
         await JsonSerializer.SerializeAsync(
             context.Response.Body,
-            new
-            {
-                type = $"https://errors.example/analytics/{code.Replace('_', '-').ToLowerInvariant()}",
-                title = detail,
-                status = statusCode,
-                owner = "Analytics.Runtime",
-                code,
-                correlationId,
-                context = failureContext,
-                requiredAction,
-            },
+            problem,
             SerializerOptions,
             context.RequestAborted);
     }
