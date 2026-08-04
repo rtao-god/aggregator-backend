@@ -45,6 +45,9 @@ public sealed class EfIngestionRepository : IIngestionBatchRepository
                 });
         }
 
+        var registrationSnapshot = IngestionBatchSnapshot.From(batch);
+        var resultDocument = IngestionCanonicalJson.Serialize(registrationSnapshot);
+        var resultDigest = IngestionCanonicalJson.ComputeDigest(resultDocument);
         try
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(
@@ -115,12 +118,14 @@ public sealed class EfIngestionRepository : IIngestionBatchRepository
                 Key = commandIdentity.Key,
                 RequestDigest = commandIdentity.RequestDigest,
                 BatchId = batch.Id.Value,
+                ResultDocument = resultDocument,
+                ResultDigest = resultDigest,
                 CallerServiceIdentity = callerServiceIdentity,
                 CreatedAtUtc = batch.RegisteredAtUtc,
             });
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new IngestionBatchRegistrationResult(IngestionBatchSnapshot.From(batch), false);
+            return new IngestionBatchRegistrationResult(registrationSnapshot, false);
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
@@ -217,22 +222,52 @@ public sealed class EfIngestionRepository : IIngestionBatchRepository
                 });
         }
 
-        var batch = await _dbContext.Batches
+        var batchExists = await _dbContext.Batches
             .AsNoTracking()
-            .SingleOrDefaultAsync(row => row.Id == command.BatchId, cancellationToken)
-            ?? throw new IngestionApplicationException(
+            .AnyAsync(row => row.Id == command.BatchId, cancellationToken);
+        if (!batchExists)
+        {
+            throw MissingCommandResult(commandIdentity, command.BatchId);
+        }
+
+        var actualResultDigest = IngestionCanonicalJson.ComputeDigest(command.ResultDocument);
+        if (!string.Equals(actualResultDigest, command.ResultDigest, StringComparison.Ordinal))
+        {
+            throw new IngestionApplicationException(
                 "Ingestion.Persistence",
-                "INGESTION_IDEMPOTENCY_RESULT_MISSING",
+                "INGESTION_IDEMPOTENCY_RESULT_DIGEST_MISMATCH",
                 500,
-                "An idempotency record references a missing import batch.",
-                "Repair the Ingestion database through an owner migration or restore operation.",
+                "A persisted idempotency result document failed its digest verification.",
+                "Restore the command result from a verified Ingestion database backup.",
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["scope"] = commandIdentity.Scope,
                     ["key"] = commandIdentity.Key,
                     ["batchId"] = command.BatchId,
+                    ["expectedResultDigest"] = command.ResultDigest,
+                    ["actualResultDigest"] = actualResultDigest,
                 });
-        return new IngestionBatchRegistrationResult(ToSnapshot(batch), true);
+        }
+
+        var snapshot = IngestionCanonicalJson.Deserialize<IngestionBatchSnapshot>(command.ResultDocument);
+        if (snapshot.Id.Value != command.BatchId)
+        {
+            throw new IngestionApplicationException(
+                "Ingestion.Persistence",
+                "INGESTION_IDEMPOTENCY_RESULT_IDENTITY_MISMATCH",
+                500,
+                "A persisted idempotency result identifies a different import batch.",
+                "Restore the command result from a verified Ingestion database backup.",
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["scope"] = commandIdentity.Scope,
+                    ["key"] = commandIdentity.Key,
+                    ["commandBatchId"] = command.BatchId,
+                    ["resultBatchId"] = snapshot.Id.Value,
+                });
+        }
+
+        return new IngestionBatchRegistrationResult(snapshot, true);
     }
 
     private static ImportBatchRow ToRow(ImportBatch batch) =>
@@ -308,6 +343,22 @@ public sealed class EfIngestionRepository : IIngestionBatchRepository
         {
             SqlState: PostgresErrorCodes.UniqueViolation,
         };
+
+    private static IngestionApplicationException MissingCommandResult(
+        IngestionCommandIdentity commandIdentity,
+        Guid batchId) =>
+        new(
+            "Ingestion.Persistence",
+            "INGESTION_IDEMPOTENCY_RESULT_MISSING",
+            500,
+            "An idempotency record references a missing import batch.",
+            "Repair the Ingestion database through an owner migration or restore operation.",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["scope"] = commandIdentity.Scope,
+                ["key"] = commandIdentity.Key,
+                ["batchId"] = batchId,
+            });
 
     private static IngestionApplicationException ExportAlreadyRegistered(
         ImportBatch batch,
