@@ -79,5 +79,6 @@
     <Project Path="tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj" />
   </Folder>
 </Solution>
