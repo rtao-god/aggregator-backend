@@ -3,13 +3,16 @@ using Aggregator.Catalog.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;
 
 [ApiController]
 [Route("api/catalog-command/claims")]
 [EnableRateLimiting(CatalogRateLimitPolicies.Command)]
-public sealed class CatalogClaimsController(CatalogClaimService service) : ControllerBase
+public sealed class CatalogClaimsController(
+    CatalogClaimService service,
+    ICorrelationContextAccessor correlation) : ControllerBase
 {
     [HttpPost(Name = CatalogOperationIds.SubmitClaim)]
     [Authorize(Policy = CatalogAuthorizationPolicies.SubmitClaim)]
@@ -18,6 +21,7 @@ public sealed class CatalogClaimsController(CatalogClaimService service) : Contr
         [FromBody] SubmitListingClaimRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var response = await service.SubmitAsync(
             request,
             CatalogActorAccessor.Require(HttpContext),
@@ -31,12 +35,16 @@ public sealed class CatalogClaimsController(CatalogClaimService service) : Contr
     public async Task<ActionResult<ListingAccessGrantResponse>> VerifyAsync(
         Guid claimId,
         [FromBody] VerifyListingClaimRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.VerifyAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.VerifyAsync(
             claimId,
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken));
+    }
 
     [HttpPost("{claimId:guid}/decisions/reject", Name = CatalogOperationIds.RejectClaim)]
     [Authorize(Policy = CatalogAuthorizationPolicies.VerifyClaim)]
@@ -44,12 +52,15 @@ public sealed class CatalogClaimsController(CatalogClaimService service) : Contr
     public async Task<ActionResult<ListingClaimResponse>> RejectAsync(
         Guid claimId,
         [FromBody] RejectListingClaimRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.RejectAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.RejectAsync(
             claimId,
             request,
             CatalogActorAccessor.Require(HttpContext),
             cancellationToken));
+    }
 
     [HttpPost("{claimId:guid}/decisions/revoke", Name = CatalogOperationIds.RevokeClaim)]
     [Authorize(Policy = CatalogAuthorizationPolicies.VerifyClaim)]
@@ -57,10 +68,14 @@ public sealed class CatalogClaimsController(CatalogClaimService service) : Contr
     public async Task<ActionResult<ListingClaimResponse>> RevokeAsync(
         Guid claimId,
         [FromBody] RevokeListingClaimRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.RevokeAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.RevokeAsync(
             claimId,
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken));
+    }
 }
