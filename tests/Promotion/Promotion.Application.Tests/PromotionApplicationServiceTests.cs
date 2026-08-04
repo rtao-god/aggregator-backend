@@ -17,12 +17,14 @@ public sealed class PromotionApplicationServiceTests
     public async Task ProductCreateReplayReturnsExactFirstIdentity()
     {
         var repository = new RecordingPromotionRepository();
-        var ids = new QueuePromotionIdSource(
-            Guid.Parse("0198b200-0000-7000-8000-000000000010"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000011"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000012"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000013"));
-        var service = new PromotionProductService(repository, ids, new FixedPromotionClock(Timestamp));
+        var service = new PromotionProductService(
+            repository,
+            new QueuePromotionIdSource(
+                Id(10),
+                Id(11),
+                Id(12),
+                Id(13)),
+            new FixedPromotionClock(Timestamp));
         var request = ProductRequest();
 
         var first = await service.CreateAsync(
@@ -46,19 +48,12 @@ public sealed class PromotionApplicationServiceTests
     [Fact]
     public async Task EntitlementAndPlacementProduceSeparateOutboxEvents()
     {
-        var repository = new RecordingPromotionRepository();
-        var product = SponsoredProduct();
-        repository.Products.Add(product.Id, product);
-        repository.Eligibility[("berlin-recording-services", ListingId())] = EligibleListing();
-        var ids = new QueuePromotionIdSource(
-            Guid.Parse("0198b200-0000-7000-8000-000000000020"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000021"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000022"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000023"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000024"));
+        var repository = ConfiguredRepository();
         var clock = new FixedPromotionClock(Timestamp);
+        var ids = new QueuePromotionIdSource(Id(20), Id(21), Id(22), Id(23), Id(24));
         var entitlementService = new PromotionEntitlementService(repository, ids, clock);
         var placementService = new PromotionPlacementService(repository, ids, clock);
+        var product = repository.Products.Values.Single();
 
         var entitlement = await entitlementService.GrantAsync(
             new GrantPromotionEntitlementRequest(
@@ -73,18 +68,7 @@ public sealed class PromotionApplicationServiceTests
             "entitlement-key",
             CancellationToken.None);
         var placement = await placementService.CreateAsync(
-            new CreateSponsoredPlacementRequest(
-                entitlement.Response.Id,
-                "berlin-recording-services",
-                PlacementScopeTypeContract.Category,
-                "recording-studio",
-                ["de-DE", "en-GB"],
-                Timestamp,
-                Timestamp.AddDays(2),
-                PriorityBand: 50,
-                CapacitySlot: 1,
-                PresentationLabelKey: "sponsored",
-                AuditReason: "category placement"),
+            PlacementRequest(entitlement.Response.Id, "category placement"),
             CommandContext,
             "placement-key",
             CancellationToken.None);
@@ -101,49 +85,25 @@ public sealed class PromotionApplicationServiceTests
     [Fact]
     public async Task ConflictingPlacementFailsBeforeSecondPersistence()
     {
-        var repository = new RecordingPromotionRepository();
-        var product = SponsoredProduct();
-        repository.Products.Add(product.Id, product);
-        repository.Eligibility[("berlin-recording-services", ListingId())] = EligibleListing();
-        var firstEntitlement = Entitlement(
-            Guid.Parse("0198b200-0000-7000-8000-000000000030"),
-            product.Key);
-        var secondEntitlement = Entitlement(
-            Guid.Parse("0198b200-0000-7000-8000-000000000031"),
-            product.Key);
+        var repository = ConfiguredRepository();
+        var product = repository.Products.Values.Single();
+        var firstEntitlement = Entitlement(Id(30), product.Key);
+        var secondEntitlement = Entitlement(Id(31), product.Key);
         repository.Entitlements.Add(firstEntitlement.Id, firstEntitlement);
         repository.Entitlements.Add(secondEntitlement.Id, secondEntitlement);
-        var ids = new QueuePromotionIdSource(
-            Guid.Parse("0198b200-0000-7000-8000-000000000032"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000033"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000034"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000035"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000036"),
-            Guid.Parse("0198b200-0000-7000-8000-000000000037"));
         var service = new PromotionPlacementService(
             repository,
-            ids,
+            new QueuePromotionIdSource(Id(32), Id(33), Id(34), Id(35), Id(36), Id(37)),
             new FixedPromotionClock(Timestamp));
-        var request = new CreateSponsoredPlacementRequest(
-            firstEntitlement.Id,
-            "berlin-recording-services",
-            PlacementScopeTypeContract.Category,
-            "recording-studio",
-            ["de-DE"],
-            Timestamp,
-            Timestamp.AddDays(2),
-            PriorityBand: 10,
-            CapacitySlot: 1,
-            PresentationLabelKey: "sponsored",
-            AuditReason: "first placement");
+        var firstRequest = PlacementRequest(firstEntitlement.Id, "first placement");
         _ = await service.CreateAsync(
-            request,
+            firstRequest,
             CommandContext,
             "placement-one",
             CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() => service.CreateAsync(
-            request with
+            firstRequest with
             {
                 EntitlementId = secondEntitlement.Id,
                 AuditReason = "conflicting placement",
@@ -154,8 +114,9 @@ public sealed class PromotionApplicationServiceTests
 
         Assert.Equal("PROMOTION_CAPACITY_CONFLICT", exception.Code);
         Assert.Single(repository.Placements);
-        Assert.Single(repository.Outbox.Where(message =>
-            message.EventType == PromotionIntegrationEventTypes.PlacementChanged));
+        Assert.Single(
+            repository.Outbox,
+            message => message.EventType == PromotionIntegrationEventTypes.PlacementChanged);
     }
 
     [Fact]
@@ -164,37 +125,35 @@ public sealed class PromotionApplicationServiceTests
         var repository = new RecordingPromotionRepository();
         var product = SponsoredProduct();
         repository.Products.Add(product.Id, product);
-        var entitlement = Entitlement(
-            Guid.Parse("0198b200-0000-7000-8000-000000000040"),
-            product.Key);
+        var entitlement = Entitlement(Id(40), product.Key);
         repository.Entitlements.Add(entitlement.Id, entitlement);
         var service = new PromotionPlacementService(
             repository,
-            new QueuePromotionIdSource(
-                Guid.Parse("0198b200-0000-7000-8000-000000000041"),
-                Guid.Parse("0198b200-0000-7000-8000-000000000042"),
-                Guid.Parse("0198b200-0000-7000-8000-000000000043")),
+            new QueuePromotionIdSource(Id(41), Id(42), Id(43)),
             new FixedPromotionClock(Timestamp));
 
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() => service.CreateAsync(
-            new CreateSponsoredPlacementRequest(
-                entitlement.Id,
-                "berlin-recording-services",
-                PlacementScopeTypeContract.Catalog,
-                "berlin-recording-services",
-                ["de-DE"],
-                Timestamp,
-                Timestamp.AddHours(1),
-                PriorityBand: 1,
-                CapacitySlot: 1,
-                PresentationLabelKey: "sponsored",
-                AuditReason: "missing eligibility proof"),
+            PlacementRequest(entitlement.Id, "missing eligibility proof") with
+            {
+                ScopeType = PlacementScopeTypeContract.Catalog,
+                ScopeKey = "berlin-recording-services",
+                EndsAtUtc = Timestamp.AddHours(1),
+            },
             CommandContext,
             "missing-eligibility",
             CancellationToken.None));
 
         Assert.Equal("PROMOTION_ELIGIBILITY_PROJECTION_UNAVAILABLE", exception.Code);
         Assert.Equal(503, exception.StatusCode);
+    }
+
+    private static RecordingPromotionRepository ConfiguredRepository()
+    {
+        var repository = new RecordingPromotionRepository();
+        var product = SponsoredProduct();
+        repository.Products.Add(product.Id, product);
+        repository.Eligibility[("berlin-recording-services", ListingId())] = EligibleListing();
+        return repository;
     }
 
     private static CreatePromotionProductRequest ProductRequest() =>
@@ -207,15 +166,34 @@ public sealed class PromotionApplicationServiceTests
                 ["de-DE"] = "Hervorgehobener Eintrag",
                 ["en-GB"] = "Featured listing",
             },
-            [PromotionPresentationFeatureContract.FeaturedListing, PromotionPresentationFeatureContract.SponsoredSlot],
+            [
+                PromotionPresentationFeatureContract.FeaturedListing,
+                PromotionPresentationFeatureContract.SponsoredSlot,
+            ],
             RequiresVerifiedContact: true,
             RequiredContactCapability: "website");
 
+    private static CreateSponsoredPlacementRequest PlacementRequest(
+        Guid entitlementId,
+        string auditReason) =>
+        new(
+            entitlementId,
+            "berlin-recording-services",
+            PlacementScopeTypeContract.Category,
+            "recording-studio",
+            ["de-DE", "en-GB"],
+            Timestamp,
+            Timestamp.AddDays(2),
+            PriorityBand: 50,
+            CapacitySlot: 1,
+            PresentationLabelKey: "sponsored",
+            AuditReason: auditReason);
+
     private static PromotionProduct SponsoredProduct() =>
         PromotionProduct.Create(
-            Guid.Parse("0198b200-0000-7000-8000-000000000100"),
+            Id(100),
             "featured-listing",
-            Guid.Parse("0198b200-0000-7000-8000-000000000101"),
+            Id(101),
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["de-DE"] = "Hervorgehobener Eintrag",
@@ -224,7 +202,7 @@ public sealed class PromotionApplicationServiceTests
             [PromotionPresentationFeature.FeaturedListing, PromotionPresentationFeature.SponsoredSlot],
             requiresVerifiedContact: true,
             requiredContactCapability: "website",
-            Guid.Parse("0198b200-0000-7000-8000-000000000102"),
+            Id(102),
             Timestamp,
             new string('a', 64));
 
@@ -236,7 +214,7 @@ public sealed class PromotionApplicationServiceTests
             PromotionEntitlementSourceType.ManualContract,
             $"contract-{id:N}",
             PromotionWindow.Create(Timestamp, Timestamp.AddDays(7)),
-            Guid.Parse("0198b200-0000-7000-8000-000000000103"),
+            Id(103),
             "signed contract",
             Timestamp);
 
@@ -254,8 +232,10 @@ public sealed class PromotionApplicationServiceTests
             sourceRevision: 1,
             Timestamp);
 
-    private static Guid ListingId() =>
-        Guid.Parse("0198b200-0000-7000-8000-000000000200");
+    private static Guid ListingId() => Id(200);
+
+    private static Guid Id(int suffix) =>
+        Guid.Parse($"0198b200-0000-7000-8000-{suffix:D12}");
 
     private sealed class FixedPromotionClock(DateTimeOffset value) : IPromotionClock
     {
@@ -286,40 +266,27 @@ public sealed class PromotionApplicationServiceTests
 
         public List<PromotionOutboxMessage> Outbox { get; } = [];
 
-        public Task<PromotionProduct?> GetProductAsync(Guid productId, CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Products.TryGetValue(productId, out var value);
-            return Task.FromResult(value);
-        }
+        public Task<PromotionProduct?> GetProductAsync(Guid productId, CancellationToken cancellationToken) =>
+            ReadAsync(Products, productId, cancellationToken);
 
         public Task<PromotionProduct?> GetProductByKeyAsync(
             string productKey,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var value = Products.Values.SingleOrDefault(product =>
-                string.Equals(product.Key, productKey, StringComparison.Ordinal));
-            return Task.FromResult(value);
+            return Task.FromResult(Products.Values.SingleOrDefault(product =>
+                string.Equals(product.Key, productKey, StringComparison.Ordinal)));
         }
 
         public Task<PromotionEntitlement?> GetEntitlementAsync(
             Guid entitlementId,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Entitlements.TryGetValue(entitlementId, out var value);
-            return Task.FromResult(value);
-        }
+            CancellationToken cancellationToken) =>
+            ReadAsync(Entitlements, entitlementId, cancellationToken);
 
         public Task<SponsoredPlacement?> GetPlacementAsync(
             Guid placementId,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Placements.TryGetValue(placementId, out var value);
-            return Task.FromResult(value);
-        }
+            CancellationToken cancellationToken) =>
+            ReadAsync(Placements, placementId, cancellationToken);
 
         public Task<ListingPromotionEligibility?> GetEligibilityAsync(
             string catalogKey,
@@ -374,19 +341,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionProduct product,
             PromotionCommandIdentity commandIdentity,
             PromotionCommandContext commandContext,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out PromotionProduct? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<PromotionProduct>(replay, true));
-            }
-
-            Assert.True(Products.TryAdd(product.Id, product));
-            Record(commandIdentity, product);
-            return Task.FromResult(new PromotionCommandResult<PromotionProduct>(product, false));
-        }
+            CancellationToken cancellationToken) =>
+            SaveAsync(
+                product,
+                Products,
+                addOnly: true,
+                commandIdentity,
+                commandContext,
+                outboxMessage: null,
+                cancellationToken);
 
         public Task<PromotionCommandResult<PromotionProduct>> SaveProductAsync(
             PromotionProduct product,
@@ -395,17 +358,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionCommandContext commandContext,
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             _ = expectedStoredAggregateRevision;
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out PromotionProduct? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<PromotionProduct>(replay, true));
-            }
-
-            Products[product.Id] = product;
-            Record(commandIdentity, product);
-            return Task.FromResult(new PromotionCommandResult<PromotionProduct>(product, false));
+            return SaveAsync(
+                product,
+                Products,
+                addOnly: false,
+                commandIdentity,
+                commandContext,
+                outboxMessage: null,
+                cancellationToken);
         }
 
         public Task<PromotionCommandResult<PromotionEntitlement>> AddEntitlementAsync(
@@ -413,20 +374,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionCommandIdentity commandIdentity,
             PromotionCommandContext commandContext,
             PromotionOutboxMessage outboxMessage,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out PromotionEntitlement? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<PromotionEntitlement>(replay, true));
-            }
-
-            Assert.True(Entitlements.TryAdd(entitlement.Id, entitlement));
-            Outbox.Add(outboxMessage);
-            Record(commandIdentity, entitlement);
-            return Task.FromResult(new PromotionCommandResult<PromotionEntitlement>(entitlement, false));
-        }
+            CancellationToken cancellationToken) =>
+            SaveAsync(
+                entitlement,
+                Entitlements,
+                addOnly: true,
+                commandIdentity,
+                commandContext,
+                outboxMessage,
+                cancellationToken);
 
         public Task<PromotionCommandResult<PromotionEntitlement>> SaveEntitlementAsync(
             PromotionEntitlement entitlement,
@@ -436,18 +392,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionOutboxMessage outboxMessage,
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             _ = expectedStoredAggregateRevision;
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out PromotionEntitlement? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<PromotionEntitlement>(replay, true));
-            }
-
-            Entitlements[entitlement.Id] = entitlement;
-            Outbox.Add(outboxMessage);
-            Record(commandIdentity, entitlement);
-            return Task.FromResult(new PromotionCommandResult<PromotionEntitlement>(entitlement, false));
+            return SaveAsync(
+                entitlement,
+                Entitlements,
+                addOnly: false,
+                commandIdentity,
+                commandContext,
+                outboxMessage,
+                cancellationToken);
         }
 
         public Task<PromotionCommandResult<SponsoredPlacement>> AddPlacementAsync(
@@ -455,20 +408,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionCommandIdentity commandIdentity,
             PromotionCommandContext commandContext,
             PromotionOutboxMessage outboxMessage,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out SponsoredPlacement? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<SponsoredPlacement>(replay, true));
-            }
-
-            Assert.True(Placements.TryAdd(placement.Id, placement));
-            Outbox.Add(outboxMessage);
-            Record(commandIdentity, placement);
-            return Task.FromResult(new PromotionCommandResult<SponsoredPlacement>(placement, false));
-        }
+            CancellationToken cancellationToken) =>
+            SaveAsync(
+                placement,
+                Placements,
+                addOnly: true,
+                commandIdentity,
+                commandContext,
+                outboxMessage,
+                cancellationToken);
 
         public Task<PromotionCommandResult<SponsoredPlacement>> SavePlacementAsync(
             SponsoredPlacement placement,
@@ -478,18 +426,15 @@ public sealed class PromotionApplicationServiceTests
             PromotionOutboxMessage outboxMessage,
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             _ = expectedStoredAggregateRevision;
-            _ = commandContext;
-            if (TryReplay(commandIdentity, out SponsoredPlacement? replay))
-            {
-                return Task.FromResult(new PromotionCommandResult<SponsoredPlacement>(replay, true));
-            }
-
-            Placements[placement.Id] = placement;
-            Outbox.Add(outboxMessage);
-            Record(commandIdentity, placement);
-            return Task.FromResult(new PromotionCommandResult<SponsoredPlacement>(placement, false));
+            return SaveAsync(
+                placement,
+                Placements,
+                addOnly: false,
+                commandIdentity,
+                commandContext,
+                outboxMessage,
+                cancellationToken);
         }
 
         public Task UpsertEligibilityAsync(
@@ -499,6 +444,61 @@ public sealed class PromotionApplicationServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             Eligibility[(eligibility.CatalogKey, eligibility.ListingId)] = eligibility;
             return Task.CompletedTask;
+        }
+
+        private static Task<TAggregate?> ReadAsync<TAggregate>(
+            IReadOnlyDictionary<Guid, TAggregate> values,
+            Guid id,
+            CancellationToken cancellationToken)
+            where TAggregate : class
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            values.TryGetValue(id, out var value);
+            return Task.FromResult(value);
+        }
+
+        private Task<PromotionCommandResult<TAggregate>> SaveAsync<TAggregate>(
+            TAggregate aggregate,
+            IDictionary<Guid, TAggregate> values,
+            bool addOnly,
+            PromotionCommandIdentity commandIdentity,
+            PromotionCommandContext commandContext,
+            PromotionOutboxMessage? outboxMessage,
+            CancellationToken cancellationToken)
+            where TAggregate : class
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ = commandContext;
+            if (TryReplay(commandIdentity, out TAggregate? replay))
+            {
+                return Task.FromResult(new PromotionCommandResult<TAggregate>(replay, true));
+            }
+
+            var id = aggregate switch
+            {
+                PromotionProduct product => product.Id,
+                PromotionEntitlement entitlement => entitlement.Id,
+                SponsoredPlacement placement => placement.Id,
+                _ => throw new InvalidOperationException("Unsupported Promotion test aggregate."),
+            };
+            if (addOnly)
+            {
+                Assert.True(values.TryAdd(id, aggregate));
+            }
+            else
+            {
+                values[id] = aggregate;
+            }
+
+            if (outboxMessage is not null)
+            {
+                Outbox.Add(outboxMessage);
+            }
+
+            _commands.Add(
+                (commandIdentity.Scope, commandIdentity.Key),
+                new StoredCommand(commandIdentity.RequestDigest, aggregate));
+            return Task.FromResult(new PromotionCommandResult<TAggregate>(aggregate, false));
         }
 
         private bool TryReplay<TAggregate>(
@@ -525,14 +525,6 @@ public sealed class PromotionApplicationServiceTests
             aggregate = Assert.IsType<TAggregate>(existing.Aggregate);
             return true;
         }
-
-        private void Record<TAggregate>(
-            PromotionCommandIdentity identity,
-            TAggregate aggregate)
-            where TAggregate : class =>
-            _commands.Add(
-                (identity.Scope, identity.Key),
-                new StoredCommand(identity.RequestDigest, aggregate));
 
         private sealed record StoredCommand(string RequestDigest, object Aggregate);
     }
