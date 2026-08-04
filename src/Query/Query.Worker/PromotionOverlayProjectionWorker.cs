@@ -59,10 +59,14 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             autoAck: false,
             consumer: consumer,
             cancellationToken: stoppingToken);
-        _logger.LogInformation(
-            "Query Promotion projection worker is consuming {RoutingKey} from {Queue}",
-            _options.RoutingKey,
-            _options.Queue);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation(
+                "Query Promotion projection worker is consuming {RoutingKey} from {Queue}",
+                _options.RoutingKey,
+                _options.Queue);
+        }
+
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
 
@@ -112,12 +116,15 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
                 deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
                 cancellationToken: cancellationToken);
-            _logger.LogInformation(
-                "Applied Promotion overlay {OverlayId} activation {ActivationRevision}; replayed={Replayed}; staleIgnored={StaleIgnored}",
-                result.OverlayId,
-                result.ActivationRevision,
-                result.Replayed,
-                result.StaleIgnored);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    "Applied Promotion overlay {OverlayId} activation {ActivationRevision}; replayed={Replayed}; staleIgnored={StaleIgnored}",
+                    result.OverlayId,
+                    result.ActivationRevision,
+                    result.Replayed,
+                    result.StaleIgnored);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
