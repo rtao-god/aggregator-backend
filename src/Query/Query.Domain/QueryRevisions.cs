@@ -11,6 +11,7 @@ public sealed class QueryBaseProjection
     private QueryBaseProjection(
         Guid id,
         string catalogKey,
+        QueryLocalePolicy localePolicy,
         Guid sourcePublicationId,
         string sourcePublicationDigest,
         long sourcePublicationSequence,
@@ -21,6 +22,7 @@ public sealed class QueryBaseProjection
     {
         Id = id;
         CatalogKey = catalogKey;
+        LocalePolicy = localePolicy;
         SourcePublicationId = sourcePublicationId;
         SourcePublicationDigest = sourcePublicationDigest;
         SourcePublicationSequence = sourcePublicationSequence;
@@ -33,6 +35,8 @@ public sealed class QueryBaseProjection
     public Guid Id { get; }
 
     public string CatalogKey { get; }
+
+    public QueryLocalePolicy LocalePolicy { get; }
 
     public Guid SourcePublicationId { get; }
 
@@ -51,6 +55,7 @@ public sealed class QueryBaseProjection
     public static QueryBaseProjection Create(
         Guid id,
         string catalogKey,
+        QueryLocalePolicy localePolicy,
         Guid sourcePublicationId,
         string sourcePublicationDigest,
         long sourcePublicationSequence,
@@ -60,6 +65,7 @@ public sealed class QueryBaseProjection
         string contentDigest)
     {
         QueryContractRules.RequireId(id, nameof(id));
+        ArgumentNullException.ThrowIfNull(localePolicy);
         QueryContractRules.RequireId(sourcePublicationId, nameof(sourcePublicationId));
         if (sourcePublicationSequence <= 0)
         {
@@ -71,6 +77,20 @@ public sealed class QueryBaseProjection
         if (documentArray.Select(item => item.ListingId).Distinct().Count() != documentArray.Length)
         {
             throw new QueryDomainException("QUERY_LISTING_DUPLICATE", "A base projection cannot contain a listing more than once.");
+        }
+
+        foreach (var document in documentArray)
+        {
+            if (!document.Localizations.Any(localization =>
+                    string.Equals(
+                        localization.Locale,
+                        localePolicy.DefaultLocale,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new QueryDomainException(
+                    "QUERY_DEFAULT_LOCALE_DOCUMENT_MISSING",
+                    $"Listing '{document.ListingId}' has no observed title for default locale '{localePolicy.DefaultLocale}'.");
+            }
         }
 
         var routeSet = new HashSet<string>(StringComparer.Ordinal);
@@ -85,6 +105,7 @@ public sealed class QueryBaseProjection
         return new QueryBaseProjection(
             id,
             QueryContractRules.RequireKey(catalogKey, nameof(catalogKey)),
+            localePolicy,
             sourcePublicationId,
             QueryContractRules.RequireDigest(sourcePublicationDigest, nameof(sourcePublicationDigest)),
             sourcePublicationSequence,
