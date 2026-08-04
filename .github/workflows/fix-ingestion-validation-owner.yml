@@ -1,0 +1,181 @@
+name: Repair Ingestion validation owner split
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-ingestion-validation-owner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: fix-ingestion-validation-owner
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Apply exact Ingestion owner repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Replace-Exact {
+            param(
+              [Parameter(Mandatory)][string]$Path,
+              [Parameter(Mandatory)][string]$Old,
+              [Parameter(Mandatory)][string]$New,
+              [Parameter(Mandatory)][int]$ExpectedCount
+            )
+            $content = [System.IO.File]::ReadAllText($Path)
+            $count = ([regex]::Matches($content, [regex]::Escape($Old))).Count
+            if ($count -ne $ExpectedCount) {
+              throw "Unexpected anchor count in ${Path}: expected ${ExpectedCount}, actual ${count}."
+            }
+            [System.IO.File]::WriteAllText(
+              $Path,
+              $content.Replace($Old, $New, [System.StringComparison]::Ordinal),
+              [System.Text.UTF8Encoding]::new($false))
+          }
+
+          Replace-Exact `
+            'src/Ingestion/Ingestion.Application/IngestionPackagePayloadValidator.cs' `
+            'IngestionPackageValidationResult' `
+            'IngestionPayloadValidationResult' `
+            3
+          Replace-Exact `
+            'src/Ingestion/Ingestion.Application/IngestionPackageProcessingService.cs' `
+            'IngestionPackageValidationResult' `
+            'IngestionPayloadValidationResult' `
+            1
+
+          Get-ChildItem 'src/Ingestion/Ingestion.Infrastructure' -Filter '*.cs' -Recurse | ForEach-Object {
+            $content = [System.IO.File]::ReadAllText($_.FullName)
+            if ($content.Contains('IngestionPackageValidationResult', [System.StringComparison]::Ordinal)) {
+              [System.IO.File]::WriteAllText(
+                $_.FullName,
+                $content.Replace(
+                  'IngestionPackageValidationResult',
+                  'IngestionPayloadValidationResult',
+                  [System.StringComparison]::Ordinal),
+                [System.Text.UTF8Encoding]::new($false))
+            }
+          }
+
+          Get-ChildItem 'tests/Ingestion' -Filter '*.cs' -Recurse | ForEach-Object {
+            $content = [System.IO.File]::ReadAllText($_.FullName)
+            if ($content.Contains('IngestionPackagePayloadValidator', [System.StringComparison]::Ordinal) -and
+                $content.Contains('IngestionPackageValidationResult', [System.StringComparison]::Ordinal)) {
+              [System.IO.File]::WriteAllText(
+                $_.FullName,
+                $content.Replace(
+                  'IngestionPackageValidationResult',
+                  'IngestionPayloadValidationResult',
+                  [System.StringComparison]::Ordinal),
+                [System.Text.UTF8Encoding]::new($false))
+            }
+          }
+
+          $persistence = 'src/Ingestion/Ingestion.Infrastructure/IngestionProcessingPersistence.cs'
+          Replace-Exact $persistence `
+            "    {`n        ValidateExactDecisionCoverage(decisions);" `
+            "    {`n        ArgumentNullException.ThrowIfNull(decisions);`n        ValidateExactDecisionCoverage(decisions);" `
+            1
+          Replace-Exact $persistence `
+            "    {`n        await using var transaction = await dbContext.Database.BeginTransactionAsync(`n            System.Data.IsolationLevel.Serializable,`n            cancellationToken);`n        var batch = await RequireBatchAsync(batchId, cancellationToken);`n        EnsureBatch(batch, ImportBatchState.ReviewRequired, expectedAggregateRevision);" `
+            "    {`n        ArgumentNullException.ThrowIfNull(reviewDecisions);`n        await using var transaction = await dbContext.Database.BeginTransactionAsync(`n            System.Data.IsolationLevel.Serializable,`n            cancellationToken);`n        var batch = await RequireBatchAsync(batchId, cancellationToken);`n        EnsureBatch(batch, ImportBatchState.ReviewRequired, expectedAggregateRevision);" `
+            1
+          Replace-Exact $persistence `
+            "    {`n        await using var transaction = await dbContext.Database.BeginTransactionAsync(`n            System.Data.IsolationLevel.Serializable,`n            cancellationToken);`n        var replay = await ReadCommitReplayAsync(commandIdentity, cancellationToken);" `
+            "    {`n        ArgumentNullException.ThrowIfNull(commandIdentity);`n        await using var transaction = await dbContext.Database.BeginTransactionAsync(`n            System.Data.IsolationLevel.Serializable,`n            cancellationToken);`n        var replay = await ReadCommitReplayAsync(commandIdentity, cancellationToken);" `
+            1
+
+          $oldResult = Select-String -Path 'src/Ingestion/**/*.cs' -Pattern 'record IngestionPackageValidationResult' -AllMatches
+          if ($oldResult.Count -ne 1) {
+            throw "Expected exactly one manifest-contract IngestionPackageValidationResult owner, actual $($oldResult.Count)."
+          }
+          $payloadResult = Select-String -Path 'src/Ingestion/**/*.cs' -Pattern 'record IngestionPayloadValidationResult' -AllMatches
+          if ($payloadResult.Count -ne 1) {
+            throw "Expected exactly one payload-processing IngestionPayloadValidationResult owner, actual $($payloadResult.Count)."
+          }
+
+      - name: Restore Ingestion project graph
+        run: |
+          mapfile -t projects < <(find src/Ingestion tests/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Format Ingestion project graph
+        run: |
+          mapfile -t projects < <(find src/Ingestion tests/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet format "$project" --no-restore
+          done
+
+      - name: Build Ingestion production graph
+        run: |
+          mapfile -t projects < <(find src/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
+
+      - name: Test Ingestion owner graph
+        run: |
+          mapfile -t projects < <(find tests/Ingestion -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger "console;verbosity=normal" /m:1 /nr:false
+          done
+
+      - name: Commit proven repair and remove one-shot workflow
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+            echo 'main advanced during Ingestion owner proof; refusing a stale commit.' >&2
+            exit 1
+          }
+          git rm .github/workflows/fix-ingestion-validation-owner.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/Ingestion tests/Ingestion
+          git diff --cached --check
+          git commit -m 'Separate Ingestion contract and payload validation results'
+          git push origin HEAD:main
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Ingestion validation owner proof: ${process.env.JOB_STATUS}`,
+              context: 'ci/ingestion-validation-owner'
+            });
