@@ -17,19 +17,22 @@ public sealed record PromotionOverlayItemContract(
     string DisclosureLabel);
 
 public sealed record PublishPromotionOverlayRequest(
+    Guid CommandId,
     string CatalogKey,
     Guid SourcePublicReadRevisionId,
     Guid? ExpectedCurrentOverlayId,
     IReadOnlyList<PromotionOverlayItemContract> Items);
 
 public sealed record PromotionOverlayPublicationResponse(
+    Guid CommandId,
     Guid OverlayId,
     string CatalogKey,
     Guid SourcePublicReadRevisionId,
     long ActivationRevision,
     string ContentDigest,
     DateTimeOffset CreatedAtUtc,
-    bool IsCurrent);
+    bool IsCurrent,
+    bool Replayed);
 
 public sealed record PromotionOverlayActivated(
     Guid EventId,
