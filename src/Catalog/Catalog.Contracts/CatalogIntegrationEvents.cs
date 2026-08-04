@@ -9,7 +9,7 @@ public static class CatalogIntegrationEventTypes
 
 public static class CatalogIntegrationEventContracts
 {
-    public const string PublicationActivated = "aggregator.catalog.publication-activated@1";
+    public const string PublicationActivated = "aggregator.catalog.publication-activated@2";
     public const string ListingClaimVerified = "aggregator.catalog.listing-claim-verified@1";
     public const string ListingClaimRevoked = "aggregator.catalog.listing-claim-revoked@1";
 }
@@ -26,6 +26,7 @@ public sealed record CatalogPublicationActivated(
     string CatalogKey,
     Guid ConfigurationRevisionId,
     long PublicationSequence,
+    long ActivationRevision,
     string ArtifactKey,
     string ArtifactDigest,
     PublicationActivationKindContract ActivationKind,
