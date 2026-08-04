@@ -1,0 +1,137 @@
+name: completion-diagnostics
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  NUGET_XMLDOC_MODE: skip
+
+concurrency:
+  group: aggregator-completion-diagnostics
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+      - name: Synchronize every physical project
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src tests tools -name '*.csproj' -type f | sort)
+          solution_projects="$(dotnet sln AggregatorBackend.slnx list)"
+          for project in "${projects[@]}"; do
+            if ! grep -Fq "$project" <<<"$solution_projects"; then
+              dotnet sln AggregatorBackend.slnx add "$project"
+              solution_projects+=$'\n'"$project"
+            fi
+          done
+      - name: Run complete verification and persist exact result
+        id: verify
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .codex/ci/raw .codex/ci/codes
+          rm -f .codex/ci/codes/* .codex/ci/completion-green.txt
+          dotnet restore AggregatorBackend.slnx > .codex/ci/raw/restore.log 2>&1
+          restore_exit=$?
+          if [ "$restore_exit" -eq 0 ]; then
+            dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore > .codex/ci/raw/format.log 2>&1
+            format_exit=$?
+          else
+            format_exit=99
+            : > .codex/ci/raw/format.log
+          fi
+          if [ "$restore_exit" -eq 0 ]; then
+            dotnet build AggregatorBackend.slnx --no-restore -warnaserror > .codex/ci/raw/build.log 2>&1
+            build_exit=$?
+          else
+            build_exit=99
+            : > .codex/ci/raw/build.log
+          fi
+          if [ "$build_exit" -eq 0 ]; then
+            dotnet test AggregatorBackend.slnx --no-build --logger 'console;verbosity=normal' > .codex/ci/raw/test.log 2>&1
+            test_exit=$?
+          else
+            test_exit=99
+            : > .codex/ci/raw/test.log
+          fi
+
+          python - "$restore_exit" "$format_exit" "$build_exit" "$test_exit" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          restore_exit, format_exit, build_exit, test_exit = map(int, sys.argv[1:])
+          root = Path('.codex/ci')
+          sections = []
+          codes = set()
+          patterns = (
+              re.compile(r'\berror\s+([A-Z]+\d+)\b', re.I),
+              re.compile(r'\b(NU\d{4})\b'),
+              re.compile(r'\b(xUnit\d{4})\b', re.I),
+          )
+          for name, code in (
+              ('restore', restore_exit),
+              ('format', format_exit),
+              ('build', build_exit),
+              ('test', test_exit),
+          ):
+              lines = (root / 'raw' / f'{name}.log').read_text(errors='replace').splitlines()
+              important = [
+                  line for line in lines
+                  if 'error' in line.lower()
+                  or 'fail' in line.lower()
+                  or 'exception' in line.lower()
+                  or 'warning as error' in line.lower()
+              ]
+              selected = important[-200:] if important else lines[-50:]
+              sections.append(f'## {name} exit={code}')
+              sections.extend(selected)
+              sections.append('')
+              for line in lines:
+                  for pattern in patterns:
+                      codes.update(match.upper() for match in pattern.findall(line))
+          (root / 'last-errors.txt').write_text('\n'.join(sections) + '\n')
+          code_dir = root / 'codes'
+          code_dir.mkdir(parents=True, exist_ok=True)
+          for code in sorted(codes):
+              (code_dir / code).write_text(code + '\n')
+          if restore_exit == format_exit == build_exit == test_exit == 0:
+              (root / 'completion-green.txt').write_text(
+                  'restore=0\nformat=0\nbuild=0\ntest=0\n')
+          PY
+
+          echo "restore_exit=$restore_exit" >> "$GITHUB_OUTPUT"
+          echo "format_exit=$format_exit" >> "$GITHUB_OUTPUT"
+          echo "build_exit=$build_exit" >> "$GITHUB_OUTPUT"
+          echo "test_exit=$test_exit" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Commit diagnostic result
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add AggregatorBackend.slnx .codex/ci/last-errors.txt .codex/ci/codes .codex/ci/completion-green.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Record completion diagnostics [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
+      - name: Fail workflow when verification is red
+        if: steps.verify.outputs.restore_exit != '0' || steps.verify.outputs.format_exit != '0' || steps.verify.outputs.build_exit != '0' || steps.verify.outputs.test_exit != '0'
+        run: exit 1
