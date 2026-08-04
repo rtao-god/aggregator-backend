@@ -122,6 +122,8 @@
     <Project Path="tools/CatalogMediaRuntimeGenerator/CatalogMediaRuntimeGenerator.csproj" />
     <Project Path="tools/ContractArtifacts/ContractArtifacts.csproj" />
     <Project Path="tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj" />
+    <Project Path="tools/QueryProjectionAdapterGenerator/QueryProjectionAdapterGenerator.csproj" />
     <Project Path="tools/QueryPromotionOverlayGenerator/QueryPromotionOverlayGenerator.csproj" />
+    <Project Path="tools/QueryWorkerCompositionGenerator/QueryWorkerCompositionGenerator.csproj" />
   </Folder>
 </Solution>
