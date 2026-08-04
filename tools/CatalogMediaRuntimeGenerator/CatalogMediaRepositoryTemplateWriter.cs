@@ -198,55 +198,6 @@ return new CatalogMediaProcessingLease(
     asset);
             }
 
-private async Task ReplaceVariantsAsync(
-    CatalogMediaAsset asset,
-    CancellationToken cancellationToken)
-{
-    var existing = await dbContext.Variants
-        .Where(candidate => candidate.AssetId == asset.Id)
-        .ToArrayAsync(cancellationToken);
-    dbContext.Variants.RemoveRange(existing);
-    foreach (var variant in asset.Variants)
-    {
-        dbContext.Variants.Add(new CatalogMediaVariantRow
-        {
-            Id = variant.Id,
-            AssetId = variant.AssetId,
-            Kind = (int)variant.Kind,
-            ObjectKey = variant.ObjectKey,
-            ContentType = variant.ContentType,
-            ContentDigest = variant.ContentDigest,
-            Size = variant.Size,
-            Width = variant.Width,
-            Height = variant.Height,
-            CreatedAtUtc = variant.CreatedAtUtc,
-        });
-    }
-}
-
-private void AddOutbox(CatalogMediaOutboxMessage message)
-{
-    dbContext.OutboxMessages.Add(new CatalogMediaOutboxRow
-    {
-        MessageId = message.Id,
-        RoutingKey = message.RoutingKey,
-        ContractIdentity = message.ContractIdentity,
-        PayloadJson = message.PayloadJson,
-        PayloadDigest = message.PayloadDigest,
-        OccurredAtUtc = message.OccurredAtUtc,
-        CorrelationId = message.CorrelationId,
-        CausationId = message.CausationId,
-        LeaseToken = null,
-        LeasedBy = null,
-        LeaseExpiresAtUtc = null,
-        DeliveryAttempts = 0,
-        DispatchedAtUtc = null,
-        LastError = null,
-        DeadLetteredAtUtc = null,
-        DeadLetterReason = null,
-    });
-}
-
 private static void Apply(CatalogMediaAssetRow row, CatalogMediaAsset asset)
 {
     if (row.Id != asset.Id ||
@@ -309,35 +260,6 @@ private static CatalogMediaAsset Restore(
             variant.Width,
             variant.Height,
             variant.CreatedAtUtc)));
-
-private static void EnsureLease(
-    CatalogMediaProcessingWorkRow work,
-    CatalogMediaProcessingLease lease,
-    DateTimeOffset completedAtUtc)
-{
-    if (work.LeaseToken != lease.LeaseToken ||
-        work.CompletedAtUtc is not null ||
-        work.LeaseExpiresAtUtc is null ||
-        work.LeaseExpiresAtUtc <= completedAtUtc)
-        throw StaleLease(lease.AssetId);
-}
-
-private static void EnsureStoredRevision(long actual, long expected, Guid assetId)
-{
-    if (actual != expected)
-    {
-        throw Failure(
-            "CATALOG_MEDIA_REVISION_CONFLICT",
-            $"Media asset '{assetId}' expected stored revision '{expected}', actual '{actual}'.",
-            "Reload the exact media asset before retrying.",
-            409);
-    }
-}
-
-private static void RequireUtc(DateTimeOffset value, string parameterName)
-{
-    if (value.Offset != TimeSpan.Zero) throw new ArgumentException("Timestamp must be UTC.", parameterName);
-}
 
 private static CatalogMediaApplicationException StaleLease(Guid assetId) =>
     Failure(

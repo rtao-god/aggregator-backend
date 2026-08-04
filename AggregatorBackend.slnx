@@ -121,6 +121,7 @@
     <Project Path="tools/AnalyticsWorkerGenerator/AnalyticsWorkerGenerator.csproj" />
     <Project Path="tools/CatalogMediaRuntimeGenerator/CatalogMediaRuntimeGenerator.csproj" />
     <Project Path="tools/ContractArtifacts/ContractArtifacts.csproj" />
+    <Project Path="tools/HealthProbe/HealthProbe.csproj" />
     <Project Path="tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj" />
     <Project Path="tools/QueryProjectionAdapterGenerator/QueryProjectionAdapterGenerator.csproj" />
     <Project Path="tools/QueryPromotionOverlayGenerator/QueryPromotionOverlayGenerator.csproj" />
