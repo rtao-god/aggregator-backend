@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -142,11 +141,12 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
     {
         ValidateKey(key);
         ValidateDigest(expectedSha256);
-        var response = await _client.GetObjectAsync(
+        using var response = await _client.GetObjectAsync(
             new GetObjectRequest { BucketName = _options.Bucket, Key = key },
             cancellationToken);
-        await using var responseScope = response;
-        var buffer = new MemoryStream(capacity: response.ContentLength > int.MaxValue ? 0 : (int)response.ContentLength);
+        var buffer = response.ContentLength > int.MaxValue
+            ? new MemoryStream()
+            : new MemoryStream((int)response.ContentLength);
         await response.ResponseStream.CopyToAsync(buffer, cancellationToken);
         buffer.Position = 0;
         var actualDigest = Convert.ToHexString(await SHA256.HashDataAsync(buffer, cancellationToken)).ToLowerInvariant();

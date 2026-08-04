@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
 namespace Platform.ProblemDetails;
@@ -28,21 +27,32 @@ internal sealed class OwnerProblemDetailsMiddleware
         }
         catch (OwnerException exception) when (!context.Response.HasStarted)
         {
-            await WriteOwnerFailureAsync(context, correlation.CorrelationId, exception);
+            await WriteOwnerFailureAsync(context, correlation.CorrelationId, exception.Error, exception);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException && !context.Response.HasStarted)
+        {
+            var error = new OwnerError(
+                owner: "Platform.Transport",
+                code: "UNHANDLED_OWNER_FAILURE",
+                title: "Request processing failed",
+                status: StatusCodes.Status500InternalServerError,
+                detail: "The request failed before a bounded-context owner returned a typed result.",
+                requiredAction: "Inspect the correlated server diagnostic and fix the responsible owner boundary.");
+            await WriteOwnerFailureAsync(context, correlation.CorrelationId, error, exception);
         }
     }
 
     private async Task WriteOwnerFailureAsync(
         HttpContext context,
         string? correlationId,
-        OwnerException exception)
+        OwnerError error,
+        Exception exception)
     {
-        var error = exception.Error;
         var effectiveCorrelationId = correlationId
             ?? Activity.Current?.TraceId.ToString()
             ?? Guid.CreateVersion7().ToString("D");
 
-        _logger.LogWarning(
+        _logger.LogError(
             exception,
             "Owner failure {Owner} {Code} for correlation {CorrelationId}",
             error.Owner,
