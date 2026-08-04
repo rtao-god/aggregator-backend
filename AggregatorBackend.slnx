@@ -120,6 +120,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/AnalyticsWorkerGenerator/AnalyticsWorkerGenerator.csproj" />
     <Project Path="tools/CatalogMediaRuntimeGenerator/CatalogMediaRuntimeGenerator.csproj" />
+    <Project Path="tools/ContractArtifactGenerator/ContractArtifactGenerator.csproj" />
     <Project Path="tools/ContractArtifacts/ContractArtifacts.csproj" />
     <Project Path="tools/HealthProbe/HealthProbe.csproj" />
     <Project Path="tools/IngestionWorkerGenerator/IngestionWorkerGenerator.csproj" />
