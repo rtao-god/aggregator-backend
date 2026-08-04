@@ -20,7 +20,8 @@ This document records implemented production owners and exact remaining work. An
 - [x] Product-configuration semantic validation and immutable activation contracts.
 - [x] Catalog application use cases, idempotent commands, deterministic publication composition, and owner-level tests.
 - [x] Normalized EF Core/PostgreSQL persistence, one-shot migration project, authenticated command API, S3 publication adapter, listing claims, and listing-scoped access persistence.
-- [ ] Catalog worker composition root, media processing lifecycle, visibility suppression, complete rollback safety gates, and PostgreSQL/S3/RabbitMQ integration proof.
+- [x] Catalog worker composition root with durable publication and outbox execution contracts.
+- [ ] Media processing lifecycle, visibility suppression, complete rollback safety gates, and PostgreSQL/S3/RabbitMQ integration proof.
 
 ## Query owner progress
 
