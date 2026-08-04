@@ -31,6 +31,7 @@ public sealed class QueryProjectionServiceTests
             "berlin-recording-services",
             configId,
             1,
+            1,
             "catalog/publications/sealed/example.json",
             new string('a', 64),
             PublicationActivationKindContract.Publication,
@@ -46,6 +47,7 @@ public sealed class QueryProjectionServiceTests
         Assert.Equal("de-DE", store.Activation.BaseProjection.LocalePolicy.DefaultLocale);
         Assert.Equal(["de-DE", "en-GB"], store.Activation.BaseProjection.LocalePolicy.SupportedLocales);
         Assert.Equal(eventId, store.InboxMessage?.EventId);
+        Assert.Equal(1, store.InboxMessage?.ActivationRevision);
     }
 
     [Fact]
@@ -68,6 +70,7 @@ public sealed class QueryProjectionServiceTests
             artifact.CatalogKey,
             artifact.ConfigurationRevisionId,
             artifact.PublicationSequence,
+            1,
             "catalog/publications/sealed/mismatch.json",
             new string('a', 64),
             PublicationActivationKindContract.Publication,
@@ -81,6 +84,42 @@ public sealed class QueryProjectionServiceTests
 
         Assert.Equal("QUERY_PUBLICATION_IDENTITY_MISMATCH", exception.Code);
         Assert.Null(store.Activation);
+    }
+
+    [Fact]
+    public async Task NonPositiveActivationRevisionFailsBeforeArtifactRead()
+    {
+        var timestamp = new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var artifact = CreateArtifact(
+            Guid.Parse("0198a200-0000-7000-8000-000000000040"),
+            Guid.Parse("0198a200-0000-7000-8000-000000000041"),
+            timestamp);
+        var reader = new StubArtifactReader(artifact);
+        var service = new QueryProjectionService(
+            reader,
+            new RecordingProjectionStore(),
+            new FixedClock(timestamp),
+            new FixedIdFactory(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()));
+        var activation = new CatalogPublicationActivated(
+            Guid.CreateVersion7(),
+            artifact.PublicationId,
+            artifact.CatalogKey,
+            artifact.ConfigurationRevisionId,
+            artifact.PublicationSequence,
+            0,
+            "catalog/publications/sealed/invalid-revision.json",
+            new string('a', 64),
+            PublicationActivationKindContract.Publication,
+            null,
+            timestamp);
+
+        var exception = await Assert.ThrowsAsync<QueryProjectionException>(() => service.ApplyPublicationAsync(
+            activation,
+            new string('b', 64),
+            CancellationToken.None));
+
+        Assert.Equal("QUERY_EVENT_CONTRACT_INVALID", exception.Code);
+        Assert.Equal(0, reader.ReadCount);
     }
 
     private static CatalogPublicationArtifact CreateArtifact(
@@ -115,6 +154,8 @@ public sealed class QueryProjectionServiceTests
 
     private sealed class StubArtifactReader(CatalogPublicationArtifact artifact) : ICatalogPublicationArtifactReader
     {
+        public int ReadCount { get; private set; }
+
         public Task<CatalogPublicationArtifact> ReadAsync(
             string objectKey,
             string expectedDigest,
@@ -122,6 +163,7 @@ public sealed class QueryProjectionServiceTests
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedDigest);
+            ReadCount++;
             return Task.FromResult(artifact);
         }
     }
