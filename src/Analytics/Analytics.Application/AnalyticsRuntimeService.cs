@@ -252,7 +252,7 @@ public sealed class AnalyticsRuntimeService(
             AnalyticsInteractionKindContract.ListingView or
             AnalyticsInteractionKindContract.ContactClick or
             AnalyticsInteractionKindContract.Lead;
-        if (requiresListing && request.ListingId is null or { } id && id == Guid.Empty)
+        if (requiresListing && (!request.ListingId.HasValue || request.ListingId.Value == Guid.Empty))
         {
             throw Failure(
                 "ANALYTICS_LISTING_ID_REQUIRED",
