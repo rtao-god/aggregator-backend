@@ -301,7 +301,7 @@ public sealed class PromotionCampaignService(
         return PromotionCampaignMapper.ToResponse(campaign, replayed: false);
     }
 
-    public async Task<SponsoredPlacementResponse> ReadSponsoredPlacementAsync(
+    public async Task<SponsoredPlacementFeedResponse> ReadSponsoredPlacementAsync(
         string catalogKey,
         string placementKey,
         DateTimeOffset? effectiveAtUtc,
@@ -347,7 +347,7 @@ public sealed class PromotionCampaignService(
                 campaign.EndsAtUtc,
                 "sponsored"))
             .ToArray();
-        return new SponsoredPlacementResponse(
+        return new SponsoredPlacementFeedResponse(
             catalogKey,
             placementKey,
             effectiveAt,
