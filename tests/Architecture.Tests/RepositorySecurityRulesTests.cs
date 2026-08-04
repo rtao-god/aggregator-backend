@@ -94,7 +94,6 @@ public sealed partial class RepositorySecurityRulesTests
         Assert.Single(FindMutatingEndpointsWithoutAccessDeclaration(source, "fixture.cs"));
     }
 
-
     [Fact]
     public void ApiAndWorkerStartupNeverOwnBusinessMigrations()
     {
@@ -143,17 +142,7 @@ public sealed partial class RepositorySecurityRulesTests
             }
 
             var source = File.ReadAllText(file);
-            foreach (Match match in CredentialAssignmentRegex().Matches(source))
-            {
-                var value = match.Groups["value"].Value.Trim().Trim('"', '\'', ',', ';');
-                if (IsSafeCredentialPlaceholder(value))
-                {
-                    continue;
-                }
-
-                failures.Add($"{relative} appears to commit a credential value for '{match.Groups["name"].Value}'.");
-            }
-
+            failures.AddRange(FindCommittedCredentialValues(source, relative));
             foreach (Match match in PrivateKeyRegex().Matches(source))
             {
                 failures.Add($"{relative} contains a private-key material marker at offset {match.Index}.");
@@ -161,6 +150,50 @@ public sealed partial class RepositorySecurityRulesTests
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void CredentialScannerRejectsLiteralAssignmentsAndConnectionStrings()
+    {
+        const string configuration = """
+        POSTGRES_PASSWORD: production-password
+        TOKEN: production-bearer-token
+        ConnectionStrings__Catalog: Host=db;Database=catalog;Password=production-database-password
+        """;
+        const string source = """
+        private const string ClientSecret = "production-client-secret";
+        """;
+        const string xml = """
+        <ApiKey>production-api-key</ApiKey>
+        """;
+
+        var failures = FindCommittedCredentialValues(configuration, "fixture.yml")
+            .Concat(FindCommittedCredentialValues(source, "fixture.cs"))
+            .Concat(FindCommittedCredentialValues(xml, "fixture.xml"))
+            .ToArray();
+
+        Assert.Equal(5, failures.Length);
+    }
+
+    [Fact]
+    public void CredentialScannerAcceptsReferencesAndNonCredentialRuntimeTokens()
+    {
+        const string configuration = """
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+        CLIENT_SECRET: <secret-mount>
+        ACCESS_TOKEN: {{ .Secrets.AccessToken }}
+        """;
+        const string source = """
+        var cancellationToken = cancellationTokenSource.Token;
+        LeaseToken = row.LeaseToken;
+        AccessToken = configuration["Authentication:AccessToken"];
+        private const string ExampleApiKey = "example-api-key";
+        """;
+
+        var failures = FindCommittedCredentialValues(configuration, "fixture.yml")
+            .Concat(FindCommittedCredentialValues(source, "fixture.cs"));
+
+        Assert.Empty(failures);
     }
 
     [Fact]
@@ -233,8 +266,8 @@ public sealed partial class RepositorySecurityRulesTests
     }
 
     private static List<string> FindMutatingEndpointsWithoutAccessDeclaration(
-    string source,
-    string sourceIdentity)
+        string source,
+        string sourceIdentity)
     {
         if (!source.Contains("[ApiController]", StringComparison.Ordinal) ||
             !source.Contains("ControllerBase", StringComparison.Ordinal))
@@ -298,6 +331,179 @@ public sealed partial class RepositorySecurityRulesTests
         AuthorizationAttributeRegex().IsMatch(source) ||
         AllowAnonymousAttributeRegex().IsMatch(source);
 
+    private static IReadOnlyList<string> FindCommittedCredentialValues(
+        string source,
+        string sourceIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceIdentity);
+
+        var failures = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var assignment in EnumerateCredentialAssignments(source, sourceIdentity))
+        {
+            if (!IsCredentialName(assignment.Name))
+            {
+                continue;
+            }
+
+            var value = NormalizeCredentialValue(assignment.Value);
+            if (IsSafeCredentialPlaceholder(value))
+            {
+                continue;
+            }
+
+            failures.Add(
+                $"{sourceIdentity} appears to commit a literal credential for '{assignment.Name}' near offset {assignment.Index}.");
+        }
+
+        return failures.OrderBy(failure => failure, StringComparer.Ordinal).ToArray();
+    }
+
+    private static IEnumerable<(string Name, string Value, int Index)> EnumerateCredentialAssignments(
+        string source,
+        string sourceIdentity)
+    {
+        var extension = Path.GetExtension(sourceIdentity);
+        if (string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (Match match in CSharpLiteralCredentialAssignmentRegex().Matches(source))
+            {
+                yield return (
+                    match.Groups["name"].Value,
+                    match.Groups["value"].Value,
+                    match.Index);
+            }
+        }
+        else if (string.Equals(extension, ".sql", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (Match match in SqlPasswordLiteralRegex().Matches(source))
+            {
+                yield return (
+                    match.Groups["name"].Value,
+                    match.Groups["value"].Value,
+                    match.Index);
+            }
+        }
+        else if (extension is ".xml" or ".props" or ".targets")
+        {
+            foreach (Match match in XmlCredentialElementRegex().Matches(source))
+            {
+                yield return (
+                    match.Groups["name"].Value,
+                    match.Groups["value"].Value,
+                    match.Index);
+            }
+
+            foreach (Match match in XmlCredentialAttributeRegex().Matches(source))
+            {
+                yield return (
+                    match.Groups["name"].Value,
+                    match.Groups["value"].Value,
+                    match.Index);
+            }
+        }
+        else
+        {
+            foreach (Match match in ConfigurationCredentialAssignmentRegex().Matches(source))
+            {
+                yield return (
+                    match.Groups["name"].Value,
+                    match.Groups["value"].Value,
+                    match.Index);
+            }
+        }
+
+        foreach (Match match in ConnectionStringCredentialRegex().Matches(source))
+        {
+            yield return (
+                match.Groups["name"].Value,
+                match.Groups["value"].Value,
+                match.Index);
+        }
+    }
+
+    private static bool IsCredentialName(string name)
+    {
+        var withCamelCaseBoundaries = CamelCaseBoundaryRegex().Replace(name, "$1_$2");
+        var normalized = NonCredentialNameCharacterRegex()
+            .Replace(withCamelCaseBoundaries, "_")
+            .Trim('_')
+            .ToLowerInvariant();
+        var parts = normalized.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1 && parts[0] == "token")
+        {
+            return true;
+        }
+
+        for (var index = 0; index < parts.Length; index++)
+        {
+            if (parts[index] is "password" or "passwd" or "pwd" or "pass" or "secret" or
+                "apikey" or "accesskey" or "secretkey" or "clientsecret")
+            {
+                return true;
+            }
+
+            if (index + 1 >= parts.Length)
+            {
+                continue;
+            }
+
+            var first = parts[index];
+            var second = parts[index + 1];
+            if ((first, second) is ("client", "secret") or ("secret", "key") or
+                ("access", "key") or ("api", "key"))
+            {
+                return true;
+            }
+
+            if (second == "token" &&
+                first is "access" or "auth" or "bearer" or "service" or "worker" or
+                    "bootstrap" or "jwt" or "oidc" or "api")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeCredentialValue(string value)
+    {
+        var normalized = value.Trim().TrimEnd(',', ';').Trim();
+        var quoteIndex = normalized.IndexOf('"');
+        if (quoteIndex >= 0 && normalized.EndsWith('"'))
+        {
+            normalized = normalized[(quoteIndex + 1)..^1];
+        }
+        else if (normalized.Length >= 2 && normalized.StartsWith('\'') && normalized.EndsWith('\''))
+        {
+            normalized = normalized[1..^1];
+        }
+
+        return normalized.Trim();
+    }
+
+    private static bool IsSafeCredentialPlaceholder(string value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        value.Contains("${", StringComparison.Ordinal) ||
+        value.Contains("{{", StringComparison.Ordinal) ||
+        value.Contains("$(`", StringComparison.Ordinal) ||
+        value.Contains('<') ||
+        EnvironmentReferenceRegex().IsMatch(value) ||
+        InterpolatedReferenceRegex().IsMatch(value) ||
+        ParameterReferenceRegex().IsMatch(value) ||
+        SafeCredentialMarkerRegex().IsMatch(value) ||
+        value.StartsWith("Environment.GetEnvironmentVariable", StringComparison.Ordinal) ||
+        value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase) ||
+        value.Contains("RequireSetting(", StringComparison.Ordinal) ||
+        value.Contains("GetConnectionString(", StringComparison.Ordinal) ||
+        value.Contains("GetEnvironmentVariable(", StringComparison.Ordinal) ||
+        value.Contains("GetRequiredSection(", StringComparison.Ordinal) ||
+        value.Contains("GetValue<", StringComparison.Ordinal) ||
+        value.Contains("nameof(", StringComparison.Ordinal) ||
+        value.Contains("Options.", StringComparison.Ordinal) ||
+        value.Contains("options.", StringComparison.Ordinal) ||
+        value.Contains("configuration", StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<string> EnumerateSourceFiles(
         string relativeRoot,
@@ -331,29 +537,12 @@ public sealed partial class RepositorySecurityRulesTests
     private static bool IsTextConfiguration(string relativePath)
     {
         var extension = Path.GetExtension(relativePath);
-        return extension is ".json" or ".yml" or ".yaml" or ".xml" or ".props" or ".targets" or ".cs" or ".md" or ".env" or ".sql";
+        var fileName = Path.GetFileName(relativePath);
+        return extension is ".json" or ".yml" or ".yaml" or ".xml" or ".props" or
+            ".targets" or ".cs" or ".md" or ".env" or ".sql" or ".toml" or ".ini" or
+            ".conf" or ".sh" or ".ps1" ||
+            fileName.StartsWith(".env", StringComparison.OrdinalIgnoreCase);
     }
-
-    private static bool IsSafeCredentialPlaceholder(string value) =>
-        string.IsNullOrWhiteSpace(value) ||
-        value.Contains("${", StringComparison.Ordinal) ||
-        value.Contains("{{", StringComparison.Ordinal) ||
-        value.Contains('<') ||
-        value.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase) ||
-        value.Contains("REQUIRED", StringComparison.OrdinalIgnoreCase) ||
-        value.Contains("test", StringComparison.OrdinalIgnoreCase) ||
-        value.Contains("example", StringComparison.OrdinalIgnoreCase) ||
-        value.StartsWith("Environment.GetEnvironmentVariable", StringComparison.Ordinal) ||
-        value.StartsWith("configuration[", StringComparison.OrdinalIgnoreCase) ||
-        value.Contains("RequireSetting(", StringComparison.Ordinal) ||
-        value.Contains("GetConnectionString(", StringComparison.Ordinal) ||
-        value.Contains("GetEnvironmentVariable(", StringComparison.Ordinal) ||
-        value.Contains("GetRequiredSection(", StringComparison.Ordinal) ||
-        value.Contains("GetValue<", StringComparison.Ordinal) ||
-        value.Contains("nameof(", StringComparison.Ordinal) ||
-        value.Contains("Options.", StringComparison.Ordinal) ||
-        value.Contains("options.", StringComparison.Ordinal) ||
-        value.Contains("configuration", StringComparison.OrdinalIgnoreCase);
 
     private static string Relative(string path) =>
         Path.GetRelativePath(RepositoryRoot, path).Replace(Path.DirectorySeparatorChar, '/');
@@ -389,8 +578,41 @@ public sealed partial class RepositorySecurityRulesTests
     [GeneratedRegex(@"\[AllowAnonymous(?:Attribute)?\s*\]", RegexOptions.CultureInvariant)]
     private static partial Regex AllowAnonymousAttributeRegex();
 
-    [GeneratedRegex(@"(?im)(?<name>password|secret(?:key)?|accesskey|clientsecret|apikey|token)\s*(?:=|:|\])\s*(?<value>[^\r\n#]+)", RegexOptions.CultureInvariant)]
-    private static partial Regex CredentialAssignmentRegex();
+    [GeneratedRegex(@"(?im)^\s*(?:-\s*)?(?:export\s+)?\$?(?:\[\s*[\"'](?<name>[A-Za-z_][A-Za-z0-9_.:-]*)[\"']\s*\]|[\"']?(?<name>[A-Za-z_][A-Za-z0-9_.:-]*)[\"']?)\s*(?:=|:)\s*(?<value>[^\r\n#]+)", RegexOptions.CultureInvariant)]
+    private static partial Regex ConfigurationCredentialAssignmentRegex();
+
+    [GeneratedRegex(@"(?im)^\s*(?:\[\s*[\"'](?<name>[A-Za-z_][A-Za-z0-9_.:-]*)[\"']\s*\]|(?:(?:public|private|protected|internal|static|readonly|const|required|volatile|new)\s+)*(?:(?:string|var)\s+)?(?<name>[A-Za-z_][A-Za-z0-9_.:-]*)(?:\s*\{[^}\r\n]*\})?)\s*=\s*(?<value>(?:\$@|@\$|\$|@)?\"(?:\\.|\"\"|[^\"\r\n])*\")", RegexOptions.CultureInvariant)]
+    private static partial Regex CSharpLiteralCredentialAssignmentRegex();
+
+    [GeneratedRegex(@"(?im)<(?<name>[A-Za-z_][A-Za-z0-9_.:-]*)>\s*(?<value>[^<\r\n]+)\s*</\k<name>>", RegexOptions.CultureInvariant)]
+    private static partial Regex XmlCredentialElementRegex();
+
+    [GeneratedRegex(@"(?im)\b(?<name>[A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*[\"'](?<value>[^\"']*)[\"']", RegexOptions.CultureInvariant)]
+    private static partial Regex XmlCredentialAttributeRegex();
+
+    [GeneratedRegex(@"(?im)\b(?<name>PASSWORD|PASSWD|PWD)\s*(?:=)?\s*[\"'](?<value>[^\"']*)[\"']", RegexOptions.CultureInvariant)]
+    private static partial Regex SqlPasswordLiteralRegex();
+
+    [GeneratedRegex(@"(?im)(?:^|[;\"'])\s*(?<name>Password|Passwd|Pwd)\s*=\s*(?<value>[^;\r\n\"']+)", RegexOptions.CultureInvariant)]
+    private static partial Regex ConnectionStringCredentialRegex();
+
+    [GeneratedRegex(@"([a-z0-9])([A-Z])", RegexOptions.CultureInvariant)]
+    private static partial Regex CamelCaseBoundaryRegex();
+
+    [GeneratedRegex(@"[^A-Za-z0-9]+", RegexOptions.CultureInvariant)]
+    private static partial Regex NonCredentialNameCharacterRegex();
+
+    [GeneratedRegex(@"(?i)(?:^|[-_.:/])(?:test|testing|example|fixture|dummy|fake|local|development|dev|change[-_]?me|required|placeholder|not[-_]?a[-_]?secret)(?:$|[-_.:/])", RegexOptions.CultureInvariant)]
+    private static partial Regex SafeCredentialMarkerRegex();
+
+    [GeneratedRegex(@"^\$[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex EnvironmentReferenceRegex();
+
+    [GeneratedRegex(@"^\{[A-Za-z_0-9][A-Za-z0-9_.]*\}$", RegexOptions.CultureInvariant)]
+    private static partial Regex InterpolatedReferenceRegex();
+
+    [GeneratedRegex(@"^[@:][A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ParameterReferenceRegex();
 
     [GeneratedRegex(@"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", RegexOptions.CultureInvariant)]
     private static partial Regex PrivateKeyRegex();
