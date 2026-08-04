@@ -16,15 +16,31 @@ public sealed record PublicReadMembershipResult(
     string? ActualCatalogKey,
     Guid? ActualListingId);
 
+public enum InteractionEventRegistrationState
+{
+    Stored = 1,
+    AlreadyApplied = 2,
+    DigestConflict = 3,
+}
+
+/// <summary>Returns the exact persisted event selected by one semantic idempotency key.</summary>
+public sealed record InteractionEventRegistrationResult(
+    InteractionEventRegistrationState State,
+    InteractionEvent PersistedEvent);
+
+/// <summary>Persists accepted interaction events with atomic semantic idempotency.</summary>
 public interface IAnalyticsEventStore
 {
     public Task<InteractionEvent?> GetAsync(
         InteractionEventSemanticKey semanticKey,
         CancellationToken cancellationToken);
 
-    public Task AddAsync(InteractionEvent interactionEvent, CancellationToken cancellationToken);
+    public Task<InteractionEventRegistrationResult> RegisterAsync(
+        InteractionEvent interactionEvent,
+        CancellationToken cancellationToken);
 }
 
+/// <summary>Validates an event against the Analytics-owned projection of public Query membership.</summary>
 public interface IPublicReadReferenceStore
 {
     public Task<PublicReadMembershipResult> ValidateMembershipAsync(
@@ -34,6 +50,7 @@ public interface IPublicReadReferenceStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>Verifies the bounded public anti-abuse proof without persisting its raw token.</summary>
 public interface IAntiAbuseVerifier
 {
     public Task VerifyAsync(
@@ -58,6 +75,7 @@ public interface IDailyListingMetricsStore
         CancellationToken cancellationToken);
 }
 
+/// <summary>Authorizes owner metrics through the Analytics-local listing access projection.</summary>
 public interface IListingMetricsAuthorizer
 {
     public Task AuthorizeAsync(
