@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
+    <ProjectReference Include="../../src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj" />
+    <ProjectReference Include="../../src/BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj" />
+  </ItemGroup>
+</Project>
