@@ -19,6 +19,7 @@ public sealed class CatalogListingsController(CatalogListingService service) : C
         [FromBody] CreateListingRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (!string.Equals(catalogKey, request.CatalogKey, StringComparison.Ordinal))
         {
             throw new CatalogContractException(
@@ -47,6 +48,7 @@ public sealed class CatalogListingsController(CatalogListingService service) : C
         [FromBody] CreateListingRevisionRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var response = await service.AddRevisionAsync(
             listingId,
             request,
@@ -60,34 +62,43 @@ public sealed class CatalogListingsController(CatalogListingService service) : C
     public async Task<ActionResult<EditorialDecisionResponse>> ApproveAsync(
         Guid listingId,
         [FromBody] ApproveListingRevisionRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.ApproveAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.ApproveAsync(
             listingId,
             request,
             CatalogActorAccessor.Require(HttpContext),
             cancellationToken));
+    }
 
     [HttpPost("listings/{listingId:guid}/approval-decisions/reject", Name = CatalogOperationIds.RejectListingRevision)]
     [ProducesResponseType<EditorialDecisionResponse>(StatusCodes.Status200OK)]
     public async Task<ActionResult<EditorialDecisionResponse>> RejectAsync(
         Guid listingId,
         [FromBody] RejectListingRevisionRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.RejectAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.RejectAsync(
             listingId,
             request,
             CatalogActorAccessor.Require(HttpContext),
             cancellationToken));
+    }
 
     [HttpPost("listings/{listingId:guid}/archive", Name = CatalogOperationIds.ArchiveListing)]
     [ProducesResponseType<ListingResponse>(StatusCodes.Status200OK)]
     public async Task<ActionResult<ListingResponse>> ArchiveAsync(
         Guid listingId,
         [FromBody] ArchiveListingRequest request,
-        CancellationToken cancellationToken) =>
-        Ok(await service.ArchiveAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await service.ArchiveAsync(
             listingId,
             request,
             CatalogActorAccessor.Require(HttpContext),
             cancellationToken));
+    }
 }
