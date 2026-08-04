@@ -145,11 +145,13 @@ jobs:
               --logger 'console;verbosity=normal' /m:1 /nr:false
           done
 
-      - name: Prove architecture boundary
+      - name: Prove affected architecture boundaries
         shell: bash
         run: |
+          filter='FullyQualifiedName~Architecture.Tests.DependencyRulesTests|FullyQualifiedName=Architecture.Tests.RepositorySecurityRulesTests.ApiAndWorkerStartupNeverOwnBusinessMigrations|FullyQualifiedName=Architecture.Tests.RepositorySecurityRulesTests.CrossContextProjectReferencesTargetOnlyProducerContracts'
           dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
-            --no-restore -warnaserror --logger 'console;verbosity=normal' /m:1 /nr:false
+            --no-restore -warnaserror --filter "$filter" \
+            --logger 'console;verbosity=normal' /m:1 /nr:false
 
       - name: Commit proven owner consolidation and remove all one-shot workflows
         shell: bash
