@@ -50,6 +50,62 @@ jobs:
               start)
           script = textwrap.dedent(source[start:end])
           exec(compile(script, 'complete-promotion-owner.py', 'exec'))
+
+          overlay_store_path = Path(
+              'src/Promotion/Promotion.Overlay.Infrastructure/PostgresPromotionOverlayStore.cs')
+          overlay_store = overlay_store_path.read_text(encoding='utf-8')
+
+          old_lease_guard = (
+              '        if (leaseDuration is < TimeSpan.FromSeconds(5) or > TimeSpan.FromMinutes(5))\n'
+              '        {\n'
+          )
+          new_lease_guard = (
+              '        if (leaseDuration < TimeSpan.FromSeconds(5) ||\n'
+              '            leaseDuration > TimeSpan.FromMinutes(5))\n'
+              '        {\n'
+          )
+          if overlay_store.count(old_lease_guard) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay lease-duration guard.')
+          overlay_store = overlay_store.replace(old_lease_guard, new_lease_guard)
+
+          if overlay_store.count('        string error,\n') != 2:
+              raise RuntimeError(
+                  'Expected the Promotion overlay failure parameter in the interface and implementation.')
+          overlay_store = overlay_store.replace(
+              '        string error,\n',
+              '        string failureMessage,\n')
+
+          old_failure_use = (
+              '        ArgumentException.ThrowIfNullOrWhiteSpace(error);\n'
+              '        await using var command = _dataSource.CreateCommand("""\n'
+          )
+          new_failure_use = (
+              '        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);\n'
+              '        await using var command = _dataSource.CreateCommand("""\n'
+          )
+          if overlay_store.count(old_failure_use) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay failure-message guard.')
+          overlay_store = overlay_store.replace(old_failure_use, new_failure_use)
+
+          old_parameter = (
+              '        command.Parameters.AddWithValue("last_error", NpgsqlDbType.Varchar, error);\n'
+          )
+          new_parameter = (
+              '        command.Parameters.AddWithValue(\n'
+              '            "last_error",\n'
+              '            NpgsqlDbType.Varchar,\n'
+              '            failureMessage);\n'
+          )
+          if overlay_store.count(old_parameter) != 1:
+              raise RuntimeError(
+                  'Expected exactly one Promotion overlay failure SQL parameter.')
+          overlay_store = overlay_store.replace(old_parameter, new_parameter)
+          overlay_store_path.write_text(
+              overlay_store,
+              encoding='utf-8',
+              newline='\n')
           BOOTSTRAP
 
       - name: Prove the duplicate campaign owner is unreachable
