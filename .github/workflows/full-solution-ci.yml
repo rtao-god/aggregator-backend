@@ -14,25 +14,45 @@ concurrency:
   group: full-solution-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.302
+
       - name: Restore complete solution
         run: dotnet restore AggregatorBackend.All.slnx
+
       - name: Verify formatting and analyzers
         run: dotnet format AggregatorBackend.All.slnx --verify-no-changes --no-restore
+
       - name: Build complete solution
-        run: dotnet build AggregatorBackend.All.slnx --no-restore -warnaserror
+        run: >-
+          dotnet build AggregatorBackend.All.slnx
+          --no-restore -warnaserror /m:1 /nr:false
+
       - name: Run complete test set
-        run: dotnet test AggregatorBackend.All.slnx --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test AggregatorBackend.All.slnx
+          --no-build --no-restore -warnaserror
+          --logger "console;verbosity=normal" /m:1 /nr:false
+
       - name: Run architecture proof independently
-        run: dotnet test tests/Architecture.Tests/Architecture.Tests.csproj --no-build --logger "console;verbosity=normal"
+        run: >-
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj
+          --no-build --no-restore -warnaserror
+          --logger "console;verbosity=normal" /m:1 /nr:false
+
       - name: Publish connector-readable status
         if: always()
         uses: actions/github-script@v9
