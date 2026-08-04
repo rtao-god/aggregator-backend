@@ -19,6 +19,7 @@ public sealed class CatalogOutboxMessageFactoryTests
             "catalog",
             Guid.Parse("0192f5f0-0000-7000-8000-000000000104"),
             PublicationSequence: 7,
+            ActivationRevision: 9,
             "catalog/catalog/publications/publication.json",
             new string('a', 64),
             PublicationActivationKindContract.Publication,
