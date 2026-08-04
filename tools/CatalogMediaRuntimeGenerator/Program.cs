@@ -28,6 +28,7 @@ InfrastructureTemplateWriter.Write(context);
 NormalizeObjectStoreAdapter(context.InfrastructureDirectory);
 MigrationTemplateWriter.Write(context);
 ApiTemplateWriter.Write(context);
+NormalizeApiConfigurationContract(context.ApiDirectory);
 WorkerTemplateWriter.Write(context);
 TestTemplateWriter.Write(context);
 
@@ -81,6 +82,23 @@ static void NormalizeObjectStoreAdapter(string infrastructureDirectory)
     {
         throw Failure(
             "Generated Catalog media object-store adapter no longer matches the expected upload contract anchor.");
+    }
+
+    File.WriteAllText(path, source.Replace(oldSource, newSource, StringComparison.Ordinal));
+}
+
+static void NormalizeApiConfigurationContract(string apiDirectory)
+{
+    var path = Path.Combine(apiDirectory, "Program.cs");
+    var source = File.ReadAllText(path);
+    const string oldSource =
+        "private static string Require(IConfiguration configuration, string path)";
+    const string newSource =
+        "private static string Require(Microsoft.Extensions.Configuration.ConfigurationManager configuration, string path)";
+    if (!source.Contains(oldSource, StringComparison.Ordinal))
+    {
+        throw Failure(
+            "Generated Catalog media API no longer matches the expected configuration contract anchor.");
     }
 
     File.WriteAllText(path, source.Replace(oldSource, newSource, StringComparison.Ordinal));
