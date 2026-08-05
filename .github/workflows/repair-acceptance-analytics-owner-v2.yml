@@ -59,13 +59,11 @@ jobs:
                   raise SystemExit(f'Unexpected owner-script indentation: {line!r}')
           script = '\n'.join(script_lines) + '\n'
 
-          fragile_start_marker = "old_get = '''    public static async Task<TResponse> GetAsync<TResponse>("
-          fragile_end_marker = "http.write_text(source, encoding='utf-8', newline='\\\\n')"
-          fragile_start = script.find(fragile_start_marker)
-          fragile_end = script.find(fragile_end_marker, fragile_start)
-          if fragile_start < 0 or fragile_end < 0:
+          fragile_start = script.find('old_get =')
+          fragile_write = script.find('http.write_text(source', fragile_start)
+          fragile_end = script.find('\n', fragile_write)
+          if fragile_start < 0 or fragile_write < 0 or fragile_end < 0:
               raise SystemExit('Fragile AcceptanceHttp source block was not found in owner script.')
-          fragile_end += len(fragile_end_marker)
 
           replacement = r'''get_start = source.find(
               '    public static async Task<TResponse> GetAsync<TResponse>(\n')
@@ -104,7 +102,7 @@ jobs:
               '\n')
           source = source[:get_start] + new_get + source[get_end:]
           http.write_text(source, encoding='utf-8', newline='\n')'''
-          script = script[:fragile_start] + replacement + script[fragile_end:]
+          script = script[:fragile_start] + replacement + script[fragile_end + 1:]
           exec(compile(script, '<acceptance-owner-alignment>', 'exec'), {'__name__': '__main__'})
 
           # The repository token may mutate source but not workflow files. The permanent
