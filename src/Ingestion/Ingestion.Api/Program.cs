@@ -29,6 +29,7 @@ public partial class Program
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
                 options.JsonSerializerOptions.Converters.Add(
                     new JsonStringEnumConverter(
                         JsonNamingPolicy.CamelCase,

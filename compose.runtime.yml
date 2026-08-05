@@ -66,49 +66,6 @@ services:
     restart: unless-stopped
     networks: [backend]
 
-  promotion-overlay-migrations:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        PROJECT: src/Promotion/Promotion.Overlay.Migrations/Promotion.Overlay.Migrations.csproj
-        ENTRY_DLL: Promotion.Overlay.Migrations.dll
-    environment:
-      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
-    depends_on:
-      promotion-db:
-        condition: service_healthy
-    profiles: [migrate]
-    restart: "no"
-    networks: [backend]
-
-  promotion-overlay-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        PROJECT: src/Promotion/Promotion.Overlay.Api/Promotion.Overlay.Api.csproj
-        ENTRY_DLL: Promotion.Overlay.Api.dll
-    environment:
-      ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Promotion: Host=promotion-db;Port=5432;Database=promotion;Username=promotion_owner;Password=${PROMOTION_DB_PASSWORD:-promotion-local-password}
-      Authentication__Issuer: ${OIDC_ISSUER:-https://identity.invalid.local}
-      Authentication__Audience: aggregator-promotion
-      PromotionOverlay__Dispatch__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
-      PromotionOverlay__Dispatch__Exchange: aggregator.events
-      PromotionOverlay__Dispatch__OutboxTable: promotion.overlay_outbox_message
-      PromotionOverlay__Dispatch__BatchSize: "50"
-      PromotionOverlay__Dispatch__MaximumAttempts: "8"
-      PromotionOverlay__Dispatch__LeaseDurationSeconds: "120"
-      PromotionOverlay__Dispatch__PollIntervalMilliseconds: "500"
-    depends_on:
-      promotion-overlay-migrations:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [backend]
-
   catalog-media-migrations:
     build:
       context: .

@@ -1,46 +1,66 @@
 {
   "contracts": [
     {
-      "name": "collector-candidate-command",
-      "file": "src/Ingestion/Ingestion.Collector.Contracts/CollectorCandidateContracts.cs",
+      "name": "aggregator-candidate-ingestion",
+      "file": "src/Ingestion/Ingestion.Contracts/AggregatorCandidateIngestionContracts.cs",
       "required": [
-        "public enum CollectorCandidateKindContract",
-        "public sealed record SubmitCollectorCandidateRequest(",
-        "Guid CommandId,",
-        "DateTimeOffset ObservedAtUtc,",
-        "string EvidenceDigest);",
-        "public sealed record CollectorCandidateResponse(",
-        "Guid SubjectRevisionId,",
-        "string ContentDigest,",
-        "bool Replayed);"
+        "public const string Identity = \"aggregator-candidate-ingestion\";",
+        "public const int Revision = 1;",
+        "public sealed record AggregatorCandidateIngestionManifest(",
+        "Guid TargetCatalogConfigurationRevisionId,",
+        "int ItemCount,",
+        "string ItemIndexDigest,",
+        "public sealed record AggregatorCandidateIngestionPackage("
       ]
     },
     {
-      "name": "analytics-interaction-command",
-      "file": "src/Analytics/Analytics.Contracts/AnalyticsRuntimeContracts.cs",
+      "name": "analytics-interaction-event",
+      "file": "src/Analytics/Analytics.Contracts/InteractionContracts.cs",
       "required": [
-        "public enum AnalyticsInteractionKindContract",
-        "public sealed record RecordAnalyticsInteractionRequest(",
-        "Guid PublicReadRevisionId,",
-        "string SessionKey,",
-        "public sealed record AnalyticsInteractionReceipt(",
-        "bool Replayed);",
-        "public sealed record AnalyticsListingMetricsResponse("
+        "public enum InteractionEventKindContract",
+        "public enum InteractionAcceptanceStateContract",
+        "public sealed record SubmitInteractionEventRequest(",
+        "Guid PublicReadRevisionId,\n    DateTimeOffset OccurredAtUtc,",
+        "PlacementContextContract PlacementContext,",
+        "string AntiAbuseToken);",
+        "public sealed record InteractionEventResponse("
       ]
     },
     {
-      "name": "promotion-overlay-activation",
-      "file": "src/Promotion/Promotion.Contracts/PromotionOverlayContracts.cs",
+      "name": "analytics-daily-listing-metrics",
+      "file": "src/Analytics/Analytics.Contracts/MetricsContracts.cs",
       "required": [
-        "public const string ActivationEvent = \"aggregator.promotion.overlay-activated@1\";",
-        "public const string RoutingKey = \"promotion.overlay.activated\";",
-        "public sealed record PublishPromotionOverlayRequest(",
-        "Guid SourcePublicReadRevisionId,",
-        "Guid? ExpectedCurrentOverlayId,",
-        "public sealed record PromotionOverlayActivated(",
-        "long ActivationRevision,",
-        "public sealed record SponsoredListingSearchResponse(",
-        "Guid? OverlayId,"
+        "public enum AggregateReadinessStateContract",
+        "public sealed record InteractionCountsContract(",
+        "long SponsoredImpressions,",
+        "public sealed record DailyListingMetricsResponse(",
+        "InteractionCountsContract? Counts,",
+        "public sealed record DailyMetricsRangeRequest(DateOnly FromInclusive, DateOnly ToExclusive)"
+      ]
+    },
+    {
+      "name": "promotion-placement-change",
+      "file": "src/Promotion/Promotion.Contracts/PromotionIntegrationEvents.cs",
+      "required": [
+        "public const string PlacementChanged = \"promotion.placement.changed\";",
+        "public const string PlacementChanged = \"aggregator.promotion.placement-changed@1\";",
+        "public sealed record SponsoredPlacementChanged(",
+        "DateTimeOffset HardExpiryAtUtc,",
+        "int CapacitySlot,",
+        "string PresentationLabelKey,"
+      ]
+    },
+    {
+      "name": "query-public-search",
+      "file": "src/Query/Query.Contracts/PublicQueryContracts.cs",
+      "required": [
+        "public sealed record PublicReadMetadata(",
+        "Guid PromotionOverlayId,",
+        "public sealed record PublicSponsoredListingSummary(",
+        "DateTimeOffset HardExpiryAtUtc,",
+        "public sealed record PublicListingSearchResponse(",
+        "IReadOnlyList<PublicSponsoredListingSummary> Sponsored,",
+        "IReadOnlyList<PublicListingSummary> Organic,"
       ]
     },
     {
@@ -56,43 +76,50 @@
   ],
   "http": [
     {
-      "file": "src/Ingestion/Ingestion.Collector.Api/CollectorCandidatesController.cs",
+      "file": "src/Ingestion/Ingestion.Api/IngestionBatchesController.cs",
       "required": [
-        "[Route(\"api/collector-candidates\")]",
-        "[Authorize(Policy = \"ingestion.submit\")]",
-        "[HttpPost(Name = \"SubmitCollectorCandidate\")]"
+        "[Route(\"api/ingestion/batches\")]",
+        "[HttpPost(Name = IngestionOperationIds.RegisterBatch)]",
+        "[HttpPost(\"{batchId:guid}/upload-request\", Name = IngestionOperationIds.PrepareBatchUpload)]",
+        "[HttpPost(\"{batchId:guid}/upload-complete\", Name = IngestionOperationIds.CompleteBatchUpload)]",
+        "[ProducesResponseType<IngestionBatchRegistrationResponse>(StatusCodes.Status201Created)]"
       ]
     },
     {
-      "file": "src/Analytics/Analytics.Api/AnalyticsController.cs",
+      "file": "src/Analytics/Analytics.Api/AnalyticsObservationsController.cs",
       "required": [
         "[Route(\"api/analytics\")]",
-        "[HttpPost(\"interactions\", Name = \"RecordAnalyticsInteraction\")]",
-        "[HttpGet(\"catalogs/{catalogKey}/listings/{listingId:guid}/metrics\", Name = \"GetAnalyticsListingMetrics\")]"
+        "[HttpPost(\"anti-abuse-tokens\", Name = AnalyticsOperationIds.IssueAntiAbuseToken)]",
+        "[HttpPost(\"interaction-events\", Name = AnalyticsOperationIds.SubmitInteractionEvent)]",
+        "[Route(\"api/analytics/listings/{listingId:guid}\")]",
+        "[HttpGet(\"daily-metrics\", Name = AnalyticsOperationIds.ReadDailyListingMetrics)]"
       ]
     },
     {
-      "file": "src/Promotion/Promotion.Overlay.Api/PromotionOverlayController.cs",
+      "file": "src/Promotion/Promotion.Api/PromotionPlacementsController.cs",
       "required": [
-        "[Route(\"api/promotion-overlays\")]",
-        "[Authorize(Policy = PromotionOverlayAuthorizationPolicies.Publish)]",
-        "[HttpPost(Name = \"PublishPromotionOverlay\")]"
+        "[Route(\"api/promotion/placements\")]",
+        "[HttpPost(Name = PromotionOperationIds.CreatePlacement)]",
+        "[HttpPost(\"{placementId:guid}/revisions\", Name = PromotionOperationIds.AddPlacementRevision)]",
+        "[HttpPost(\"{placementId:guid}/revoke\", Name = PromotionOperationIds.RevokePlacement)]",
+        "\"~/api/promotion/catalogs/{catalogKey}/placement-calendar\","
       ]
     },
     {
-      "file": "src/Query/Query.Api/SponsoredListingsController.cs",
+      "file": "src/Query/Query.Api/CatalogQueryController.cs",
       "required": [
-        "[Route(\"api/catalog-query/catalogs/{catalogKey}/sponsored\")]",
-        "[HttpGet(Name = \"GetSponsoredListings\")]",
-        "publicReadRevisionId",
-        "X-Promotion-Overlay-Id"
+        "[Route(\"api/catalog-query/catalogs/{catalogKey}\")]",
+        "[HttpGet(\"listings\", Name = \"SearchPublicListings\")]",
+        "var result = await service.SearchAsync(",
+        "result.Sponsored.Min(item => item.HardExpiryAtUtc)",
+        "allowStaleWhileRevalidate: result.Sponsored.Count == 0"
       ]
     }
   ],
   "strictJsonPrograms": [
-    "src/Ingestion/Ingestion.Collector.Api/Program.cs",
+    "src/Ingestion/Ingestion.Api/Program.cs",
     "src/Analytics/Analytics.Api/Program.cs",
-    "src/Promotion/Promotion.Overlay.Api/Program.cs",
+    "src/Promotion/Promotion.Api/Program.cs",
     "src/Query/Query.Api/Program.cs"
   ]
 }
