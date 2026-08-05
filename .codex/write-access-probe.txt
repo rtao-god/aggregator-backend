@@ -1,3 +1,0 @@
-GitHub Write access probe for rtao-god/aggregator-backend.
-Created intentionally to verify write access from the connected GitHub Write tool.
-Date: 2026-08-05
