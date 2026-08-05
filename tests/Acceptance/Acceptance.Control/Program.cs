@@ -26,11 +26,16 @@ app.MapGet("/health/ready", async (
     CatalogReadinessProbe readinessProbe,
     CancellationToken cancellationToken) =>
 {
-    var ready = await readinessProbe.CheckAsync(cancellationToken);
-    return ready
-        ? Results.Ok(new { owner = "Acceptance.Control", state = "ready" })
+    var readiness = await readinessProbe.CheckAsync(cancellationToken);
+    return readiness.Ready
+        ? Results.Ok(new { owner = "Acceptance.Control", state = readiness.State })
         : Results.Json(
-            new { owner = "Acceptance.Control", state = "unavailable" },
+            new
+            {
+                owner = "Acceptance.Control",
+                state = readiness.State,
+                failureType = readiness.FailureType,
+            },
             statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 app.MapPost("/acceptance/catalog/seed", async (
@@ -426,7 +431,7 @@ internal static class AcceptanceIds
         new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
 }
 
-public sealed record CatalogSeedRequest(
+internal sealed record CatalogSeedRequest(
     Guid SubjectId,
     Guid SubjectRevisionId,
     string Title,
@@ -435,7 +440,7 @@ public sealed record CatalogSeedRequest(
     string Website,
     decimal HourlyPrice);
 
-public sealed record CatalogSeedResponse(
+internal sealed record CatalogSeedResponse(
     Guid ConfigurationRevisionId,
     Guid ListingId,
     Guid ListingRevisionId,
@@ -443,7 +448,7 @@ public sealed record CatalogSeedResponse(
     SubjectReferenceContract Subject,
     long ExpectedListingVersionAfterPublication);
 
-public sealed record CatalogPublishNextRequest(
+internal sealed record CatalogPublishNextRequest(
     Guid ListingId,
     Guid FirstPublicationId,
     Guid SubjectId,
@@ -454,16 +459,16 @@ public sealed record CatalogPublishNextRequest(
     string Website,
     decimal HourlyPrice);
 
-public sealed record CatalogPublishNextResponse(
+internal sealed record CatalogPublishNextResponse(
     Guid ListingRevisionId,
     Guid PublicationId,
     long ExpectedListingVersionAfterPublication);
 
-public sealed record CatalogRollbackRequest(
+internal sealed record CatalogRollbackRequest(
     Guid TargetPublicationId,
     Guid ExpectedCurrentPublicationId);
 
-public sealed record CatalogRollbackResponse(
+internal sealed record CatalogRollbackResponse(
     Guid CurrentPublicationId,
     long PublicationSequence,
     bool IsCurrent);
