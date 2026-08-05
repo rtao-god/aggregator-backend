@@ -8,5 +8,13 @@
 TestResults
 artifacts
 coverage
+.env
+.env.*
+!.env.example
+.codex/ci
+.codex/probes
+.codex/tmp
 *.user
 *.suo
+*.log
+*.tmp

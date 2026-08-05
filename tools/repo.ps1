@@ -12,9 +12,10 @@ param(
         'test-all',
         'format-check',
         'format-full-check',
+        'compose-config',
         'compose-build',
+        'db-migrate',
         'compose-up',
-        'compose-up-runtime',
         'compose-down')]
     [string]$Command,
 
@@ -29,6 +30,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $solution = Join-Path $root 'AggregatorBackend.slnx'
 $runtimeSolution = Join-Path $root 'AggregatorBackend.Runtime.slnx'
 $architectureProject = Join-Path $root 'tests/Architecture.Tests/Architecture.Tests.csproj'
+$composeFile = Join-Path $root 'compose.yaml'
+$composeEnvironment = Join-Path $root '.env'
+$composeEnvironmentExample = Join-Path $root '.env.example'
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
@@ -56,7 +60,7 @@ function Resolve-Python {
         }
     }
 
-    throw 'Python 3 is required for repository inventory validation.'
+    throw 'Python 3 is required for repository validation.'
 }
 
 function Resolve-Project {
@@ -85,9 +89,59 @@ function Resolve-Project {
     return $resolved
 }
 
+function Resolve-ComposeEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowExample
+    )
+
+    if (Test-Path -LiteralPath $composeEnvironment) {
+        $content = Get-Content -LiteralPath $composeEnvironment -Raw
+        if ($content -match '(?m)=CHANGE_ME') {
+            throw "'$composeEnvironment' still contains CHANGE_ME values."
+        }
+
+        return $composeEnvironment
+    }
+
+    if ($AllowExample) {
+        return $composeEnvironmentExample
+    }
+
+    throw "Create '$composeEnvironment' from '.env.example' and replace every CHANGE_ME value."
+}
+
 function Invoke-InventoryCheck {
     $python = Resolve-Python
     Invoke-Native $python @('.tools/complete-backend.py', '--check')
+}
+
+function Invoke-ContractCheck {
+    $python = Resolve-Python
+    Invoke-Native $python @('tools/verify-contracts.py')
+}
+
+function Invoke-Compose {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowExample
+    )
+
+    $environmentFile = Resolve-ComposeEnvironment -AllowExample $AllowExample
+    $composeArguments = @(
+        'compose',
+        '--env-file',
+        $environmentFile,
+        '--file',
+        $composeFile) + $Arguments
+    Invoke-Native docker $composeArguments
+}
+
+function Invoke-ComposeConfig {
+    Invoke-Compose -AllowExample $true -Arguments @('config', '--quiet')
 }
 
 function Invoke-ArchitectureGate {
@@ -105,6 +159,8 @@ function Invoke-ArchitectureGate {
 
 function Invoke-Preflight {
     Invoke-InventoryCheck
+    Invoke-ContractCheck
+    Invoke-ComposeConfig
     Invoke-ArchitectureGate
 }
 
@@ -194,43 +250,35 @@ try {
                 '--verify-no-changes',
                 '--no-restore')
         }
+        'compose-config' {
+            Invoke-ComposeConfig
+        }
         'compose-build' {
-            Invoke-Native docker @(
-                'compose',
-                '-f',
-                'compose.yml',
-                '-f',
-                'compose.runtime.yml',
-                'build',
-                '--parallel')
+            Invoke-ComposeConfig
+            Invoke-Compose -AllowExample $true -Arguments @('build')
+        }
+        'db-migrate' {
+            Invoke-ComposeConfig
+            Invoke-Compose -AllowExample $false -Arguments @(
+                'up',
+                '--no-build',
+                '--wait',
+                'catalog-grants',
+                'query-grants',
+                'ingestion-grants',
+                'analytics-grants',
+                'promotion-grants')
         }
         'compose-up' {
-            Invoke-Native docker @(
-                'compose',
-                '-f',
-                'compose.yml',
+            Invoke-ComposeConfig
+            Invoke-Compose -AllowExample $false -Arguments @(
                 'up',
                 '--detach',
-                '--wait')
-        }
-        'compose-up-runtime' {
-            Invoke-Native docker @(
-                'compose',
-                '-f',
-                'compose.yml',
-                '-f',
-                'compose.runtime.yml',
-                'up',
-                '--detach',
-                '--wait')
+                '--wait',
+                '--no-build')
         }
         'compose-down' {
-            Invoke-Native docker @(
-                'compose',
-                '-f',
-                'compose.yml',
-                '-f',
-                'compose.runtime.yml',
+            Invoke-Compose -AllowExample $true -Arguments @(
                 'down',
                 '--remove-orphans')
         }
