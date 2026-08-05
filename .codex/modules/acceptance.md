@@ -1,25 +1,26 @@
-# Acceptance orchestration
+# Acceptance support
 
 ## Owner boundary
 
-Acceptance projects prove cross-context behavior but do not own production business meaning.
+Acceptance projects provide owner-scoped test composition roots; they do not own production business meaning and are not themselves proof of an end-to-end production path.
 
-- `Acceptance.Contracts` owns only the private test-control transport used between acceptance composition roots and the runner.
-- `Acceptance.Control` is the Catalog-only test composition root. It may reference Catalog Application/Infrastructure and `Acceptance.Contracts`; it must not reference another bounded context implementation.
-- `Acceptance.Analytics.Control` is the Analytics-only test composition root. It may reference Analytics Application/Infrastructure and `Acceptance.Contracts`; it must not reference Catalog or Query implementations.
+- `Acceptance.Contracts` owns only private test-control transport.
+- `Acceptance.Control` may compose Catalog Application/Infrastructure and `Acceptance.Contracts` only.
+- `Acceptance.Analytics.Control` may compose Analytics Application/Infrastructure and `Acceptance.Contracts` only.
 - `Acceptance.Identity` issues local test tokens for exact production audiences and scopes.
-- `Acceptance.Runner` orchestrates public APIs and private test-control endpoints. It consumes producer-owned Contracts and must not reference production Infrastructure.
 
-## Canonical scenario
+The previous executable scenario was removed because it bypassed canonical Ingestion, Catalog event delivery, Query projection, Promotion placement, and media lifecycle owners. It must not return as a compatibility harness.
 
-The runner proves:
+## Required replacement proof
 
-1. collector candidate replay and conflict;
-2. Catalog publication and Query projection;
-3. Analytics public-reference/access bootstrap;
-4. `listing_impression`, `listing_opened`, and `website_clicked` with exact anti-abuse proof;
-5. Analytics replay/conflict and a closed UTC daily aggregate;
-6. authorized metrics read with explicit readiness;
-7. Promotion overlay publication, revision isolation, rollback, and explicit republish.
+A production-path E2E suite remains required and must use public or producer-owned boundaries in dependency order:
 
-Missing numeric values are never replaced with zero. A test-control project may seed only deterministic test state required to reach a production owner boundary; it may not implement production formulas or duplicate production contracts.
+1. register and upload an `aggregator-candidate-ingestion` package;
+2. validate, review, commit, and record exact Catalog outcomes;
+3. publish Catalog state and consume the producer event into Query;
+4. verify one exact `PublicReadRevision` through the public Query API;
+5. record Analytics interactions against that revision and verify readiness/aggregates;
+6. create a Promotion placement, consume `promotion.placement.changed`, and verify sponsored/organic composition plus hard expiry;
+7. prove replay/conflict behavior and revision isolation without direct database seeding across owners.
+
+Until that suite exists and runs against real PostgreSQL, RabbitMQ, and object storage, the repository must report E2E proof as incomplete.

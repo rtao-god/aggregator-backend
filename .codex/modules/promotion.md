@@ -2,7 +2,7 @@
 
 ## Owner
 
-Promotion is the canonical owner of product definitions, manual entitlements, listing eligibility projections, sponsored placement revisions and schedules, capacity slots, activation/expiry state, audit reasons, and producer events consumed by Query. Promotion never owns Catalog facts, organic rank, payment processing, verification badges, or public Listing content.
+Promotion is the canonical owner of product definitions, manual entitlements, listing eligibility projections, sponsored placement revisions and schedules, capacity slots, activation/expiry state, audit reasons, and producer events consumed by Query. Promotion never owns Catalog facts, organic rank, payment processing, verification badges, public Listing content, or a materialized public overlay.
 
 ## Projects
 
@@ -11,11 +11,10 @@ Promotion is the canonical owner of product definitions, manual entitlements, li
 - `Promotion.Application`: one canonical `PromotionCommandIdentity`, idempotent owner commands, deterministic request/revision digests, eligibility checks, capacity checks, exact contract mapping, and transactional outbox effects.
 - `Promotion.Infrastructure`: Promotion-only PostgreSQL persistence, local Catalog eligibility projection, atomic idempotency/outbox transactions, overlap enforcement, scheduling, and readiness.
 - `Promotion.Api`: authenticated product, entitlement, placement and calendar command/read endpoints with scoped policies, request limits, rate limits, typed errors, and read-only health.
-- `Promotion.Worker`: bounded schedule transitions plus dispatch of already committed outbox messages; it never migrates or changes Catalog content.
+- `Promotion.Worker`: bounded schedule transitions plus dispatch of committed outbox messages; it never migrates, changes Catalog content, or builds a public read model.
 - `Promotion.Migrations`: one-shot schema owner; runtime hosts never apply DDL.
-- `Promotion.Overlay.*`: producer-side immutable overlay publication boundary and transport proof. Query remains the owner of the public read projection and organic/sponsored composition.
 
-There is no separate `PromotionCampaign` aggregate, campaign database, campaign command ledger, or `/campaigns` API. The product contract is already owned by `PromotionProduct`, `PromotionEntitlement`, and `SponsoredPlacement`; retaining a second campaign lifecycle would duplicate schedule, capacity, idempotency and sponsored-read meaning.
+There is no separate campaign aggregate or Promotion-owned public-card/public-overlay publication. Product, entitlement, and placement already own schedule, capacity, idempotency, and sponsored eligibility. Query alone materializes their public projection.
 
 ## API boundary
 
@@ -41,13 +40,13 @@ Catalog eligibility event
 → aggregate + idempotency result + outbox in one transaction
 → bounded worker activation/expiry transition
 → promotion.placement.changed
-→ Query builds an immutable promotion overlay
-→ Query creates a new PublicReadRevision while organic rank remains unchanged
+→ Query materializes an immutable overlay component
+→ Query creates and atomically selects a new PublicReadRevision
 ```
 
 ## Invariants
 
-- Promotion product configuration is generic data; no Berlin or recording-studio product type exists in core code.
+- Promotion product configuration is generic data; no vertical-specific product type exists in core code.
 - Product and placement revisions are immutable. Aggregate pointers advance only through optimistic-concurrency commands.
 - Entitlements are listing-scoped and come only from `manual_contract`, `manual_trial`, or `administrative_grant`; payment/card/invoice fields do not exist.
 - Archived, unpublished, blocking-disputed, wrong-scope, or insufficiently verified listings fail closed through the local Catalog projection.
@@ -55,15 +54,14 @@ Catalog eligibility event
 - Every schedule is UTC and half-open. Query receives `hard_expiry_at_utc` and must not show a placement at or after that bound even if an end event is delayed.
 - Capacity conflicts use exact catalog, scope, locale intersection, capacity slot and overlapping UTC window.
 - Same idempotency scope/key with another request digest is a conflict.
-- Placement events contain only producer-owned presentation metadata and identities; no Catalog document is copied into the event.
+- Placement events contain only producer-owned placement/presentation identities; no Catalog document is copied into the event.
 - Read endpoints do not activate, expire, repair or rebuild state.
 
 ## Proof
 
-- Domain tests cover immutable revisions, contact prerequisites, entitlement terminal states, listing eligibility, hard expiry and capacity overlap semantics.
-- Application tests cover exact command replay, outbox separation, missing eligibility fail-closed behavior and capacity conflict before persistence.
-- Infrastructure tests inspect Promotion PostgreSQL ownership, optimistic concurrency, immutable revision rows, command-result identity and overlap constraints.
-- API tests cover anonymous denial, missing actor mapping, required idempotency, numeric-enum rejection, undeclared-field rejection, exact create/replay identity, authorized read and anonymous liveness.
+- Domain tests cover immutable revisions, contact prerequisites, entitlement terminal states, listing eligibility, hard expiry, and capacity overlap semantics.
+- Application tests cover exact command replay, outbox separation, missing eligibility fail-closed behavior, and capacity conflict before persistence.
+- Infrastructure tests inspect Promotion PostgreSQL ownership, optimistic concurrency, immutable revision rows, command-result identity, and overlap constraints.
+- API tests cover anonymous denial, missing actor mapping, required idempotency, numeric-enum rejection, undeclared-field rejection, exact create/replay identity, authorized read, and anonymous liveness.
 - Worker tests cover strict bounded options and schedule/outbox composition.
-- Overlay tests cover producer contract mapping and explicit sponsored presentation without changing organic ranking.
-- Real PostgreSQL/RabbitMQ delivery and Query overlay end-to-end proof remain owned by integration stages and are not inferred from in-memory API proof.
+- Real PostgreSQL/RabbitMQ delivery and Query materialization remain integration/E2E proof and are not inferred from in-memory API tests.
