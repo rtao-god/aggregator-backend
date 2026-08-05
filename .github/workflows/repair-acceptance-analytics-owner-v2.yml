@@ -105,6 +105,25 @@ jobs:
           script = script[:fragile_start] + replacement + script[fragile_end + 1:]
           exec(compile(script, '<acceptance-owner-alignment>', 'exec'), {'__name__': '__main__'})
 
+          catalog_fixture = Path(
+              'tests/Catalog/Catalog.Ingestion.Api.Tests/CatalogIngestionApiFactory.cs')
+          catalog_source = catalog_fixture.read_text(encoding='utf-8')
+          catalog_anchor = (
+              '        {\n'
+              '            cancellationToken.ThrowIfCancellationRequested();\n'
+              '            if (_results.TryGetValue(command.CommandId, out var existing))\n')
+          catalog_replacement = (
+              '        {\n'
+              '            ArgumentNullException.ThrowIfNull(command);\n'
+              '            cancellationToken.ThrowIfCancellationRequested();\n'
+              '            if (_results.TryGetValue(command.CommandId, out var existing))\n')
+          if catalog_anchor not in catalog_source:
+              raise SystemExit('Catalog ingestion test-store guard anchor is missing.')
+          catalog_fixture.write_text(
+              catalog_source.replace(catalog_anchor, catalog_replacement, 1),
+              encoding='utf-8',
+              newline='\n')
+
           # The repository token may mutate source but not workflow files. The permanent
           # acceptance workflow is published through the GitHub connector after proof.
           Path('.github/workflows/backend-acceptance-e2e.yml').unlink(missing_ok=True)
