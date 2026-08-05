@@ -62,10 +62,14 @@ public sealed class CatalogQueryController(
             : secondsUntilSponsoredExpiry >= 60
                 ? 60
                 : (int)Math.Floor(secondsUntilSponsoredExpiry);
+        var sponsoredCacheIdentity = string.Join(
+            ";",
+            result.Sponsored.Select(item =>
+                $"{item.PlacementId:N}:{item.HardExpiryAtUtc:O}"));
         return WithPublicCaching(
             result,
             result.Metadata.PublicReadRevisionId,
-            $"search\n{catalogKey.Trim()}\n{locale.Trim()}\n{category?.Trim()}\n{pageSize}\n{cursor}",
+            $"search\n{catalogKey.Trim()}\n{locale.Trim()}\n{category?.Trim()}\n{pageSize}\n{cursor}\n{sponsoredCacheIdentity}",
             sponsoredMaxAge,
             allowStaleWhileRevalidate: result.Sponsored.Count == 0);
     }
@@ -136,6 +140,7 @@ public sealed class CatalogQueryController(
                 maxAgeSeconds,
                 "Public Query cache max age must be between zero and 60 seconds.");
         }
+
         var digestInput = Encoding.UTF8.GetBytes($"{publicReadRevisionId:N}\n{requestIdentity}");
         var etag = $"\"{Convert.ToHexString(SHA256.HashData(digestInput)).ToLowerInvariant()}\"";
         Response.Headers.ETag = etag;
