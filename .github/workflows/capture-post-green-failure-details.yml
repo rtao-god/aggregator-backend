@@ -1,0 +1,110 @@
+name: capture-post-green-failure-details
+
+on:
+  workflow_run:
+    workflows:
+      - contract-artifacts
+      - repository-hardening
+      - ingestion-catalog-e2e-proof
+      - runtime-context-completion
+      - final-repository-proof
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: capture-post-green-failure-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Capture failed jobs and steps
+        uses: actions/github-script@v9
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        with:
+          script: |
+            const fs = require('fs');
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: Number(process.env.RUN_ID),
+                per_page: 100
+              }
+            );
+            const payload = {
+              workflow: process.env.RUN_NAME,
+              run_id: Number(process.env.RUN_ID),
+              head_sha: process.env.HEAD_SHA,
+              conclusion: process.env.RUN_CONCLUSION,
+              url: process.env.RUN_URL,
+              failed_jobs: jobs
+                .filter(job => job.conclusion !== 'success')
+                .map(job => ({
+                  id: job.id,
+                  name: job.name,
+                  status: job.status,
+                  conclusion: job.conclusion,
+                  url: job.html_url,
+                  steps: (job.steps || [])
+                    .filter(step => step.conclusion !== 'success')
+                    .map(step => ({
+                      number: step.number,
+                      name: step.name,
+                      status: step.status,
+                      conclusion: step.conclusion
+                    }))
+                }))
+            };
+            fs.mkdirSync('.codex/ci/post-green-failures', { recursive: true });
+            const slug = process.env.RUN_NAME
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '');
+            fs.writeFileSync(
+              `.codex/ci/post-green-failures/${slug}.json`,
+              `${JSON.stringify(payload, null, 2)}\n`,
+              'utf8');
+
+      - name: Commit failure details only while the failed head is current
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$HEAD_SHA" ]; then
+            echo "Skipping stale failure details for $HEAD_SHA; main is $base."
+            exit 0
+          fi
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- .codex/ci/post-green-failures
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' "Record ${GITHUB_WORKFLOW} failure details" \
+            | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
