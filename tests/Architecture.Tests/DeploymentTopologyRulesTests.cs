@@ -85,7 +85,7 @@ public sealed partial class DeploymentTopologyRulesTests
         Assert.True(compose.Contains("postgres-data:/var/lib/postgresql", StringComparison.Ordinal));
         Assert.True(compose.Contains("internal: true", StringComparison.Ordinal));
         Assert.True(compose.Contains("127.0.0.1:${BACKEND_HTTP_PORT:-8080}:8080", StringComparison.Ordinal));
-        Assert.Equal(1, Regex.Matches(compose, @"(?m)^    ports:$").Count);
+        Assert.Equal(1, Regex.Matches(compose, @"(?m)^\s+ports:").Count);
         Assert.True(compose.Contains("read_only: true", StringComparison.Ordinal));
         Assert.True(compose.Contains("cap_drop: [ALL]", StringComparison.Ordinal));
         Assert.True(compose.Contains("no-new-privileges:true", StringComparison.Ordinal));
@@ -136,6 +136,6 @@ public sealed partial class DeploymentTopologyRulesTests
         path.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Any(segment => segment is "bin" or "obj" or "artifacts");
 
-    [GeneratedRegex(@"(?m)^\s+PROJECT_PATH:\s+(?<path>[^\r\n]+)\s*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"PROJECT_PATH:\s+(?<path>[^,}\s]+)", RegexOptions.CultureInvariant)]
     private static partial Regex ProjectPathPattern();
 }
