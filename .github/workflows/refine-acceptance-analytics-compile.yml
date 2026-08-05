@@ -1,0 +1,283 @@
+name: Refine Acceptance Analytics compile boundary
+
+on:
+  workflow_run:
+    workflows: ['Repair Acceptance Analytics compile boundary']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-acceptance-analytics-compile
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  refine-prove-commit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Reapply the reviewed first-stage transformation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          workflow = Path('.github/workflows/repair-acceptance-analytics-compile.yml')
+          source = workflow.read_text(encoding='utf-8')
+          heading = '      - name: Replace the retired Analytics consumer contract\n'
+          start = source.index(heading)
+          block = source[start:]
+          marker = '        run: |\n'
+          script_start = block.index(marker) + len(marker)
+          next_step = block.index('\n      - name: Ensure Acceptance references canonical Analytics contracts', script_start)
+          script = textwrap.dedent(block[script_start:next_step])
+          exec(compile(script, 'repair-acceptance-analytics-compile.py', 'exec'))
+
+          csproj_heading = '      - name: Ensure Acceptance references canonical Analytics contracts\n'
+          csproj_block = source[source.index(csproj_heading):]
+          csproj_script_start = csproj_block.index(marker) + len(marker)
+          csproj_next = csproj_block.index('\n      - name: Restore Acceptance owner graph', csproj_script_start)
+          csproj_script = textwrap.dedent(csproj_block[csproj_script_start:csproj_next])
+          exec(compile(csproj_script, 'ensure-acceptance-analytics-reference.py', 'exec'))
+          PY
+
+      - name: Restore Acceptance owner graph
+        run: dotnet restore tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj
+
+      - name: Refine only compiler-proven contract member mismatches
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            dotnet format tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj --no-restore
+            dotnet build tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj \
+              --no-restore -warnaserror /m:1 /nr:false > "acceptance-build-${attempt}.log" 2>&1
+            code=$?
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
+
+            ATTEMPT="$attempt" python3 - <<'PY'
+          from __future__ import annotations
+
+          import os
+          import re
+          from pathlib import Path
+
+          attempt = os.environ['ATTEMPT']
+          log = Path(f'acceptance-build-{attempt}.log').read_text(encoding='utf-8', errors='replace')
+          runner = Path('tests/Acceptance/Acceptance.Runner')
+          source_paths = list(runner.glob('*.cs'))
+          contract_text = '\n'.join(
+              path.read_text(encoding='utf-8')
+              for path in Path('src/Analytics/Analytics.Contracts').rglob('*.cs'))
+
+          def enum_members(type_name: str) -> list[str]:
+              match = re.search(
+                  rf'enum\s+{re.escape(type_name)}\s*\{{(.*?)\}}',
+                  contract_text,
+                  flags=re.DOTALL)
+              if match is None:
+                  return []
+              return [
+                  token
+                  for token in re.findall(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|,)', match.group(1), re.MULTILINE)
+              ]
+
+          def record_members(type_name: str) -> list[str]:
+              match = re.search(
+                  rf'(?:sealed\s+)?record\s+{re.escape(type_name)}\s*\((.*?)\)\s*;',
+                  contract_text,
+                  flags=re.DOTALL)
+              if match is None:
+                  return []
+              return re.findall(
+                  r'(?:^|,)\s*(?:[A-Za-z_][A-Za-z0-9_<>?,.\[\]\s]+)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?=,|$)',
+                  match.group(1))
+
+          changed = False
+          known_error_count = 0
+          event_members = enum_members('InteractionEventKindContract')
+          for missing in re.findall(
+              r"'InteractionEventKindContract' does not contain a definition for '([^']+)'",
+              log):
+              known_error_count += 1
+              lowered = missing.lower()
+              needles = (
+                  ('impression',) if 'impression' in lowered else
+                  ('open',) if 'open' in lowered else
+                  ('website', 'click') if ('click' in lowered or 'lead' in lowered) else
+                  ()
+              )
+              replacement = next(
+                  (
+                      member for member in event_members
+                      if all(needle in member.lower() for needle in needles)
+                  ),
+                  None)
+              if replacement is None:
+                  raise RuntimeError(
+                      f'No canonical InteractionEventKindContract member matches {missing}.')
+              for path in source_paths:
+                  text = path.read_text(encoding='utf-8')
+                  updated = text.replace(
+                      f'InteractionEventKindContract.{missing}',
+                      f'InteractionEventKindContract.{replacement}')
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8', newline='\n')
+                      changed = True
+
+          response_types = {
+              'InteractionEventResponse': record_members('InteractionEventResponse'),
+              'DailyListingMetricsResponse': record_members('DailyListingMetricsResponse'),
+          }
+          for type_name, missing in re.findall(
+              r"'(InteractionEventResponse|DailyListingMetricsResponse)' does not contain a definition for '([^']+)'",
+              log):
+              known_error_count += 1
+              members = response_types[type_name]
+              lowered = missing.lower()
+              semantic_needles = []
+              if 'lead' in lowered or 'click' in lowered:
+                  semantic_needles = ['click']
+              elif 'open' in lowered:
+                  semantic_needles = ['open']
+              elif 'impression' in lowered:
+                  semantic_needles = ['impression']
+              elif 'replay' in lowered or 'duplicate' in lowered:
+                  semantic_needles = ['replay']
+              elif 'accept' in lowered:
+                  semantic_needles = ['accept']
+              elif 'event' in lowered and 'id' in lowered:
+                  semantic_needles = ['event', 'id']
+              replacement = next(
+                  (
+                      member for member in members
+                      if all(needle in member.lower() for needle in semantic_needles)
+                  ),
+                  None)
+              if replacement is None:
+                  raise RuntimeError(
+                      f'No canonical {type_name} member matches retired member {missing}.')
+              for path in source_paths:
+                  text = path.read_text(encoding='utf-8')
+                  updated = re.sub(
+                      rf'(?<=\.){re.escape(missing)}\b',
+                      replacement,
+                      text)
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8', newline='\n')
+                      changed = True
+
+          error_lines = [line for line in log.splitlines() if ': error ' in line]
+          recognized = [
+              line for line in error_lines
+              if 'InteractionEventKindContract' in line
+              or 'InteractionEventResponse' in line
+              or 'DailyListingMetricsResponse' in line
+          ]
+          if error_lines and len(recognized) != len(error_lines):
+              unknown = '\n'.join(line for line in error_lines if line not in recognized)
+              raise RuntimeError(f'Unknown Acceptance compile failure; refusing automatic rewrite:\n{unknown}')
+          if known_error_count == 0 or not changed:
+              raise RuntimeError('Compiler did not expose a supported contract-member refinement.')
+          PY
+          done
+          echo 'Acceptance compile refinement did not converge.' >&2
+          exit 1
+
+      - name: Verify formatting and retired-contract absence
+        shell: bash
+        run: |
+          dotnet format tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj \
+            --verify-no-changes --no-restore
+          if grep -R --line-number --include='*.cs' \
+            -E 'RecordAnalyticsInteractionRequest|AnalyticsInteractionReceipt|AnalyticsListingMetricsResponse|AnalyticsInteractionKindContract|X-Analytics-Internal-Key|api/analytics/interactions' \
+            tests/Acceptance/Acceptance.Runner; then
+            echo 'Retired Analytics consumer semantics remain in Acceptance.' >&2
+            exit 1
+          fi
+
+      - name: Commit proven compile boundary and remove both workflows
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- tests/Acceptance src/Analytics tests/Analytics)
+            test -z "$affected" || {
+              printf 'Acceptance or Analytics changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm \
+            .github/workflows/repair-acceptance-analytics-compile.yml \
+            .github/workflows/refine-acceptance-analytics-compile.yml
+          paths=(
+            tests/Acceptance
+            .github/workflows/repair-acceptance-analytics-compile.yml
+            .github/workflows/refine-acceptance-analytics-compile.yml
+          )
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Use canonical Analytics contracts in Acceptance' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Upload exact diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-analytics-refinement-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: acceptance-build-*.log
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Acceptance Analytics refinement: ${process.env.JOB_STATUS}`,
+              context: 'ci/acceptance-analytics-refinement'
+            });
