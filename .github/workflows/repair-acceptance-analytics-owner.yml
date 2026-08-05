@@ -1,0 +1,1339 @@
+name: Repair Acceptance Analytics owner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-acceptance-analytics-owner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-acceptance-analytics-owner
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Align Acceptance with canonical Analytics contracts
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          def write(path_value: str, content: str) -> None:
+              path = Path(path_value)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(dedent(content).lstrip(), encoding='utf-8', newline='\n')
+
+          def replace_once(path_value: str, old: str, new: str) -> None:
+              path = Path(path_value)
+              source = path.read_text(encoding='utf-8')
+              if old not in source:
+                  raise SystemExit(f"Expected source anchor was not found in {path_value}: {old[:120]!r}")
+              path.write_text(source.replace(old, new, 1), encoding='utf-8', newline='\n')
+
+          def require_absent(path_value: str, value: str) -> None:
+              source = Path(path_value).read_text(encoding='utf-8')
+              if value in source:
+                  raise SystemExit(f"Obsolete value remains in {path_value}: {value}")
+
+          write(
+              'tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj',
+              '''
+              <Project Sdk="Microsoft.NET.Sdk">
+                <PropertyGroup>
+                  <IsPackable>false</IsPackable>
+                </PropertyGroup>
+              </Project>
+              ''')
+
+          write(
+              'tests/Acceptance/Acceptance.Contracts/AcceptanceContracts.cs',
+              '''
+              namespace Aggregator.Acceptance.Contracts;
+
+              public static class AcceptanceScenarioIdentity
+              {
+                  public static readonly Guid ActorId =
+                      Guid.Parse("0198ff00-0000-7000-8000-000000000001");
+              }
+
+              public sealed record CatalogSeedRequest(
+                  Guid SubjectId,
+                  Guid SubjectRevisionId,
+                  string Title,
+                  string SourceReference,
+                  string EvidenceDigest,
+                  string Website,
+                  decimal HourlyPrice);
+
+              public sealed record CatalogSeedResponse(
+                  Guid ConfigurationRevisionId,
+                  Guid ListingId,
+                  Guid ListingRevisionId,
+                  Guid PublicationId,
+                  long ExpectedListingVersionAfterPublication);
+
+              public sealed record CatalogPublishNextRequest(
+                  Guid ListingId,
+                  Guid FirstPublicationId,
+                  Guid SubjectId,
+                  Guid SubjectRevisionId,
+                  string Title,
+                  string SourceReference,
+                  string EvidenceDigest,
+                  string Website,
+                  decimal HourlyPrice);
+
+              public sealed record CatalogPublishNextResponse(
+                  Guid ListingRevisionId,
+                  Guid PublicationId,
+                  long ExpectedListingVersionAfterPublication);
+
+              public sealed record CatalogRollbackRequest(
+                  Guid TargetPublicationId,
+                  Guid ExpectedCurrentPublicationId);
+
+              public sealed record CatalogRollbackResponse(
+                  Guid CurrentPublicationId,
+                  long PublicationSequence,
+                  bool IsCurrent);
+
+              public sealed record BootstrapAnalyticsProjectionRequest(
+                  Guid PublicReadRevisionId,
+                  string CatalogKey,
+                  Guid BaseProjectionId,
+                  Guid PromotionOverlayId,
+                  Guid SafetyOverlayId,
+                  Guid SourcePublicationId,
+                  DateTimeOffset ActivatedAtUtc,
+                  Guid ActorId,
+                  IReadOnlyList<Guid> PublicListingIds);
+
+              public sealed record BootstrapAnalyticsProjectionResponse(
+                  Guid PublicReadRevisionId,
+                  string PublicReadContentDigest,
+                  string MembershipDigest,
+                  int ListingCount);
+
+              public sealed record RebuildAnalyticsMetricsRequest(DateOnly Date);
+
+              public sealed record RebuildAnalyticsMetricsResponse(
+                  DateOnly FromInclusive,
+                  DateOnly ToExclusive,
+                  int MaterializedMetricCount,
+                  int RemovedStaleMetricCount,
+                  DateTimeOffset CompletedAtUtc);
+              ''')
+
+          analytics_contracts = Path(
+              'src/Analytics/Analytics.Contracts/InteractionContracts.cs')
+          source = analytics_contracts.read_text(encoding='utf-8')
+          anti_abuse_contracts = '''
+          /// <summary>Requests one short-lived proof bound to an exact interaction identity and occurrence time.</summary>
+          public sealed record IssueAnalyticsAntiAbuseTokenRequest(
+              Guid ClientEventId,
+              DateTimeOffset OccurredAtUtc);
+
+          /// <summary>Returns one opaque proof that can be used only for the exact requested interaction.</summary>
+          public sealed record AnalyticsAntiAbuseTokenResponse(
+              string Token,
+              DateTimeOffset ExpiresAtUtc);
+
+          '''
+          marker = 'public sealed record SubmitInteractionEventRequest(\n'
+          if 'public sealed record IssueAnalyticsAntiAbuseTokenRequest' not in source:
+              if marker not in source:
+                  raise SystemExit('Analytics interaction contract insertion point is missing.')
+              source = source.replace(marker, anti_abuse_contracts + marker, 1)
+              analytics_contracts.write_text(source, encoding='utf-8', newline='\n')
+
+          anti_abuse_service = Path(
+              'src/Analytics/Analytics.Api/AnalyticsAntiAbuseProofService.cs')
+          source = anti_abuse_service.read_text(encoding='utf-8')
+          if 'using Aggregator.Analytics.Contracts;\n' not in source:
+              source = source.replace(
+                  'using Aggregator.Analytics.Application;\n',
+                  'using Aggregator.Analytics.Application;\nusing Aggregator.Analytics.Contracts;\n',
+                  1)
+          obsolete_contracts = '''
+          /// <summary>Requests one short-lived proof bound to an exact interaction identity and occurrence time.</summary>
+          public sealed record IssueAnalyticsAntiAbuseTokenRequest(
+              Guid ClientEventId,
+              DateTimeOffset OccurredAtUtc);
+
+          /// <summary>Returns one opaque proof that can be used only for the exact requested interaction.</summary>
+          public sealed record AnalyticsAntiAbuseTokenResponse(
+              string Token,
+              DateTimeOffset ExpiresAtUtc);
+
+          '''
+          source = source.replace(obsolete_contracts, '', 1)
+          anti_abuse_service.write_text(source, encoding='utf-8', newline='\n')
+
+          write(
+              'tests/Acceptance/Acceptance.Control/Program.cs',
+              '''
+              using System.Security.Cryptography;
+              using System.Text;
+              using Aggregator.Acceptance.Contracts;
+              using Aggregator.Acceptance.Control;
+              using Aggregator.Analytics.Infrastructure;
+              using Aggregator.Catalog.Application;
+              using Aggregator.Catalog.Infrastructure;
+
+              var builder = WebApplication.CreateBuilder(args);
+              var internalKey = builder.Configuration["Acceptance:InternalKey"];
+              if (string.IsNullOrWhiteSpace(internalKey) || internalKey.Length < 32)
+              {
+                  throw new InvalidOperationException(
+                      "Acceptance:InternalKey must contain at least 32 characters.");
+              }
+
+              builder.Services.AddCatalogApplication();
+              builder.Services.AddCatalogInfrastructure(builder.Configuration);
+              builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
+              builder.Services.AddScoped<AcceptanceCatalogScenarioService>();
+              builder.Services.AddScoped<AcceptanceAnalyticsScenarioService>();
+
+              var app = builder.Build();
+              app.MapGet("/health/live", () => Results.Ok(new
+              {
+                  owner = "Acceptance.Control",
+                  state = "live",
+              }));
+              app.MapGet("/health/ready", async (
+                  CatalogReadinessProbe catalogReadiness,
+                  AnalyticsReadinessProbe analyticsReadiness,
+                  CancellationToken cancellationToken) =>
+              {
+                  var catalogReady = await catalogReadiness.CheckAsync(cancellationToken);
+                  var analyticsReady = await analyticsReadiness.CanConnectAsync(cancellationToken);
+                  return catalogReady && analyticsReady
+                      ? Results.Ok(new { owner = "Acceptance.Control", state = "ready" })
+                      : Results.Json(
+                          new { owner = "Acceptance.Control", state = "unavailable" },
+                          statusCode: StatusCodes.Status503ServiceUnavailable);
+              });
+              app.MapPost("/acceptance/catalog/seed", async (
+                  HttpRequest httpRequest,
+                  CatalogSeedRequest request,
+                  AcceptanceCatalogScenarioService scenario,
+                  CancellationToken cancellationToken) =>
+              {
+                  if (!HasValidInternalKey(httpRequest, internalKey))
+                  {
+                      return Results.Unauthorized();
+                  }
+
+                  return Results.Ok(await scenario.SeedAsync(request, cancellationToken));
+              });
+              app.MapPost("/acceptance/catalog/publish-next", async (
+                  HttpRequest httpRequest,
+                  CatalogPublishNextRequest request,
+                  AcceptanceCatalogScenarioService scenario,
+                  CancellationToken cancellationToken) =>
+              {
+                  if (!HasValidInternalKey(httpRequest, internalKey))
+                  {
+                      return Results.Unauthorized();
+                  }
+
+                  return Results.Ok(await scenario.PublishNextAsync(request, cancellationToken));
+              });
+              app.MapPost("/acceptance/catalog/rollback", async (
+                  HttpRequest httpRequest,
+                  CatalogRollbackRequest request,
+                  AcceptanceCatalogScenarioService scenario,
+                  CancellationToken cancellationToken) =>
+              {
+                  if (!HasValidInternalKey(httpRequest, internalKey))
+                  {
+                      return Results.Unauthorized();
+                  }
+
+                  return Results.Ok(await scenario.RollbackAsync(request, cancellationToken));
+              });
+              app.MapPost("/acceptance/analytics/projections", async (
+                  HttpRequest httpRequest,
+                  BootstrapAnalyticsProjectionRequest request,
+                  AcceptanceAnalyticsScenarioService scenario,
+                  CancellationToken cancellationToken) =>
+              {
+                  if (!HasValidInternalKey(httpRequest, internalKey))
+                  {
+                      return Results.Unauthorized();
+                  }
+
+                  return Results.Ok(await scenario.BootstrapAsync(request, cancellationToken));
+              });
+              app.MapPost("/acceptance/analytics/aggregate-rebuilds", async (
+                  HttpRequest httpRequest,
+                  RebuildAnalyticsMetricsRequest request,
+                  AcceptanceAnalyticsScenarioService scenario,
+                  CancellationToken cancellationToken) =>
+              {
+                  if (!HasValidInternalKey(httpRequest, internalKey))
+                  {
+                      return Results.Unauthorized();
+                  }
+
+                  return Results.Ok(await scenario.RebuildAsync(request, cancellationToken));
+              });
+
+              await app.RunAsync();
+
+              static bool HasValidInternalKey(HttpRequest request, string expectedKey)
+              {
+                  if (!request.Headers.TryGetValue("X-Acceptance-Key", out var suppliedValues))
+                  {
+                      return false;
+                  }
+
+                  var suppliedKey = suppliedValues.ToString();
+                  if (string.IsNullOrWhiteSpace(suppliedKey))
+                  {
+                      return false;
+                  }
+
+                  var expectedDigest = SHA256.HashData(Encoding.UTF8.GetBytes(expectedKey));
+                  var suppliedDigest = SHA256.HashData(Encoding.UTF8.GetBytes(suppliedKey));
+                  return CryptographicOperations.FixedTimeEquals(expectedDigest, suppliedDigest);
+              }
+
+              public partial class Program;
+              ''')
+
+          write(
+              'tests/Acceptance/Acceptance.Control/AcceptanceAnalyticsScenarioService.cs',
+              '''
+              using System.Globalization;
+              using System.Security.Cryptography;
+              using System.Text;
+              using Aggregator.Acceptance.Contracts;
+              using Aggregator.Analytics.Application;
+
+              namespace Aggregator.Acceptance.Control;
+
+              public sealed class AcceptanceAnalyticsScenarioService(
+                  IPublicReadReferenceProjectionWriter publicReadWriter,
+                  IListingMetricsAccessProjectionWriter accessWriter,
+                  IAnalyticsAggregateWriter aggregateWriter)
+              {
+                  public async Task<BootstrapAnalyticsProjectionResponse> BootstrapAsync(
+                      BootstrapAnalyticsProjectionRequest request,
+                      CancellationToken cancellationToken)
+                  {
+                      ArgumentNullException.ThrowIfNull(request);
+                      ArgumentNullException.ThrowIfNull(request.PublicListingIds);
+                      ArgumentException.ThrowIfNullOrWhiteSpace(request.CatalogKey);
+                      if (request.PublicReadRevisionId == Guid.Empty ||
+                          request.BaseProjectionId == Guid.Empty ||
+                          request.PromotionOverlayId == Guid.Empty ||
+                          request.SafetyOverlayId == Guid.Empty ||
+                          request.SourcePublicationId == Guid.Empty ||
+                          request.ActorId == Guid.Empty)
+                      {
+                          throw new ArgumentException(
+                              "Acceptance Analytics projection requires non-empty owner identities.",
+                              nameof(request));
+                      }
+
+                      if (request.ActivatedAtUtc.Offset != TimeSpan.Zero)
+                      {
+                          throw new ArgumentException(
+                              "Acceptance Analytics projection activation time must use UTC.",
+                              nameof(request));
+                      }
+
+                      var listingIds = request.PublicListingIds
+                          .Order()
+                          .ToArray();
+                      if (listingIds.Length == 0 ||
+                          listingIds.Any(listingId => listingId == Guid.Empty) ||
+                          listingIds.Distinct().Count() != listingIds.Length)
+                      {
+                          throw new ArgumentException(
+                              "Acceptance Analytics projection requires a non-empty unique public listing set.",
+                              nameof(request));
+                      }
+
+                      var publicReadDigest = ComputeDigest(
+                      [
+                          request.PublicReadRevisionId.ToString("D"),
+                          request.CatalogKey.Trim(),
+                          request.BaseProjectionId.ToString("D"),
+                          request.PromotionOverlayId.ToString("D"),
+                          request.SafetyOverlayId.ToString("D"),
+                          request.SourcePublicationId.ToString("D"),
+                          request.ActivatedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+                      ]);
+                      var membershipDigest = ComputeDigest(
+                          listingIds.Select(listingId => listingId.ToString("D")));
+                      var projection = PublicReadReferenceProjection.Create(
+                          request.PublicReadRevisionId,
+                          request.CatalogKey,
+                          request.BaseProjectionId,
+                          request.PromotionOverlayId,
+                          request.SafetyOverlayId,
+                          request.SourcePublicationId,
+                          publicReadDigest,
+                          membershipDigest,
+                          request.ActivatedAtUtc,
+                          listingIds);
+                      await publicReadWriter.ApplyAsync(projection, cancellationToken);
+
+                      foreach (var listingId in listingIds)
+                      {
+                          var accessDigest = ComputeDigest(
+                          [
+                              listingId.ToString("D"),
+                              request.ActorId.ToString("D"),
+                              bool.TrueString,
+                              "1",
+                          ]);
+                          var access = ListingMetricsAccessProjection.Create(
+                              listingId,
+                              request.ActorId,
+                              canViewAnalytics: true,
+                              sourceRevision: 1,
+                              accessDigest,
+                              request.ActivatedAtUtc);
+                          await accessWriter.ApplyAsync(access, cancellationToken);
+                      }
+
+                      return new BootstrapAnalyticsProjectionResponse(
+                          request.PublicReadRevisionId,
+                          publicReadDigest,
+                          membershipDigest,
+                          listingIds.Length);
+                  }
+
+                  public async Task<RebuildAnalyticsMetricsResponse> RebuildAsync(
+                      RebuildAnalyticsMetricsRequest request,
+                      CancellationToken cancellationToken)
+                  {
+                      ArgumentNullException.ThrowIfNull(request);
+                      var service = new RebuildDailyAnalyticsMetricsService(
+                          aggregateWriter,
+                          AcceptanceClosedDayTimeProvider.Instance);
+                      var result = await service.RebuildAsync(
+                          new RebuildDailyAnalyticsMetricsRequest(
+                              request.Date,
+                              request.Date.AddDays(1)),
+                          cancellationToken);
+                      return new RebuildAnalyticsMetricsResponse(
+                          result.FromInclusive,
+                          result.ToExclusive,
+                          result.MaterializedMetricCount,
+                          result.RemovedStaleMetricCount,
+                          result.CompletedAtUtc);
+                  }
+
+                  private static string ComputeDigest(IEnumerable<string> parts)
+                  {
+                      ArgumentNullException.ThrowIfNull(parts);
+                      var canonical = string.Join(
+                          "\n",
+                          parts.Select(part =>
+                              string.IsNullOrWhiteSpace(part)
+                                  ? throw new ArgumentException(
+                                      "Acceptance Analytics digest input cannot be empty.",
+                                      nameof(parts))
+                                  : part.Trim()));
+                      return Convert.ToHexStringLower(
+                          SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+                  }
+
+                  private sealed class AcceptanceClosedDayTimeProvider : TimeProvider
+                  {
+                      public static readonly AcceptanceClosedDayTimeProvider Instance = new();
+
+                      public override DateTimeOffset GetUtcNow() =>
+                          TimeProvider.System.GetUtcNow().AddDays(1);
+                  }
+              }
+              ''')
+
+          catalog_service = Path(
+              'tests/Acceptance/Acceptance.Control/AcceptanceCatalogScenarioService.cs')
+          source = catalog_service.read_text(encoding='utf-8')
+          if 'using Aggregator.Acceptance.Contracts;\n' not in source:
+              source = source.replace(
+                  'using Aggregator.Catalog.Application;\n',
+                  'using Aggregator.Acceptance.Contracts;\nusing Aggregator.Catalog.Application;\n',
+                  1)
+          records_marker = '\npublic sealed record CatalogSeedRequest(\n'
+          records_index = source.find(records_marker)
+          if records_index < 0:
+              raise SystemExit('Acceptance Catalog duplicate contract block is missing.')
+          source = source[:records_index].rstrip() + '\n'
+          catalog_service.write_text(source, encoding='utf-8', newline='\n')
+
+          write(
+              'tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj',
+              '''
+              <Project Sdk="Microsoft.NET.Sdk.Web">
+                <PropertyGroup>
+                  <IsPackable>false</IsPackable>
+                </PropertyGroup>
+                <ItemGroup>
+                  <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
+                  <ProjectReference Include="../../../src/Analytics/Analytics.Application/Analytics.Application.csproj" />
+                  <ProjectReference Include="../../../src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+                  <ProjectReference Include="../../../src/Catalog/Catalog.Application/Catalog.Application.csproj" />
+                  <ProjectReference Include="../../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
+                  <ProjectReference Include="../../../src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
+                  <ProjectReference Include="../../../src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
+                </ItemGroup>
+              </Project>
+              ''')
+
+          write(
+              'tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj',
+              '''
+              <Project Sdk="Microsoft.NET.Sdk.Web">
+                <PropertyGroup>
+                  <IsPackable>false</IsPackable>
+                </PropertyGroup>
+                <ItemGroup>
+                  <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
+                </ItemGroup>
+              </Project>
+              ''')
+
+          identity = Path('tests/Acceptance/Acceptance.Identity/Program.cs')
+          source = identity.read_text(encoding='utf-8')
+          if 'using Aggregator.Acceptance.Contracts;\n' not in source:
+              source = source.replace(
+                  'using System.Text.Json;\n',
+                  'using System.Text.Json;\nusing Aggregator.Acceptance.Contracts;\n',
+                  1)
+          source = source.replace(
+              '        "promotion.publish",\n',
+              '        "promotion.publish",\n        "promotion.overlay.publish",\n        "analytics.view-listing",\n',
+              1)
+          source = source.replace(
+              '        ? "0198ff00-0000-7000-8000-000000000001"\n',
+              '        ? AcceptanceScenarioIdentity.ActorId.ToString("D")\n',
+              1)
+          source = source.replace(
+              '            "aggregator-promotion-command",\n',
+              '            "aggregator-promotion-command",\n            "aggregator-analytics",\n',
+              1)
+          identity.write_text(source, encoding='utf-8', newline='\n')
+
+          write(
+              'tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj',
+              '''
+              <Project Sdk="Microsoft.NET.Sdk">
+                <PropertyGroup>
+                  <OutputType>Exe</OutputType>
+                  <IsPackable>false</IsPackable>
+                </PropertyGroup>
+                <ItemGroup>
+                  <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
+                  <ProjectReference Include="../../../src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj" />
+                  <ProjectReference Include="../../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj" />
+                  <ProjectReference Include="../../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
+                </ItemGroup>
+              </Project>
+              ''')
+
+          write(
+              'tests/Acceptance/Acceptance.Runner/CatalogControlContracts.cs',
+              '''
+              namespace Aggregator.Acceptance.Runner;
+
+              public sealed record QueryOrganicSnapshot(
+                  Guid PublicReadRevisionId,
+                  Guid BaseProjectionId,
+                  Guid PromotionOverlayId,
+                  Guid SafetyOverlayId,
+                  Guid SourcePublicationId,
+                  DateTimeOffset GeneratedAtUtc,
+                  Guid ListingId,
+                  string Title,
+                  string RoutePath,
+                  string ResolvedLocale);
+
+              public sealed record AcceptanceReport(
+                  DateTimeOffset StartedAtUtc,
+                  DateTimeOffset CompletedAtUtc,
+                  Guid CollectorCandidateId,
+                  Guid ListingId,
+                  Guid FirstPublicationId,
+                  Guid FirstPublicReadRevisionId,
+                  Guid FirstPromotionOverlayId,
+                  Guid SecondPublicationId,
+                  Guid SecondPublicReadRevisionId,
+                  Guid RollbackPublicReadRevisionId,
+                  Guid RollbackPromotionOverlayId,
+                  long AnalyticsOrganicImpressions,
+                  long AnalyticsListingOpens,
+                  long AnalyticsWebsiteClicks,
+                  IReadOnlyList<string> VerifiedInvariants);
+              ''')
+
+          write(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceOptions.cs',
+              '''
+              namespace Aggregator.Acceptance.Runner;
+
+              public sealed record AcceptanceOptions
+              {
+                  public required Uri IdentityBaseUrl { get; init; }
+
+                  public required Uri CollectorBaseUrl { get; init; }
+
+                  public required Uri CatalogControlBaseUrl { get; init; }
+
+                  public required Uri QueryBaseUrl { get; init; }
+
+                  public required Uri AnalyticsBaseUrl { get; init; }
+
+                  public required Uri PromotionOverlayBaseUrl { get; init; }
+
+                  public required string AcceptanceKey { get; init; }
+
+                  public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(3);
+
+                  public void Validate()
+                  {
+                      ValidateHttpUri(IdentityBaseUrl, nameof(IdentityBaseUrl));
+                      ValidateHttpUri(CollectorBaseUrl, nameof(CollectorBaseUrl));
+                      ValidateHttpUri(CatalogControlBaseUrl, nameof(CatalogControlBaseUrl));
+                      ValidateHttpUri(QueryBaseUrl, nameof(QueryBaseUrl));
+                      ValidateHttpUri(AnalyticsBaseUrl, nameof(AnalyticsBaseUrl));
+                      ValidateHttpUri(PromotionOverlayBaseUrl, nameof(PromotionOverlayBaseUrl));
+                      if (string.IsNullOrWhiteSpace(AcceptanceKey) || AcceptanceKey.Length < 32)
+                      {
+                          throw new InvalidOperationException(
+                              "Acceptance key must contain at least 32 characters.");
+                      }
+
+                      if (Timeout is < TimeSpan.FromSeconds(30) or > TimeSpan.FromMinutes(15))
+                      {
+                          throw new InvalidOperationException(
+                              "Acceptance timeout must be between 30 seconds and 15 minutes.");
+                      }
+                  }
+
+                  private static void ValidateHttpUri(Uri value, string name)
+                  {
+                      ArgumentNullException.ThrowIfNull(value);
+                      if (!value.IsAbsoluteUri || value.Scheme is not ("http" or "https"))
+                      {
+                          throw new InvalidOperationException(
+                              $"Acceptance URI '{name}' must use HTTP or HTTPS.");
+                      }
+                  }
+              }
+              ''')
+
+          runner_program = Path('tests/Acceptance/Acceptance.Runner/Program.cs')
+          source = runner_program.read_text(encoding='utf-8')
+          source = source.replace(
+              '    AcceptanceKey = RequireSetting("Acceptance__InternalKey"),\n'
+              '    AnalyticsInternalMetricsKey = RequireSetting(\n'
+              '        "Acceptance__AnalyticsInternalMetricsKey"),\n',
+              '    AcceptanceKey = RequireSetting("Acceptance__InternalKey"),\n',
+              1)
+          runner_program.write_text(source, encoding='utf-8', newline='\n')
+
+          http = Path('tests/Acceptance/Acceptance.Runner/AcceptanceHttp.cs')
+          source = http.read_text(encoding='utf-8')
+          if 'using Aggregator.Acceptance.Contracts;\n' not in source:
+              source = source.replace(
+                  'using System.Text.Json.Serialization;\n',
+                  'using System.Text.Json.Serialization;\nusing Aggregator.Acceptance.Contracts;\n',
+                  1)
+          source = source.replace(
+              '                    ["actor_id"] = "0198ff00-0000-7000-8000-000000000001",\n',
+              '                    ["actor_id"] = AcceptanceScenarioIdentity.ActorId.ToString("D"),\n',
+              1)
+          old_get = '''    public static async Task<TResponse> GetAsync<TResponse>(
+              HttpClient client,
+              string relativePath,
+              IReadOnlyDictionary<string, string>? headers,
+              CancellationToken cancellationToken)
+          {
+              ArgumentNullException.ThrowIfNull(client);
+              ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+              using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
+              AddHeaders(request, bearerToken: null, headers);
+              using var response = await client.SendAsync(request, cancellationToken);
+              return await ReadRequiredAsync<TResponse>(response, cancellationToken);
+          }
+          '''
+          new_get = '''    public static Task<TResponse> GetAsync<TResponse>(
+              HttpClient client,
+              string relativePath,
+              IReadOnlyDictionary<string, string>? headers,
+              CancellationToken cancellationToken) =>
+              GetAsync<TResponse>(
+                  client,
+                  relativePath,
+                  bearerToken: null,
+                  headers,
+                  cancellationToken);
+
+          public static async Task<TResponse> GetAsync<TResponse>(
+              HttpClient client,
+              string relativePath,
+              string? bearerToken,
+              IReadOnlyDictionary<string, string>? headers,
+              CancellationToken cancellationToken)
+          {
+              ArgumentNullException.ThrowIfNull(client);
+              ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+              using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
+              AddHeaders(request, bearerToken, headers);
+              using var response = await client.SendAsync(request, cancellationToken);
+              return await ReadRequiredAsync<TResponse>(response, cancellationToken);
+          }
+          '''
+          if old_get not in source:
+              raise SystemExit('Acceptance GET helper anchor is missing.')
+          source = source.replace(old_get, new_get, 1)
+          http.write_text(source, encoding='utf-8', newline='\n')
+
+          scenario = Path('tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs')
+          source = scenario.read_text(encoding='utf-8')
+          if 'using Aggregator.Acceptance.Contracts;\n' not in source:
+              source = source.replace(
+                  'using Aggregator.Analytics.Contracts;\n',
+                  'using Aggregator.Acceptance.Contracts;\nusing Aggregator.Analytics.Contracts;\n',
+                  1)
+          catalog_seed_anchor = (
+              '        var catalogSeed = await '
+              'AcceptanceHttp.PostAsync<CatalogSeedRequest, CatalogSeedResponse>(\n')
+          if catalog_seed_anchor not in source:
+              raise SystemExit('Acceptance Catalog seed call anchor is missing.')
+          source = source.replace(
+              catalog_seed_anchor,
+              '        var hourlyPrice = candidate.HourlyPrice\n'
+              '            ?? throw new InvalidOperationException(\n'
+              '                "Collector candidate did not provide the required observed hourly price.");\n'
+              + catalog_seed_anchor,
+              1)
+          source = source.replace(
+              '                candidate.HourlyPrice ?? 0m),\n',
+              '                hourlyPrice),\n',
+              1)
+          analytics_start = source.find('        var analyticsEvents = new[]\n')
+          analytics_end = source.find(
+              '        var campaignId = Guid.Parse("0198fe00-0000-7000-8000-000000000201");\n',
+              analytics_start)
+          if analytics_start < 0 or analytics_end < 0:
+              raise SystemExit('Legacy Acceptance Analytics block was not found.')
+          analytics_block = '''        var analyticsToken = await AcceptanceHttp.GetTokenAsync(
+              _identityClient,
+              "analytics.view-listing",
+              cancellationToken);
+          var projection = await AcceptanceHttp.PostAsync<
+              BootstrapAnalyticsProjectionRequest,
+              BootstrapAnalyticsProjectionResponse>(
+              _catalogControlClient,
+              "acceptance/analytics/projections",
+              new BootstrapAnalyticsProjectionRequest(
+                  firstQuery.PublicReadRevisionId,
+                  "berlin-recording-services",
+                  firstQuery.BaseProjectionId,
+                  firstQuery.PromotionOverlayId,
+                  firstQuery.SafetyOverlayId,
+                  firstQuery.SourcePublicationId,
+                  firstQuery.GeneratedAtUtc,
+                  AcceptanceScenarioIdentity.ActorId,
+                  [firstQuery.ListingId]),
+              bearerToken: null,
+              acceptanceHeaders,
+              cancellationToken);
+          Require(
+              projection.PublicReadRevisionId == firstQuery.PublicReadRevisionId &&
+              projection.ListingCount == 1,
+              "Analytics projection bootstrap must preserve the exact Query public-read identity and membership.");
+
+          var analyticsOccurredAtUtc = DateTimeOffset.UtcNow;
+          var analyticsEventDefinitions = new[]
+          {
+              (
+                  Id: Guid.Parse("0198fe00-0000-7000-8000-000000000101"),
+                  Kind: InteractionEventKindContract.ListingImpression,
+                  PageContext: "search-results",
+                  Placement: new PlacementContextContract(
+                      PlacementExposureKindContract.Organic,
+                      PlacementId: null,
+                      ScopeKey: "recording-studio")),
+              (
+                  Id: Guid.Parse("0198fe00-0000-7000-8000-000000000102"),
+                  Kind: InteractionEventKindContract.ListingOpened,
+                  PageContext: "listing-detail",
+                  Placement: new PlacementContextContract(
+                      PlacementExposureKindContract.NotApplicable,
+                      PlacementId: null,
+                      ScopeKey: null)),
+              (
+                  Id: Guid.Parse("0198fe00-0000-7000-8000-000000000103"),
+                  Kind: InteractionEventKindContract.WebsiteClicked,
+                  PageContext: "listing-detail",
+                  Placement: new PlacementContextContract(
+                      PlacementExposureKindContract.NotApplicable,
+                      PlacementId: null,
+                      ScopeKey: null)),
+          };
+          var analyticsRequests = new List<SubmitInteractionEventRequest>();
+          foreach (var definition in analyticsEventDefinitions)
+          {
+              var proof = await AcceptanceHttp.PostAsync<
+                  IssueAnalyticsAntiAbuseTokenRequest,
+                  AnalyticsAntiAbuseTokenResponse>(
+                  _analyticsClient,
+                  "api/analytics/anti-abuse-tokens",
+                  new IssueAnalyticsAntiAbuseTokenRequest(
+                      definition.Id,
+                      analyticsOccurredAtUtc),
+                  bearerToken: null,
+                  headers: null,
+                  cancellationToken);
+              var request = new SubmitInteractionEventRequest(
+                  definition.Id,
+                  definition.Kind,
+                  "berlin-recording-services",
+                  firstQuery.ListingId,
+                  firstQuery.PublicReadRevisionId,
+                  analyticsOccurredAtUtc,
+                  definition.PageContext,
+                  definition.Placement,
+                  ReferrerClassContract.Internal,
+                  new Dictionary<string, string>(StringComparer.Ordinal),
+                  ConsentModeContract.AnalyticsAllowed,
+                  proof.Token);
+              var response = await AcceptanceHttp.PostAsync<
+                  SubmitInteractionEventRequest,
+                  InteractionEventResponse>(
+                  _analyticsClient,
+                  "api/analytics/interaction-events",
+                  request,
+                  bearerToken: null,
+                  headers: null,
+                  cancellationToken);
+              Require(
+                  response.AcceptanceState == InteractionAcceptanceStateContract.Accepted,
+                  "First Analytics event submission must be accepted.");
+              analyticsRequests.Add(request);
+          }
+
+          var analyticsReplay = await AcceptanceHttp.PostAsync<
+              SubmitInteractionEventRequest,
+              InteractionEventResponse>(
+              _analyticsClient,
+              "api/analytics/interaction-events",
+              analyticsRequests[0],
+              bearerToken: null,
+              headers: null,
+              cancellationToken);
+          Require(
+              analyticsReplay.AcceptanceState ==
+              InteractionAcceptanceStateContract.AlreadyApplied,
+              "Exact Analytics event replay must return the original semantic result.");
+          var analyticsCollisionStatus = await AcceptanceHttp.PostForStatusAsync(
+              _analyticsClient,
+              "api/analytics/interaction-events",
+              analyticsRequests[0] with { PageContext = "listing-detail" },
+              bearerToken: null,
+              headers: null,
+              cancellationToken);
+          Require(
+              analyticsCollisionStatus == HttpStatusCode.Conflict,
+              "Analytics semantic event identity reused for changed content must return 409.");
+
+          var metricDate = DateOnly.FromDateTime(analyticsOccurredAtUtc.UtcDateTime);
+          var rebuild = await AcceptanceHttp.PostAsync<
+              RebuildAnalyticsMetricsRequest,
+              RebuildAnalyticsMetricsResponse>(
+              _catalogControlClient,
+              "acceptance/analytics/aggregate-rebuilds",
+              new RebuildAnalyticsMetricsRequest(metricDate),
+              bearerToken: null,
+              acceptanceHeaders,
+              cancellationToken);
+          Require(
+              rebuild.FromInclusive == metricDate &&
+              rebuild.ToExclusive == metricDate.AddDays(1) &&
+              rebuild.MaterializedMetricCount >= 1,
+              "Analytics aggregate owner must materialize the exact closed UTC date.");
+
+          var metrics = await AcceptanceHttp.GetAsync<DailyListingMetricsResponse[]>(
+              _analyticsClient,
+              $"api/analytics/listings/{firstQuery.ListingId:D}/daily-metrics" +
+              $"?catalogKey=berlin-recording-services" +
+              $"&fromInclusive={metricDate:yyyy-MM-dd}" +
+              $"&toExclusive={metricDate.AddDays(1):yyyy-MM-dd}",
+              analyticsToken,
+              headers: null,
+              cancellationToken);
+          var metric = metrics.SingleOrDefault()
+              ?? throw new InvalidOperationException(
+                  "Analytics did not return the exact materialized daily metric.");
+          var analyticsCounts = metric.Counts
+              ?? throw new InvalidOperationException(
+                  "Complete Analytics metric did not contain observed counts.");
+          Require(
+              metric.Readiness == AggregateReadinessStateContract.Complete,
+              "Analytics metric must be explicitly complete.");
+          Require(
+              analyticsCounts.OrganicImpressions == 1 &&
+              analyticsCounts.SponsoredImpressions == 0 &&
+              analyticsCounts.ListingOpens == 1 &&
+              analyticsCounts.WebsiteClicks == 1,
+              "Analytics aggregate must count canonical impression, open, and website-click events exactly once.");
+
+          '''
+          source = source[:analytics_start] + analytics_block + source[analytics_end:]
+          source = source.replace(
+              '            metrics.ListingViews,\n'
+              '            metrics.ContactClicks,\n'
+              '            metrics.Leads,\n',
+              '            analyticsCounts.OrganicImpressions,\n'
+              '            analyticsCounts.ListingOpens,\n'
+              '            analyticsCounts.WebsiteClicks,\n',
+              1)
+          source = source.replace(
+              '                "Analytics exact replay is idempotent and changed payload collision fails",\n'
+              '                "Analytics stores keyed session hashes and updates listing aggregates exactly once",\n',
+              '                "Analytics anti-abuse proof is bound to the exact event identity and occurrence time",\n'
+              '                "Analytics exact replay is idempotent and changed payload collision fails",\n'
+              '                "Analytics validates exact Query public-read membership through its local projection",\n'
+              '                "Analytics owner report is authorized through the local listing-access projection",\n'
+              '                "Analytics aggregates canonical impression, listing-open, and website-click events without inventing a lead",\n',
+              1)
+          source = source.replace(
+              '        var publicReadRevisionId = '
+              'metadata.GetProperty("publicReadRevisionId").GetGuid();\n'
+              '        var sourcePublicationId = '
+              'metadata.GetProperty("sourcePublicationId").GetGuid();\n',
+              '        var publicReadRevisionId = '
+              'metadata.GetProperty("publicReadRevisionId").GetGuid();\n'
+              '        var baseProjectionId = '
+              'metadata.GetProperty("baseProjectionId").GetGuid();\n'
+              '        var promotionOverlayId = '
+              'metadata.GetProperty("promotionOverlayId").GetGuid();\n'
+              '        var safetyOverlayId = '
+              'metadata.GetProperty("safetyOverlayId").GetGuid();\n'
+              '        var sourcePublicationId = '
+              'metadata.GetProperty("sourcePublicationId").GetGuid();\n'
+              '        var generatedAtUtc = '
+              'metadata.GetProperty("generatedAtUtc").GetDateTimeOffset();\n',
+              1)
+          source = source.replace(
+              '            return new QueryOrganicSnapshot(\n'
+              '                publicReadRevisionId,\n'
+              '                sourcePublicationId,\n'
+              '                listingId,\n',
+              '            return new QueryOrganicSnapshot(\n'
+              '                publicReadRevisionId,\n'
+              '                baseProjectionId,\n'
+              '                promotionOverlayId,\n'
+              '                safetyOverlayId,\n'
+              '                sourcePublicationId,\n'
+              '                generatedAtUtc,\n'
+              '                listingId,\n',
+              1)
+          source = source.replace(
+              "        value.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)\n",
+              '        value.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)\n',
+              1)
+          scenario.write_text(source, encoding='utf-8', newline='\n')
+
+          write(
+              'compose.acceptance.yml',
+              '''
+              services:
+                acceptance-identity:
+                  build:
+                    context: .
+                    dockerfile: Dockerfile
+                    args:
+                      PROJECT: tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj
+                      ENTRY_DLL: Acceptance.Identity.dll
+                  environment:
+                    ASPNETCORE_ENVIRONMENT: Development
+                    ASPNETCORE_URLS: http://+:8080
+                    AcceptanceIdentity__Issuer: http://acceptance-identity:8080
+                  restart: unless-stopped
+                  networks: [backend]
+
+                collector-migrations:
+                  build:
+                    context: .
+                    dockerfile: Dockerfile
+                    args:
+                      PROJECT: src/Ingestion/Ingestion.Collector.Migrations/Ingestion.Collector.Migrations.csproj
+                      ENTRY_DLL: Ingestion.Collector.Migrations.dll
+                  environment:
+                    INGESTION_COLLECTOR_MIGRATOR_CONNECTION_STRING: Host=ingestion-db;Port=5432;Database=ingestion;Username=ingestion_owner;Password=${INGESTION_DB_PASSWORD:-ingestion-local-password}
+                  depends_on:
+                    ingestion-db:
+                      condition: service_healthy
+                  restart: "no"
+                  networks: [backend]
+
+                collector-api:
+                  build:
+                    context: .
+                    dockerfile: Dockerfile
+                    args:
+                      PROJECT: src/Ingestion/Ingestion.Collector.Api/Ingestion.Collector.Api.csproj
+                      ENTRY_DLL: Ingestion.Collector.Api.dll
+                  environment:
+                    ASPNETCORE_ENVIRONMENT: Development
+                    ConnectionStrings__Ingestion: Host=ingestion-db;Port=5432;Database=ingestion;Username=ingestion_owner;Password=${INGESTION_DB_PASSWORD:-ingestion-local-password}
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                  depends_on:
+                    collector-migrations:
+                      condition: service_completed_successfully
+                    acceptance-identity:
+                      condition: service_started
+                  restart: unless-stopped
+                  networks: [backend]
+
+                catalog-control:
+                  build:
+                    context: .
+                    dockerfile: Dockerfile
+                    args:
+                      PROJECT: tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj
+                      ENTRY_DLL: Acceptance.Control.dll
+                  environment:
+                    ASPNETCORE_ENVIRONMENT: Development
+                    ConnectionStrings__Catalog: Host=catalog-db;Port=5432;Database=catalog;Username=catalog_owner;Password=${CATALOG_DB_PASSWORD:-catalog-local-password}
+                    ConnectionStrings__Analytics: Host=analytics-db;Port=5432;Database=analytics;Username=analytics_owner;Password=${ANALYTICS_DB_PASSWORD:-analytics-local-password}
+                    Catalog__PublicationObjectStorage__ServiceUrl: http://object-storage:9000
+                    Catalog__PublicationObjectStorage__Region: us-east-1
+                    Catalog__PublicationObjectStorage__Bucket: aggregator
+                    Catalog__PublicationObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY:-aggregator}
+                    Catalog__PublicationObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY:-aggregator-local-secret-key}
+                    Catalog__PublicationObjectStorage__ForcePathStyle: "true"
+                    Acceptance__InternalKey: ${ACCEPTANCE_INTERNAL_KEY:-acceptance-internal-key-0123456789abcdef}
+                  depends_on:
+                    catalog-migrations:
+                      condition: service_completed_successfully
+                    analytics-migrations:
+                      condition: service_completed_successfully
+                    object-storage-init:
+                      condition: service_completed_successfully
+                  restart: unless-stopped
+                  networks: [backend]
+
+                catalog-api:
+                  environment:
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                  depends_on:
+                    acceptance-identity:
+                      condition: service_started
+
+                ingestion-api:
+                  environment:
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                  depends_on:
+                    acceptance-identity:
+                      condition: service_started
+
+                analytics-api:
+                  environment:
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                    Analytics__AntiAbuseSigningKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+                  depends_on:
+                    analytics-migrations:
+                      condition: service_completed_successfully
+                    acceptance-identity:
+                      condition: service_started
+
+                promotion-api:
+                  environment:
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                  depends_on:
+                    acceptance-identity:
+                      condition: service_started
+
+                promotion-overlay-api:
+                  environment:
+                    Authentication__Authority: http://acceptance-identity:8080
+                    Authentication__RequireHttpsMetadata: "false"
+                  depends_on:
+                    promotion-overlay-migrations:
+                      condition: service_completed_successfully
+                    acceptance-identity:
+                      condition: service_started
+
+                acceptance-runner:
+                  build:
+                    context: .
+                    dockerfile: Dockerfile
+                    args:
+                      PROJECT: tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj
+                      ENTRY_DLL: Acceptance.Runner.dll
+                  environment:
+                    Acceptance__IdentityBaseUrl: http://acceptance-identity:8080/
+                    Acceptance__CollectorBaseUrl: http://collector-api:8080/
+                    Acceptance__CatalogControlBaseUrl: http://catalog-control:8080/
+                    Acceptance__QueryBaseUrl: http://query-api:8080/
+                    Acceptance__AnalyticsBaseUrl: http://analytics-api:8080/
+                    Acceptance__PromotionOverlayBaseUrl: http://promotion-overlay-api:8080/
+                    Acceptance__InternalKey: ${ACCEPTANCE_INTERNAL_KEY:-acceptance-internal-key-0123456789abcdef}
+                    Acceptance__Timeout: 00:05:00
+                    Acceptance__ReportPath: /artifacts/acceptance-report.json
+                  volumes:
+                    - ${ACCEPTANCE_ARTIFACTS_PATH:-./.codex/acceptance-artifacts}:/artifacts
+                  restart: "no"
+                  networks: [backend]
+              ''')
+
+          write(
+              '.github/workflows/backend-acceptance-e2e.yml',
+              '''
+              name: backend-acceptance-e2e
+
+              on:
+                workflow_dispatch:
+                push:
+                  branches: [main]
+                  paths:
+                    - 'tests/Acceptance/**'
+                    - 'src/Analytics/**'
+                    - 'src/Query/**'
+                    - 'src/Catalog/**'
+                    - 'src/Ingestion/Ingestion.Collector.*/**'
+                    - 'src/Promotion/Promotion.Overlay.*/**'
+                    - 'compose.yml'
+                    - 'compose.runtime.yml'
+                    - 'compose.acceptance.yml'
+                    - 'Dockerfile'
+                    - '.github/workflows/backend-acceptance-e2e.yml'
+                pull_request:
+                  paths:
+                    - 'tests/Acceptance/**'
+                    - 'src/Analytics/**'
+                    - 'src/Query/**'
+                    - 'src/Catalog/**'
+                    - 'src/Ingestion/Ingestion.Collector.*/**'
+                    - 'src/Promotion/Promotion.Overlay.*/**'
+                    - 'compose.yml'
+                    - 'compose.runtime.yml'
+                    - 'compose.acceptance.yml'
+                    - 'Dockerfile'
+                    - '.github/workflows/backend-acceptance-e2e.yml'
+
+              permissions:
+                contents: read
+                statuses: write
+
+              concurrency:
+                group: backend-acceptance-e2e
+                cancel-in-progress: true
+
+              jobs:
+                prove:
+                  runs-on: ubuntu-24.04
+                  timeout-minutes: 50
+                  steps:
+                    - uses: actions/checkout@v5
+
+                    - name: Prepare deterministic report directory
+                      run: |
+                        rm -rf .codex/acceptance-artifacts
+                        mkdir -p .codex/acceptance-artifacts
+
+                    - name: Validate merged Compose contract
+                      run: >-
+                        docker compose
+                        -f compose.yml
+                        -f compose.runtime.yml
+                        -f compose.acceptance.yml
+                        config --quiet
+
+                    - name: Start acceptance owner topology
+                      run: >-
+                        docker compose
+                        -f compose.yml
+                        -f compose.runtime.yml
+                        -f compose.acceptance.yml
+                        up -d --build
+                        acceptance-identity
+                        collector-api
+                        catalog-control
+                        catalog-event-worker
+                        query-api
+                        query-worker
+                        analytics-api
+                        promotion-overlay-api
+                        promotion-overlay-worker
+
+                    - name: Execute backend acceptance scenario
+                      run: >-
+                        docker compose
+                        -f compose.yml
+                        -f compose.runtime.yml
+                        -f compose.acceptance.yml
+                        run --rm --no-deps acceptance-runner
+
+                    - name: Capture Compose diagnostics
+                      if: always()
+                      run: >-
+                        docker compose
+                        -f compose.yml
+                        -f compose.runtime.yml
+                        -f compose.acceptance.yml
+                        logs --no-color
+                        > .codex/acceptance-artifacts/compose.log
+
+                    - name: Upload acceptance proof
+                      if: always()
+                      uses: actions/upload-artifact@v4
+                      with:
+                        name: backend-acceptance-proof
+                        path: .codex/acceptance-artifacts
+                        if-no-files-found: error
+                        retention-days: 14
+
+                    - name: Stop acceptance topology
+                      if: always()
+                      run: >-
+                        docker compose
+                        -f compose.yml
+                        -f compose.runtime.yml
+                        -f compose.acceptance.yml
+                        down -v --remove-orphans
+
+                    - name: Publish connector-readable status
+                      if: always()
+                      uses: actions/github-script@v9
+                      env:
+                        JOB_STATUS: __JOB_STATUS_EXPRESSION__
+                      with:
+                        script: |
+                          const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+                          await github.rest.repos.createCommitStatus({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            sha: context.sha,
+                            state,
+                            target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                            description: `Backend acceptance: ${process.env.JOB_STATUS}`,
+                            context: 'ci/backend-acceptance'
+                          });
+              ''')
+
+          acceptance_workflow_path = Path(
+              '.github/workflows/backend-acceptance-e2e.yml')
+          acceptance_workflow = acceptance_workflow_path.read_text(encoding='utf-8')
+          acceptance_workflow = acceptance_workflow.replace(
+              '__JOB_STATUS_EXPRESSION__',
+              '${' + '{ job.status }}')
+          acceptance_workflow_path.write_text(
+              acceptance_workflow,
+              encoding='utf-8',
+              newline='\n')
+
+          analytics_module = Path('.codex/modules/analytics.md')
+          source = analytics_module.read_text(encoding='utf-8')
+          source = source.replace(
+              '- `Analytics.Contracts`: public interaction write contracts and owner metrics read contracts.\n',
+              '- `Analytics.Contracts`: public anti-abuse proof, interaction write, and owner metrics read contracts.\n',
+              1)
+          source = source.replace(
+              'Real PostgreSQL uniqueness races, serializable projection ordering, migration execution, and aggregate rebuild remain integration-proof requirements for the repository-wide acceptance stage.\n',
+              'The Docker acceptance workflow now exercises exact Query identities, Analytics-local public membership and access projections, anti-abuse-bound canonical events, explicit aggregate rebuild, authorized daily metrics, replay, and changed-payload conflict. The Acceptance control bootstrap is a test-only projection fixture; production Query/Catalog event consumers remain a separate broker-delivery proof and are not implied by this fixture.\n',
+              1)
+          analytics_module.write_text(source, encoding='utf-8', newline='\n')
+
+          require_absent(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs',
+              'RecordAnalyticsInteractionRequest')
+          require_absent(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs',
+              'AnalyticsInteractionReceipt')
+          require_absent(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs',
+              'AnalyticsListingMetricsResponse')
+          require_absent(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs',
+              'AnalyticsInteractionKindContract.Lead')
+          require_absent(
+              'tests/Acceptance/Acceptance.Runner/AcceptanceOptions.cs',
+              'AnalyticsInternalMetricsKey')
+          require_absent(
+              'src/Analytics/Analytics.Api/AnalyticsAntiAbuseProofService.cs',
+              'public sealed record IssueAnalyticsAntiAbuseTokenRequest')
+
+      - name: Synchronize project inventory and solutions
+        shell: bash
+        run: |
+          python3 .tools/complete-backend.py
+          project='tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj'
+          if ! dotnet sln AggregatorBackend.All.slnx list | grep -Fq "$project"; then
+            dotnet sln AggregatorBackend.All.slnx add "$project"
+          fi
+          python3 .tools/complete-backend.py --check
+
+      - name: Restore
+        run: dotnet restore AggregatorBackend.slnx
+
+      - name: Format owned solution
+        run: |
+          dotnet format AggregatorBackend.slnx --no-restore
+          dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
+
+      - name: Build with warnings as errors
+        run: >-
+          dotnet build AggregatorBackend.slnx
+          --no-restore -warnaserror /m:1 /nr:false
+
+      - name: Execute complete test suite
+        run: >-
+          dotnet test AggregatorBackend.slnx
+          --no-build --no-restore -warnaserror
+          --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Generate and verify producer contracts
+        run: |
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj \
+            --no-build -- --write
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj \
+            --no-build -- --verify
+
+      - name: Commit proven owner-aligned result
+        shell: bash
+        run: |
+          rm -f .github/workflows/repair-acceptance-analytics-owner.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Align acceptance with canonical Analytics owner'
+          git pull --rebase origin main
+          git push origin HEAD:main
