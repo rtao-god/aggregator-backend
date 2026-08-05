@@ -1,5 +1,5 @@
 gate=Canonical atomic static gate
-error=Canonical atomic static gate: skipped; child_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962031964; child_sha=f7e76dc92bbb0c7fc43acd3cef83e094ac7b6ab8
-controller_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962025894
-source_sha=f7e76dc92bbb0c7fc43acd3cef83e094ac7b6ab8
-recorded_at=2026-08-05T00:03:13.912Z
+error=Canonical atomic static gate: skipped; child_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962319691; child_sha=92684d23de442a41c863eff513431c6357e61f32
+controller_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962313255
+source_sha=92684d23de442a41c863eff513431c6357e61f32
+recorded_at=2026-08-05T00:08:16.251Z
