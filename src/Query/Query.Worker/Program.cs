@@ -1,3 +1,4 @@
+using Aggregator.Promotion.Contracts;
 using Aggregator.Query.Application;
 using Aggregator.Query.Infrastructure;
 using Aggregator.Query.Worker;
@@ -44,15 +45,15 @@ var promotionWorkerOptions = new QueryPromotionWorkerOptions
     Exchange = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:Exchange"]
         ?? workerOptions.Exchange,
     Queue = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:Queue"]
-        ?? "query.promotion-overlay-projection",
+        ?? "query.promotion-placement-projection",
     DeadLetterExchange = builder.Configuration[
         $"{QueryPromotionWorkerOptions.SectionName}:DeadLetterExchange"]
         ?? "aggregator.dead-letter",
     DeadLetterQueue = builder.Configuration[
         $"{QueryPromotionWorkerOptions.SectionName}:DeadLetterQueue"]
-        ?? "query.promotion-overlay-projection.dead-letter",
+        ?? "query.promotion-placement-projection.dead-letter",
     RoutingKey = builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:RoutingKey"]
-        ?? "promotion.overlay.activated",
+        ?? PromotionIntegrationEventTypes.PlacementChanged,
     PrefetchCount = ParseUShort(
         builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:PrefetchCount"],
         8,
@@ -152,7 +153,7 @@ static long ParseLong(string? value, long defaultValue, string path) =>
 
 internal sealed class SystemQueryClock : IQueryClock
 {
-    public DateTimeOffset GetUtcNow() => TimeProvider.System.GetUtcNow();
+    public DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow;
 }
 
 internal sealed class UuidV7QueryIdFactory : IQueryIdFactory

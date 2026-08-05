@@ -40,10 +40,10 @@ services:
       Query__Worker__PrefetchCount: "8"
       Query__PromotionWorker__BrokerUri: amqp://${RABBITMQ_USER:-aggregator}:${RABBITMQ_PASSWORD:-aggregator-local-password}@rabbitmq:5672
       Query__PromotionWorker__Exchange: aggregator.events
-      Query__PromotionWorker__Queue: query.promotion-overlay-projection
+      Query__PromotionWorker__Queue: query.promotion-placement-projection
       Query__PromotionWorker__DeadLetterExchange: aggregator.dead-letter
-      Query__PromotionWorker__DeadLetterQueue: query.promotion-overlay-projection.dead-letter
-      Query__PromotionWorker__RoutingKey: promotion.overlay.activated
+      Query__PromotionWorker__DeadLetterQueue: query.promotion-placement-projection.dead-letter
+      Query__PromotionWorker__RoutingKey: promotion.placement.changed
       Query__PromotionWorker__PrefetchCount: "8"
       Query__ObjectStorage__ServiceUrl: http://object-storage:9000
       Query__ObjectStorage__Region: us-east-1
@@ -120,3 +120,4 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks: [backend]
+}

@@ -1,3 +1,5 @@
+using Aggregator.Promotion.Contracts;
+
 namespace Aggregator.Query.Worker;
 
 public sealed record QueryPromotionWorkerOptions
@@ -8,13 +10,13 @@ public sealed record QueryPromotionWorkerOptions
 
     public string Exchange { get; init; } = "aggregator.events";
 
-    public string Queue { get; init; } = "query.promotion-overlay-projection";
+    public string Queue { get; init; } = "query.promotion-placement-projection";
 
     public string DeadLetterExchange { get; init; } = "aggregator.dead-letter";
 
-    public string DeadLetterQueue { get; init; } = "query.promotion-overlay-projection.dead-letter";
+    public string DeadLetterQueue { get; init; } = "query.promotion-placement-projection.dead-letter";
 
-    public string RoutingKey { get; init; } = "promotion.overlay.activated";
+    public string RoutingKey { get; init; } = PromotionIntegrationEventTypes.PlacementChanged;
 
     public ushort PrefetchCount { get; init; } = 8;
 

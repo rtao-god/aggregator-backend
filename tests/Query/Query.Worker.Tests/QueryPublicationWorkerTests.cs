@@ -1,3 +1,4 @@
+using Aggregator.Promotion.Contracts;
 using Aggregator.Query.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -60,6 +61,7 @@ public sealed class QueryPublicationWorkerTests
         Assert.Equal(
             [typeof(CatalogPublicationProjectionWorker), typeof(PromotionOverlayProjectionWorker)],
             hostedWorkerTypes);
+        Assert.Equal(PromotionIntegrationEventTypes.PlacementChanged, CreatePromotionOptions().RoutingKey);
     }
 
     private static QueryWorkerOptions CreatePublicationOptions() =>
@@ -77,10 +79,10 @@ public sealed class QueryPublicationWorkerTests
         {
             BrokerUri = new Uri("amqp://guest:guest@localhost:5672/"),
             Exchange = "aggregator.events",
-            Queue = "query.promotion-overlay-projection",
+            Queue = "query.promotion-placement-projection",
             DeadLetterExchange = "aggregator.dead-letter",
-            DeadLetterQueue = "query.promotion-overlay-projection.dead-letter",
-            RoutingKey = "promotion.overlay.activated",
+            DeadLetterQueue = "query.promotion-placement-projection.dead-letter",
+            RoutingKey = PromotionIntegrationEventTypes.PlacementChanged,
             PrefetchCount = 8,
         };
 }

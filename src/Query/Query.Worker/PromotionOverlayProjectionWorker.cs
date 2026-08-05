@@ -38,11 +38,11 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             Uri = _options.BrokerUri,
             AutomaticRecoveryEnabled = true,
             TopologyRecoveryEnabled = true,
-            ClientProvidedName = "query-promotion-overlay-projection-worker",
+            ClientProvidedName = "query-promotion-placement-projection-worker",
             RequestedHeartbeat = TimeSpan.FromSeconds(30),
         };
         _connection = await factory.CreateConnectionAsync(
-            "query-promotion-overlay-projection-worker",
+            "query-promotion-placement-projection-worker",
             stoppingToken);
         _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
         await DeclareTopologyAsync(_channel, stoppingToken);
@@ -97,21 +97,21 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
         {
             if (!string.Equals(
                     eventArgs.BasicProperties.Type,
-                    PromotionOverlayContractIdentity.ActivationEvent,
+                    PromotionIntegrationEventContracts.PlacementChanged,
                     StringComparison.Ordinal))
             {
                 throw new JsonException(
                     $"Promotion message contract '{eventArgs.BasicProperties.Type}' is unsupported.");
             }
 
-            var activation = JsonSerializer.Deserialize<PromotionOverlayActivated>(
+            var change = JsonSerializer.Deserialize<SponsoredPlacementChanged>(
                 eventArgs.Body.Span,
                 SerializerOptions)
-                ?? throw new JsonException("Promotion overlay activation payload is empty.");
+                ?? throw new JsonException("Promotion placement change payload is empty.");
             var payloadDigest = ReadRequiredHeader(eventArgs.BasicProperties.Headers, "payload-digest");
             await using var scope = _scopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<PromotionOverlayProjectionService>();
-            var result = await service.ApplyAsync(activation, payloadDigest, cancellationToken);
+            var result = await service.ApplyAsync(change, payloadDigest, cancellationToken);
             await channel.BasicAckAsync(
                 deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
@@ -119,11 +119,10 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             if (_logger.IsEnabled(LogLevel.Information))
             {
                 _logger.LogInformation(
-                    "Applied Promotion overlay {OverlayId} activation {ActivationRevision}; replayed={Replayed}; staleIgnored={StaleIgnored}",
-                    result.OverlayId,
-                    result.ActivationRevision,
-                    result.Replayed,
-                    result.StaleIgnored);
+                    "Applied Promotion placement {PlacementId} to public read revision {PublicReadRevisionId}; disposition={Disposition}",
+                    change.PlacementId,
+                    result.PublicReadRevision.Id,
+                    result.Disposition);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -134,7 +133,7 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
         {
             _logger.LogError(
                 exception,
-                "Dead-lettering invalid Promotion overlay message {MessageId}",
+                "Dead-lettering invalid Promotion placement message {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,
@@ -146,7 +145,7 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
         {
             _logger.LogError(
                 exception,
-                "Dead-lettering Promotion overlay message {MessageId} after projection failure",
+                "Dead-lettering Promotion placement message {MessageId} after projection failure",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,
