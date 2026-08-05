@@ -542,7 +542,7 @@ public sealed class AcceptanceScenario
         Guid expectedSourcePublicationId,
         string expectedTitle,
         CancellationToken cancellationToken,
-        IReadOnlySet<Guid>? disallowedRevisionIds = null)
+        HashSet<Guid>? disallowedRevisionIds = null)
     {
         var response = await AcceptanceHttp.GetAsync<PublicListingSearchResponse>(
             _queryClient,
@@ -612,7 +612,7 @@ public sealed class AcceptanceScenario
     };
 
     private static Uri EnsureTrailingSlash(Uri value) =>
-        value.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
+        value.AbsoluteUri.EndsWith('/')
             ? value
             : new Uri($"{value.AbsoluteUri}/", UriKind.Absolute);
 
