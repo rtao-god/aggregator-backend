@@ -16,24 +16,10 @@ app.MapGet("/.well-known/openid-configuration", () => Results.Json(new
     issuer,
     jwks_uri = $"{issuer.TrimEnd('/')}/jwks",
     token_endpoint = $"{issuer.TrimEnd('/')}/token",
-    grant_types_supported = new[] { "client_credentials" },
-    token_endpoint_auth_methods_supported = new[] { "none" },
-    scopes_supported = new[]
-    {
-        "catalog.manage-configuration",
-        "catalog.edit-listing",
-        "catalog.publish",
-        "catalog.rollback",
-        "catalog.submit-claim",
-        "catalog.verify-claim",
-        "catalog.test-contracts",
-        "ingestion.submit",
-        "ingestion.review",
-        "ingestion.admin",
-        "promotion.manage",
-        "promotion.publish",
-    },
-    id_token_signing_alg_values_supported = new[] { "RS256" },
+    grant_types_supported = AcceptanceIdentityMetadata.GrantTypes,
+    token_endpoint_auth_methods_supported = AcceptanceIdentityMetadata.TokenEndpointAuthenticationMethods,
+    scopes_supported = AcceptanceIdentityMetadata.Scopes,
+    id_token_signing_alg_values_supported = AcceptanceIdentityMetadata.SigningAlgorithms,
 }));
 app.MapGet("/jwks", (RSA signingKey) =>
 {
@@ -140,12 +126,7 @@ static string CreateToken(
     var payload = JsonSerializer.SerializeToUtf8Bytes(new
     {
         iss = issuer,
-        aud = new[]
-        {
-            "aggregator-catalog-command",
-            "aggregator-ingestion-command",
-            "aggregator-promotion-command",
-        },
+        aud = AcceptanceIdentityMetadata.Audiences,
         sub = subject,
         actor_id = actorId.ToString("D"),
         scope,
@@ -167,5 +148,37 @@ static string Base64Url(ReadOnlySpan<byte> value) =>
         .TrimEnd('=')
         .Replace('+', '-')
         .Replace('/', '_');
+
+internal static class AcceptanceIdentityMetadata
+{
+    public static readonly string[] GrantTypes = ["client_credentials"];
+
+    public static readonly string[] TokenEndpointAuthenticationMethods = ["none"];
+
+    public static readonly string[] Scopes =
+    [
+        "catalog.manage-configuration",
+        "catalog.edit-listing",
+        "catalog.publish",
+        "catalog.rollback",
+        "catalog.submit-claim",
+        "catalog.verify-claim",
+        "catalog.test-contracts",
+        "ingestion.submit",
+        "ingestion.review",
+        "ingestion.admin",
+        "promotion.manage",
+        "promotion.publish",
+    ];
+
+    public static readonly string[] SigningAlgorithms = ["RS256"];
+
+    public static readonly string[] Audiences =
+    [
+        "aggregator-catalog-command",
+        "aggregator-ingestion-command",
+        "aggregator-promotion-command",
+    ];
+}
 
 public partial class Program;
