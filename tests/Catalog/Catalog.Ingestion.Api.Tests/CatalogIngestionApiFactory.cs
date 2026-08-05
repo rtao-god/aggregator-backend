@@ -96,6 +96,7 @@ public sealed class CatalogIngestionApiFactory : WebApplicationFactory<Program>
             string callerIdentity,
             CancellationToken cancellationToken)
         {
+            ArgumentNullException.ThrowIfNull(command);
             cancellationToken.ThrowIfCancellationRequested();
             if (_results.TryGetValue(command.CommandId, out var existing))
             {
