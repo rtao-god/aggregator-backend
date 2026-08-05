@@ -1,0 +1,48 @@
+{
+  "workflow": "final-repository-proof",
+  "run_id": 30972690968,
+  "head_sha": "0f36a91c1861c221513121f660b6525ce6e728e7",
+  "conclusion": "failure",
+  "url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972690968",
+  "failed_jobs": [
+    {
+      "id": 92200271439,
+      "name": "prove",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972690968/job/92200271439",
+      "steps": [
+        {
+          "number": 5,
+          "name": "Format",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "number": 6,
+          "name": "Build",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 7,
+          "name": "Test",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 8,
+          "name": "Contract artifacts",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "number": 17,
+          "name": "Post Run actions/setup-dotnet@v5",
+          "status": "completed",
+          "conclusion": "skipped"
+        }
+      ]
+    }
+  ]
+}
