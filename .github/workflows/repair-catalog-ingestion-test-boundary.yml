@@ -1,0 +1,153 @@
+name: Repair Catalog ingestion test boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-catalog-ingestion-test-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-catalog-ingestion-test-boundary
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Add the exact public test-store guard
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          candidates = []
+          for path in Path('tests/Catalog').rglob('*.cs'):
+              text = path.read_text(encoding='utf-8')
+              if 'CatalogIngestionApiFactory' in text and 'UpsertAsync' in text:
+                  candidates.append((path, text))
+
+          if len(candidates) != 1:
+              raise RuntimeError(
+                  f'Expected one CatalogIngestionApiFactory source, found {len(candidates)}.')
+
+          path, text = candidates[0]
+          pattern = re.compile(
+              r'(?P<header>public\s+Task<[^>]+>\s+UpsertAsync\s*\('
+              r'.*?CatalogIngestionUpsertDraftCommand\s+command.*?\)\s*\{\n)'
+              r'(?P<body>\s*)',
+              re.DOTALL)
+          match = pattern.search(text)
+          if match is None:
+              raise RuntimeError(f'Catalog ingestion UpsertAsync owner boundary was not found in {path}.')
+
+          method_tail = text[match.end('header'):]
+          first_block = method_tail[:500]
+          guard = '        ArgumentNullException.ThrowIfNull(command);\n'
+          if 'ArgumentNullException.ThrowIfNull(command);' not in first_block:
+              text = text[:match.end('header')] + guard + text[match.end('header'):]
+              path.write_text(text, encoding='utf-8', newline='\n')
+
+      - name: Restore Catalog owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Catalog tests/Catalog -name '*.csproj' -type f | sort)
+          test "${#projects[@]}" -gt 0
+          for project in "${projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Format and verify changed Catalog test project
+        shell: bash
+        run: |
+          project=$(find tests/Catalog -name '*.csproj' -type f -exec grep -l 'CatalogIngestionApiFactory' {} + | head -n 1 || true)
+          if [ -z "$project" ]; then
+            source=$(grep -R -l --include='*.cs' 'CatalogIngestionApiFactory' tests/Catalog | head -n 1)
+            project=$(find "$(dirname "$source")" -maxdepth 1 -name '*.csproj' -type f | head -n 1)
+          fi
+          test -n "$project"
+          dotnet format "$project" --no-restore
+          dotnet format "$project" --verify-no-changes --no-restore
+
+      - name: Build Catalog production graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find src/Catalog -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --no-restore -warnaserror /m:1 /nr:false
+          done
+
+      - name: Test Catalog owner graph
+        shell: bash
+        run: |
+          mapfile -t projects < <(find tests/Catalog -name '*.csproj' -type f | sort)
+          for project in "${projects[@]}"; do
+            dotnet test "$project" --no-restore -warnaserror \
+              --logger 'console;verbosity=normal' /m:1 /nr:false
+          done
+
+      - name: Commit proven guard and remove this workflow
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- src/Catalog tests/Catalog)
+            test -z "$affected" || {
+              printf 'Catalog owner changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm .github/workflows/repair-catalog-ingestion-test-boundary.yml
+          paths=(src/Catalog tests/Catalog .github/workflows/repair-catalog-ingestion-test-boundary.yml)
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Validate Catalog ingestion test-store command boundary' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Catalog ingestion test boundary: ${process.env.JOB_STATUS}`,
+              context: 'ci/catalog-ingestion-test-boundary'
+            });
