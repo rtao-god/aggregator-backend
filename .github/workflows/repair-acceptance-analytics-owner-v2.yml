@@ -33,7 +33,7 @@ jobs:
         with:
           dotnet-version: 10.0.302
 
-      - name: Apply owner-aligned source repair
+      - name: Apply owner-aligned source repair v4
         run: python3 .codex/patches/acceptance-owner-repair-v4.py
 
       - name: Synchronize project inventory and solutions
