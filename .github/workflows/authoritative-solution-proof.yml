@@ -1,0 +1,99 @@
+name: authoritative-solution-proof
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: authoritative-solution-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore authoritative solution
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet restore AggregatorBackend.slnx 2>&1 | tee restore.log
+
+      - name: Verify formatting and analyzers
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet format AggregatorBackend.slnx \
+            --verify-no-changes --no-restore 2>&1 | tee format.log
+
+      - name: Build authoritative solution
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet build AggregatorBackend.slnx \
+            --no-restore -warnaserror /m:1 /nr:false 2>&1 | tee build.log
+
+      - name: Test authoritative solution
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test AggregatorBackend.slnx \
+            --no-build --logger 'console;verbosity=normal' /m:1 /nr:false 2>&1 | tee test.log
+
+      - name: Test architecture boundary explicitly
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-build --logger 'console;verbosity=normal' /m:1 /nr:false 2>&1 | tee architecture.log
+
+      - name: Upload exact diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authoritative-solution-proof-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            restore.log
+            format.log
+            build.log
+            test.log
+            architecture.log
+            **/TestResults/**
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const success = process.env.JOB_STATUS === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: success ? 'success' : 'failure',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: success
+                ? 'Restore, format, build, all tests and architecture passed'
+                : 'Authoritative solution proof failed; see exact artifact logs',
+              context: 'ci/authoritative-solution-proof'
+            });
