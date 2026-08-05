@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Aggregator.Acceptance.Contracts;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
@@ -120,7 +121,10 @@ app.MapPost("/acceptance/catalog/seed", async (
         listing.Id,
         revision.Id,
         publication.Id,
-        subject,
+        new SubjectReferenceResponse(
+            request.SubjectId,
+            request.SubjectRevisionId,
+            "place"),
         ExpectedListingVersionAfterPublication: 4));
 });
 app.MapPost("/acceptance/catalog/publish-next", async (
@@ -430,47 +434,5 @@ internal static class AcceptanceIds
     public static readonly DateTimeOffset CandidateObservedAtUtc =
         new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
 }
-
-internal sealed record CatalogSeedRequest(
-    Guid SubjectId,
-    Guid SubjectRevisionId,
-    string Title,
-    string SourceReference,
-    string EvidenceDigest,
-    string Website,
-    decimal HourlyPrice);
-
-internal sealed record CatalogSeedResponse(
-    Guid ConfigurationRevisionId,
-    Guid ListingId,
-    Guid ListingRevisionId,
-    Guid PublicationId,
-    SubjectReferenceContract Subject,
-    long ExpectedListingVersionAfterPublication);
-
-internal sealed record CatalogPublishNextRequest(
-    Guid ListingId,
-    Guid FirstPublicationId,
-    Guid SubjectId,
-    Guid SubjectRevisionId,
-    string Title,
-    string SourceReference,
-    string EvidenceDigest,
-    string Website,
-    decimal HourlyPrice);
-
-internal sealed record CatalogPublishNextResponse(
-    Guid ListingRevisionId,
-    Guid PublicationId,
-    long ExpectedListingVersionAfterPublication);
-
-internal sealed record CatalogRollbackRequest(
-    Guid TargetPublicationId,
-    Guid ExpectedCurrentPublicationId);
-
-internal sealed record CatalogRollbackResponse(
-    Guid CurrentPublicationId,
-    long PublicationSequence,
-    bool IsCurrent);
 
 public partial class Program;

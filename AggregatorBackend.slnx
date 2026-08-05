@@ -72,6 +72,8 @@
     <Project Path="src/Query/Query.Worker/Query.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/Acceptance/">
+    <Project Path="tests/Acceptance/Acceptance.Analytics.Control/Acceptance.Analytics.Control.csproj" />
+    <Project Path="tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj" />
     <Project Path="tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj" />
     <Project Path="tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj" />
     <Project Path="tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj" />

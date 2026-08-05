@@ -53,6 +53,12 @@ public sealed class RepositoryAutomationRulesTests
         var architectureIndex = workflow.IndexOf(
             "dotnet test tests/Architecture.Tests/Architecture.Tests.csproj",
             StringComparison.Ordinal);
+        var runtimeRestoreIndex = workflow.IndexOf(
+            "dotnet restore AggregatorBackend.Runtime.slnx",
+            StringComparison.Ordinal);
+        var runtimeBuildIndex = workflow.IndexOf(
+            "dotnet build AggregatorBackend.Runtime.slnx",
+            StringComparison.Ordinal);
         var solutionRestoreIndex = workflow.IndexOf(
             "dotnet restore AggregatorBackend.slnx",
             StringComparison.Ordinal);
@@ -66,10 +72,12 @@ public sealed class RepositoryAutomationRulesTests
         Assert.True(
             inventoryIndex >= 0 &&
             architectureIndex > inventoryIndex &&
-            solutionRestoreIndex > architectureIndex &&
+            runtimeRestoreIndex > architectureIndex &&
+            runtimeBuildIndex > runtimeRestoreIndex &&
+            solutionRestoreIndex > runtimeBuildIndex &&
             buildIndex > solutionRestoreIndex &&
             testIndex > buildIndex,
-            "CI must fail fast in this order: inventory, architecture, full restore, build, tests.");
+            "CI must fail fast in this order: inventory, architecture, runtime restore/build, complete restore/build, tests.");
 
         Assert.True(
             workflow.Contains("dotnet format whitespace", StringComparison.Ordinal) &&
@@ -102,6 +110,45 @@ public sealed class RepositoryAutomationRulesTests
         Assert.False(
             File.Exists(Path.Combine(repository.Root, "AggregatorBackend.All.slnx")),
             "AggregatorBackend.All.slnx is a stale second full-solution owner and must not exist.");
+    }
+
+    [Fact]
+    public void AcceptanceCompositionRootsStayOwnerScoped()
+    {
+        var repository = RepositoryModel.Load();
+        var acceptanceRoot = Path.Combine(repository.Root, "tests", "Acceptance");
+        var contracts = References(
+            repository,
+            Path.Combine(acceptanceRoot, "Acceptance.Contracts", "Acceptance.Contracts.csproj"));
+        var catalogControl = References(
+            repository,
+            Path.Combine(acceptanceRoot, "Acceptance.Control", "Acceptance.Control.csproj"));
+        var analyticsControl = References(
+            repository,
+            Path.Combine(acceptanceRoot, "Acceptance.Analytics.Control", "Acceptance.Analytics.Control.csproj"));
+        var runner = References(
+            repository,
+            Path.Combine(acceptanceRoot, "Acceptance.Runner", "Acceptance.Runner.csproj"));
+
+        Assert.Empty(contracts);
+        Assert.All(
+            catalogControl,
+            target => Assert.True(
+                target == "tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj" ||
+                target.StartsWith("src/Catalog/", StringComparison.Ordinal),
+                $"Catalog acceptance control references non-Catalog owner '{target}'."));
+        Assert.All(
+            analyticsControl,
+            target => Assert.True(
+                target == "tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj" ||
+                target.StartsWith("src/Analytics/", StringComparison.Ordinal),
+                $"Analytics acceptance control references non-Analytics owner '{target}'."));
+        Assert.All(
+            runner,
+            target => Assert.True(
+                target == "tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj" ||
+                target.EndsWith(".Contracts.csproj", StringComparison.Ordinal),
+                $"Acceptance runner may consume only shared test transport and producer Contracts, not '{target}'."));
     }
 
     [Fact]
@@ -168,6 +215,24 @@ public sealed class RepositoryAutomationRulesTests
                 element.Attribute("Path")?.Value ??
                 throw new InvalidDataException(
                     $"Solution '{fileName}' contains a Project without Path."))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string[] References(RepositoryModel repository, string projectPath)
+    {
+        Assert.True(File.Exists(projectPath), $"Required acceptance project '{repository.Relative(projectPath)}' does not exist.");
+        var projectDirectory = Path.GetDirectoryName(projectPath)
+            ?? throw new InvalidDataException($"Project '{projectPath}' has no directory.");
+        return XDocument
+            .Load(projectPath)
+            .Descendants("ProjectReference")
+            .Select(element =>
+                element.Attribute("Include")?.Value ??
+                throw new InvalidDataException(
+                    $"Project '{repository.Relative(projectPath)}' contains a ProjectReference without Include."))
+            .Select(include => Path.GetFullPath(Path.Combine(projectDirectory, include)))
+            .Select(repository.Relative)
             .Order(StringComparer.Ordinal)
             .ToArray();
     }

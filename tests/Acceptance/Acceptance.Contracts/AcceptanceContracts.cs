@@ -1,4 +1,4 @@
-namespace Aggregator.Acceptance.Runner;
+namespace Aggregator.Acceptance.Contracts;
 
 public sealed record CatalogSeedRequest(
     Guid SubjectId,
@@ -47,27 +47,30 @@ public sealed record CatalogRollbackResponse(
     long PublicationSequence,
     bool IsCurrent);
 
-public sealed record QueryOrganicSnapshot(
+public sealed record AnalyticsBootstrapRequest(
     Guid PublicReadRevisionId,
+    string CatalogKey,
+    Guid BaseProjectionId,
+    Guid PromotionOverlayId,
+    Guid SafetyOverlayId,
     Guid SourcePublicationId,
     Guid ListingId,
-    string Title,
-    string RoutePath,
-    string ResolvedLocale);
+    Guid ActorId,
+    DateTimeOffset ActivatedAtUtc,
+    long AccessSourceRevision);
 
-public sealed record AcceptanceReport(
-    DateTimeOffset StartedAtUtc,
-    DateTimeOffset CompletedAtUtc,
-    Guid CollectorCandidateId,
+public sealed record AnalyticsBootstrapResponse(
+    Guid PublicReadRevisionId,
     Guid ListingId,
-    Guid FirstPublicationId,
-    Guid FirstPublicReadRevisionId,
-    Guid FirstPromotionOverlayId,
-    Guid SecondPublicationId,
-    Guid SecondPublicReadRevisionId,
-    Guid RollbackPublicReadRevisionId,
-    Guid RollbackPromotionOverlayId,
-    long AnalyticsListingViews,
-    long AnalyticsContactClicks,
-    long AnalyticsLeads,
-    IReadOnlyList<string> VerifiedInvariants);
+    Guid ActorId);
+
+public sealed record AnalyticsRebuildRequest(
+    DateOnly FromInclusive,
+    DateOnly ToExclusive);
+
+public sealed record AnalyticsRebuildResponse(
+    DateOnly FromInclusive,
+    DateOnly ToExclusive,
+    int MaterializedMetricCount,
+    int RemovedStaleMetricCount,
+    DateTimeOffset CompletedAtUtc);

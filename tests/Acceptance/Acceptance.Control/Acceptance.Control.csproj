@@ -1,11 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
+    <AssemblyName>Acceptance.Control</AssemblyName>
+    <RootNamespace>Aggregator.Acceptance.Control</RootNamespace>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
     <ProjectReference Include="../../../src/Catalog/Catalog.Application/Catalog.Application.csproj" />
-    <ProjectReference Include="../../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
-    <ProjectReference Include="../../../src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
     <ProjectReference Include="../../../src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
   </ItemGroup>
 </Project>

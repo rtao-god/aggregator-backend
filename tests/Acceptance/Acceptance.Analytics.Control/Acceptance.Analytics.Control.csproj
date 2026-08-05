@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>Acceptance.Analytics.Control</AssemblyName>
+    <RootNamespace>Aggregator.Acceptance.Analytics.Control</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Application/Analytics.Application.csproj" />
+    <ProjectReference Include="../../../src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

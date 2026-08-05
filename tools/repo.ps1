@@ -108,6 +108,17 @@ function Invoke-Preflight {
     Invoke-ArchitectureGate
 }
 
+function Invoke-RuntimeBuild {
+    Invoke-Native dotnet @('restore', $runtimeSolution)
+    Invoke-Native dotnet @(
+        'build',
+        $runtimeSolution,
+        '--no-restore',
+        '-warnaserror',
+        '/m:2',
+        '/nr:false')
+}
+
 Push-Location $root
 try {
     switch ($Command) {
@@ -122,12 +133,7 @@ try {
             Invoke-Native dotnet @('build', $target, '-warnaserror', '/m:2', '/nr:false')
         }
         'build-runtime' {
-            Invoke-Native dotnet @(
-                'build',
-                $runtimeSolution,
-                '-warnaserror',
-                '/m:2',
-                '/nr:false')
+            Invoke-RuntimeBuild
         }
         'build' {
             Invoke-Native dotnet @(
@@ -153,6 +159,7 @@ try {
         }
         'test-all' {
             Invoke-Preflight
+            Invoke-RuntimeBuild
             Invoke-Native dotnet @('restore', $solution)
             Invoke-Native dotnet @(
                 'build',

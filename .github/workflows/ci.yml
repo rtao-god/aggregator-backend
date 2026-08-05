@@ -52,7 +52,17 @@ jobs:
           --no-restore -warnaserror
           --logger "console;verbosity=normal" /m:1 /nr:false
 
-      - name: Restore solution
+      - name: Restore runtime graph
+        timeout-minutes: 3
+        run: dotnet restore AggregatorBackend.Runtime.slnx
+
+      - name: Build production runtime graph
+        timeout-minutes: 5
+        run: >-
+          dotnet build AggregatorBackend.Runtime.slnx
+          --no-restore -warnaserror /m:2 /nr:false
+
+      - name: Restore complete graph
         timeout-minutes: 3
         run: dotnet restore AggregatorBackend.slnx
 
@@ -62,7 +72,7 @@ jobs:
           dotnet format whitespace AggregatorBackend.slnx
           --verify-no-changes --no-restore
 
-      - name: Build
+      - name: Build complete graph
         timeout-minutes: 5
         run: >-
           dotnet build AggregatorBackend.slnx

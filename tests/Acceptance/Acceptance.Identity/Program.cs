@@ -10,38 +10,67 @@ var keyId = builder.Configuration["AcceptanceIdentity:KeyId"]
 var rsa = RSA.Create(2048);
 builder.Services.AddSingleton(rsa);
 
-var app = builder.Build();
-app.MapGet("/.well-known/openid-configuration", () => Results.Json(new
+string[] supportedGrantTypes = ["client_credentials"];
+string[] supportedAuthenticationMethods = ["none"];
+string[] supportedSigningAlgorithms = ["RS256"];
+string[] supportedScopes =
+[
+    "catalog.manage-configuration",
+    "catalog.edit-listing",
+    "catalog.publish",
+    "catalog.rollback",
+    "catalog.submit-claim",
+    "catalog.verify-claim",
+    "catalog.test-contracts",
+    "ingestion.submit",
+    "ingestion.review",
+    "ingestion.admin",
+    "promotion.manage",
+    "promotion.publish",
+    "promotion.overlay.publish",
+    "analytics.view-listing",
+    "analytics.test-contracts",
+];
+string[] audiences =
+[
+    "aggregator-catalog-command",
+    "aggregator-ingestion-command",
+    "aggregator-promotion-command",
+    "aggregator-promotion-overlay",
+    "aggregator-analytics",
+];
+var discoveryDocument = new
 {
     issuer,
     jwks_uri = $"{issuer.TrimEnd('/')}/jwks",
     token_endpoint = $"{issuer.TrimEnd('/')}/token",
-    grant_types_supported = AcceptanceIdentityMetadata.GrantTypes,
-    token_endpoint_auth_methods_supported = AcceptanceIdentityMetadata.TokenEndpointAuthenticationMethods,
-    scopes_supported = AcceptanceIdentityMetadata.Scopes,
-    id_token_signing_alg_values_supported = AcceptanceIdentityMetadata.SigningAlgorithms,
-}));
-app.MapGet("/jwks", (RSA signingKey) =>
+    grant_types_supported = supportedGrantTypes,
+    token_endpoint_auth_methods_supported = supportedAuthenticationMethods,
+    scopes_supported = supportedScopes,
+    id_token_signing_alg_values_supported = supportedSigningAlgorithms,
+};
+var publicParameters = rsa.ExportParameters(includePrivateParameters: false);
+var jwksDocument = new
 {
-    var parameters = signingKey.ExportParameters(includePrivateParameters: false);
-    return Results.Json(new
+    keys = new[]
     {
-        keys = new[]
+        new
         {
-            new
-            {
-                kty = "RSA",
-                use = "sig",
-                kid = keyId,
-                alg = "RS256",
-                n = Base64Url(parameters.Modulus
-                    ?? throw new InvalidOperationException("RSA modulus is unavailable.")),
-                e = Base64Url(parameters.Exponent
-                    ?? throw new InvalidOperationException("RSA exponent is unavailable.")),
-            },
+            kty = "RSA",
+            use = "sig",
+            kid = keyId,
+            alg = "RS256",
+            n = Base64Url(publicParameters.Modulus
+                ?? throw new InvalidOperationException("RSA modulus is unavailable.")),
+            e = Base64Url(publicParameters.Exponent
+                ?? throw new InvalidOperationException("RSA exponent is unavailable.")),
         },
-    });
-});
+    },
+};
+
+var app = builder.Build();
+app.MapGet("/.well-known/openid-configuration", () => Results.Json(discoveryDocument));
+app.MapGet("/jwks", () => Results.Json(jwksDocument));
 app.MapPost("/token", async (HttpRequest request, RSA signingKey) =>
 {
     if (!request.HasFormContentType)
@@ -86,6 +115,7 @@ app.MapPost("/token", async (HttpRequest request, RSA signingKey) =>
         signingKey,
         keyId,
         issuer,
+        audiences,
         subject,
         parsedActorId,
         scope,
@@ -111,12 +141,14 @@ static string CreateToken(
     RSA rsa,
     string keyId,
     string issuer,
+    IReadOnlyList<string> audiences,
     string subject,
     Guid actorId,
     string scope,
     DateTimeOffset issuedAt,
     DateTimeOffset expiresAt)
 {
+    ArgumentNullException.ThrowIfNull(audiences);
     var header = JsonSerializer.SerializeToUtf8Bytes(new
     {
         alg = "RS256",
@@ -126,7 +158,7 @@ static string CreateToken(
     var payload = JsonSerializer.SerializeToUtf8Bytes(new
     {
         iss = issuer,
-        aud = AcceptanceIdentityMetadata.Audiences,
+        aud = audiences,
         sub = subject,
         actor_id = actorId.ToString("D"),
         scope,
@@ -148,37 +180,5 @@ static string Base64Url(ReadOnlySpan<byte> value) =>
         .TrimEnd('=')
         .Replace('+', '-')
         .Replace('/', '_');
-
-internal static class AcceptanceIdentityMetadata
-{
-    public static readonly string[] GrantTypes = ["client_credentials"];
-
-    public static readonly string[] TokenEndpointAuthenticationMethods = ["none"];
-
-    public static readonly string[] Scopes =
-    [
-        "catalog.manage-configuration",
-        "catalog.edit-listing",
-        "catalog.publish",
-        "catalog.rollback",
-        "catalog.submit-claim",
-        "catalog.verify-claim",
-        "catalog.test-contracts",
-        "ingestion.submit",
-        "ingestion.review",
-        "ingestion.admin",
-        "promotion.manage",
-        "promotion.publish",
-    ];
-
-    public static readonly string[] SigningAlgorithms = ["RS256"];
-
-    public static readonly string[] Audiences =
-    [
-        "aggregator-catalog-command",
-        "aggregator-ingestion-command",
-        "aggregator-promotion-command",
-    ];
-}
 
 public partial class Program;

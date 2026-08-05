@@ -49,13 +49,7 @@ public static class AcceptanceHttp
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         ArgumentNullException.ThrowIfNull(requestBody);
-        using var request = new HttpRequestMessage(HttpMethod.Post, relativePath)
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(requestBody, SerializerOptions),
-                Encoding.UTF8,
-                "application/json"),
-        };
+        using var request = CreateJsonRequest(HttpMethod.Post, relativePath, requestBody);
         AddHeaders(request, bearerToken, headers);
         using var response = await client.SendAsync(request, cancellationToken);
         return await ReadRequiredAsync<TResponse>(response, cancellationToken);
@@ -72,30 +66,52 @@ public static class AcceptanceHttp
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         ArgumentNullException.ThrowIfNull(requestBody);
-        using var request = new HttpRequestMessage(HttpMethod.Post, relativePath)
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(requestBody, SerializerOptions),
-                Encoding.UTF8,
-                "application/json"),
-        };
+        using var request = CreateJsonRequest(HttpMethod.Post, relativePath, requestBody);
         AddHeaders(request, bearerToken, headers);
         using var response = await client.SendAsync(request, cancellationToken);
         return response.StatusCode;
     }
 
+    public static Task<TResponse> GetAsync<TResponse>(
+        HttpClient client,
+        string relativePath,
+        IReadOnlyDictionary<string, string>? headers,
+        CancellationToken cancellationToken) =>
+        GetAsync<TResponse>(
+            client,
+            relativePath,
+            bearerToken: null,
+            headers,
+            cancellationToken);
+
     public static async Task<TResponse> GetAsync<TResponse>(
         HttpClient client,
         string relativePath,
+        string? bearerToken,
         IReadOnlyDictionary<string, string>? headers,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
         using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
-        AddHeaders(request, bearerToken: null, headers);
+        AddHeaders(request, bearerToken, headers);
         using var response = await client.SendAsync(request, cancellationToken);
         return await ReadRequiredAsync<TResponse>(response, cancellationToken);
+    }
+
+    public static async Task<HttpStatusCode> GetForStatusAsync(
+        HttpClient client,
+        string relativePath,
+        string? bearerToken,
+        IReadOnlyDictionary<string, string>? headers,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
+        AddHeaders(request, bearerToken, headers);
+        using var response = await client.SendAsync(request, cancellationToken);
+        return response.StatusCode;
     }
 
     public static async Task<JsonDocument> GetDocumentAsync(
@@ -190,6 +206,18 @@ public static class AcceptanceHttp
             ?? throw new JsonException(
                 $"Acceptance endpoint '{response.RequestMessage?.RequestUri}' returned an empty JSON response.");
     }
+
+    private static HttpRequestMessage CreateJsonRequest<TRequest>(
+        HttpMethod method,
+        string relativePath,
+        TRequest requestBody) =>
+        new(method, relativePath)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(requestBody, SerializerOptions),
+                Encoding.UTF8,
+                "application/json"),
+        };
 
     private static async Task EnsureSuccessAsync(
         HttpResponseMessage response,

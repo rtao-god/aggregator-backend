@@ -6,12 +6,11 @@ var options = new AcceptanceOptions
     IdentityBaseUrl = RequireUri("Acceptance__IdentityBaseUrl"),
     CollectorBaseUrl = RequireUri("Acceptance__CollectorBaseUrl"),
     CatalogControlBaseUrl = RequireUri("Acceptance__CatalogControlBaseUrl"),
+    AnalyticsControlBaseUrl = RequireUri("Acceptance__AnalyticsControlBaseUrl"),
     QueryBaseUrl = RequireUri("Acceptance__QueryBaseUrl"),
     AnalyticsBaseUrl = RequireUri("Acceptance__AnalyticsBaseUrl"),
     PromotionOverlayBaseUrl = RequireUri("Acceptance__PromotionOverlayBaseUrl"),
     AcceptanceKey = RequireSetting("Acceptance__InternalKey"),
-    AnalyticsInternalMetricsKey = RequireSetting(
-        "Acceptance__AnalyticsInternalMetricsKey"),
     Timeout = ReadTimeSpan("Acceptance__Timeout", TimeSpan.FromMinutes(3)),
 };
 options.Validate();

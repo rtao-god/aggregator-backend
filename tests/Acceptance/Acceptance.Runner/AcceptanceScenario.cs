@@ -1,19 +1,27 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using Aggregator.Acceptance.Contracts;
 using Aggregator.Analytics.Contracts;
 using Aggregator.Ingestion.Collector.Contracts;
 using Aggregator.Promotion.Contracts;
+using Aggregator.Query.Contracts;
 
 namespace Aggregator.Acceptance.Runner;
 
 public sealed class AcceptanceScenario
 {
+    private const string CatalogKey = "berlin-recording-services";
+
+    private static readonly Guid AnalyticsActorId =
+        Guid.Parse("0198ff00-0000-7000-8000-000000000001");
+
     private readonly AcceptanceOptions _options;
     private readonly HttpClient _identityClient;
     private readonly HttpClient _collectorClient;
     private readonly HttpClient _catalogControlClient;
+    private readonly HttpClient _analyticsControlClient;
     private readonly HttpClient _queryClient;
     private readonly HttpClient _analyticsClient;
     private readonly HttpClient _promotionClient;
@@ -25,6 +33,7 @@ public sealed class AcceptanceScenario
         _identityClient = CreateClient(options.IdentityBaseUrl);
         _collectorClient = CreateClient(options.CollectorBaseUrl);
         _catalogControlClient = CreateClient(options.CatalogControlBaseUrl);
+        _analyticsControlClient = CreateClient(options.AnalyticsControlBaseUrl);
         _queryClient = CreateClient(options.QueryBaseUrl);
         _analyticsClient = CreateClient(options.AnalyticsBaseUrl);
         _promotionClient = CreateClient(options.PromotionOverlayBaseUrl);
@@ -37,7 +46,7 @@ public sealed class AcceptanceScenario
         await WaitForRuntimeAsync(deadline, cancellationToken);
         var token = await AcceptanceHttp.GetTokenAsync(
             _identityClient,
-            "ingestion.submit promotion.overlay.publish",
+            "ingestion.submit promotion.overlay.publish analytics.view-listing",
             cancellationToken);
 
         var fixture = Encoding.UTF8.GetBytes(
@@ -98,6 +107,9 @@ public sealed class AcceptanceScenario
         {
             ["X-Acceptance-Key"] = _options.AcceptanceKey,
         };
+        var hourlyPrice = candidate.HourlyPrice
+            ?? throw new InvalidOperationException(
+                "The accepted collector fixture must contain an observed hourly price.");
         var catalogSeed = await AcceptanceHttp.PostAsync<CatalogSeedRequest, CatalogSeedResponse>(
             _catalogControlClient,
             "acceptance/catalog/seed",
@@ -108,17 +120,17 @@ public sealed class AcceptanceScenario
                 candidate.SourceReference,
                 candidate.EvidenceDigest,
                 candidate.Website,
-                candidate.HourlyPrice ?? 0m),
+                hourlyPrice),
             bearerToken: null,
             acceptanceHeaders,
             cancellationToken);
         Require(catalogSeed.PublicationId != Guid.Empty, "Catalog seed must create a publication.");
 
         var firstQuery = await AcceptanceHttp.WaitAsync(
-            token => TryReadOrganicAsync(
+            tokenValue => TryReadOrganicAsync(
                 catalogSeed.PublicationId,
                 candidate.Title,
-                token),
+                tokenValue),
             deadline,
             "the first Catalog publication in Query",
             cancellationToken);
@@ -126,94 +138,137 @@ public sealed class AcceptanceScenario
             firstQuery.ListingId == catalogSeed.ListingId,
             "Query must expose the exact Catalog listing identity.");
 
-        var analyticsEvents = new[]
+        var aggregateDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var activationAtUtc = new DateTimeOffset(
+            aggregateDate.ToDateTime(new TimeOnly(11, 55)),
+            TimeSpan.Zero);
+        _ = await AcceptanceHttp.PostAsync<AnalyticsBootstrapRequest, AnalyticsBootstrapResponse>(
+            _analyticsControlClient,
+            "acceptance/analytics/bootstrap",
+            new AnalyticsBootstrapRequest(
+                firstQuery.PublicReadRevisionId,
+                CatalogKey,
+                firstQuery.BaseProjectionId,
+                firstQuery.PromotionOverlayId,
+                firstQuery.SafetyOverlayId,
+                firstQuery.SourcePublicationId,
+                firstQuery.ListingId,
+                AnalyticsActorId,
+                activationAtUtc,
+                AccessSourceRevision: 1),
+            bearerToken: null,
+            acceptanceHeaders,
+            cancellationToken);
+
+        var occurrenceBase = activationAtUtc.AddMinutes(5);
+        var analyticsRequests = new[]
         {
-            new RecordAnalyticsInteractionRequest(
+            await CreateAnalyticsRequestAsync(
                 Guid.Parse("0198fe00-0000-7000-8000-000000000101"),
-                "berlin-recording-services",
-                firstQuery.PublicReadRevisionId,
-                firstQuery.ListingId,
-                "acceptance-session-1",
-                AnalyticsInteractionKindContract.ListingView,
-                DateTimeOffset.UtcNow.AddSeconds(-2)),
-            new RecordAnalyticsInteractionRequest(
+                InteractionEventKindContract.ListingImpression,
+                firstQuery,
+                occurrenceBase,
+                "search-results",
+                PlacementExposureKindContract.Organic,
+                cancellationToken),
+            await CreateAnalyticsRequestAsync(
                 Guid.Parse("0198fe00-0000-7000-8000-000000000102"),
-                "berlin-recording-services",
-                firstQuery.PublicReadRevisionId,
-                firstQuery.ListingId,
-                "acceptance-session-1",
-                AnalyticsInteractionKindContract.ContactClick,
-                DateTimeOffset.UtcNow.AddSeconds(-1)),
-            new RecordAnalyticsInteractionRequest(
+                InteractionEventKindContract.ListingOpened,
+                firstQuery,
+                occurrenceBase.AddMinutes(1),
+                "listing-card",
+                PlacementExposureKindContract.Organic,
+                cancellationToken),
+            await CreateAnalyticsRequestAsync(
                 Guid.Parse("0198fe00-0000-7000-8000-000000000103"),
-                "berlin-recording-services",
-                firstQuery.PublicReadRevisionId,
-                firstQuery.ListingId,
-                "acceptance-session-1",
-                AnalyticsInteractionKindContract.Lead,
-                DateTimeOffset.UtcNow.AddSeconds(-1)),
+                InteractionEventKindContract.WebsiteClicked,
+                firstQuery,
+                occurrenceBase.AddMinutes(2),
+                "listing-card",
+                PlacementExposureKindContract.Organic,
+                cancellationToken),
         };
-        foreach (var analyticsEvent in analyticsEvents)
+        foreach (var analyticsRequest in analyticsRequests)
         {
             var receipt = await AcceptanceHttp.PostAsync<
-                RecordAnalyticsInteractionRequest,
-                AnalyticsInteractionReceipt>(
+                SubmitInteractionEventRequest,
+                InteractionEventResponse>(
                 _analyticsClient,
-                "api/analytics/interactions",
-                analyticsEvent,
+                "api/analytics/interaction-events",
+                analyticsRequest,
                 bearerToken: null,
                 headers: null,
                 cancellationToken);
-            Require(!receipt.Replayed, "First Analytics event submission must not be a replay.");
+            Require(
+                receipt.AcceptanceState == InteractionAcceptanceStateContract.Accepted,
+                "First Analytics event submission must be accepted.");
+            Require(
+                receipt.QualityState == TrafficQualityStateContract.Accepted,
+                "Acceptance Analytics fixture must remain in accepted traffic quality.");
         }
 
         var analyticsReplay = await AcceptanceHttp.PostAsync<
-            RecordAnalyticsInteractionRequest,
-            AnalyticsInteractionReceipt>(
+            SubmitInteractionEventRequest,
+            InteractionEventResponse>(
             _analyticsClient,
-            "api/analytics/interactions",
-            analyticsEvents[0],
+            "api/analytics/interaction-events",
+            analyticsRequests[0],
             bearerToken: null,
             headers: null,
             cancellationToken);
-        Require(analyticsReplay.Replayed, "Exact Analytics event replay must be identified.");
+        Require(
+            analyticsReplay.AcceptanceState == InteractionAcceptanceStateContract.AlreadyApplied,
+            "Exact Analytics event replay must return the prior semantic result.");
         var analyticsCollisionStatus = await AcceptanceHttp.PostForStatusAsync(
             _analyticsClient,
-            "api/analytics/interactions",
-            analyticsEvents[0] with { SessionKey = "different-session" },
+            "api/analytics/interaction-events",
+            analyticsRequests[0] with { PageContext = "listing-card" },
             bearerToken: null,
             headers: null,
             cancellationToken);
         Require(
             analyticsCollisionStatus == HttpStatusCode.Conflict,
-            "Analytics event ID reused for changed content must return 409.");
+            "Analytics event identity reused for changed content must return 409.");
 
-        var analyticsHeaders = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["X-Analytics-Internal-Key"] = _options.AnalyticsInternalMetricsKey,
-        };
-        var metrics = await AcceptanceHttp.WaitAsync(
-            async token =>
-            {
-                var value = await AcceptanceHttp.GetAsync<AnalyticsListingMetricsResponse>(
-                    _analyticsClient,
-                    $"api/analytics/catalogs/berlin-recording-services/listings/{firstQuery.ListingId:D}/metrics",
-                    analyticsHeaders,
-                    token);
-                return value.ListingViews >= 1 &&
-                       value.ContactClicks >= 1 &&
-                       value.Leads >= 1
-                    ? value
-                    : null;
-            },
-            deadline,
-            "Analytics listing aggregates",
+        var aggregateToExclusive = aggregateDate.AddDays(1);
+        var aggregateRebuild = await AcceptanceHttp.PostAsync<
+            AnalyticsRebuildRequest,
+            AnalyticsRebuildResponse>(
+            _analyticsControlClient,
+            "acceptance/analytics/rebuild",
+            new AnalyticsRebuildRequest(aggregateDate, aggregateToExclusive),
+            bearerToken: null,
+            acceptanceHeaders,
             cancellationToken);
+        Require(
+            aggregateRebuild.MaterializedMetricCount >= 1,
+            "Analytics rebuild must materialize the listing metric row.");
+
+        var metrics = await AcceptanceHttp.GetAsync<DailyListingMetricsResponse[]>(
+            _analyticsClient,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"api/analytics/listings/{firstQuery.ListingId:D}/daily-metrics?catalogKey={CatalogKey}&fromInclusive={aggregateDate:yyyy-MM-dd}&toExclusive={aggregateToExclusive:yyyy-MM-dd}"),
+            token,
+            headers: null,
+            cancellationToken);
+        var metric = metrics.SingleOrDefault(value => value.Date == aggregateDate)
+            ?? throw new InvalidOperationException(
+                "Analytics did not return the exact rebuilt daily metric row.");
+        Require(
+            metric.Readiness == AggregateReadinessStateContract.Complete,
+            "Analytics daily metric must be complete before numeric counts are consumed.");
+        var counts = metric.Counts
+            ?? throw new InvalidOperationException(
+                "A complete Analytics metric must contain observed counts.");
+        Require(counts.OrganicImpressions == 1, "Analytics must count one organic impression.");
+        Require(counts.ListingOpens == 1, "Analytics must count one listing open.");
+        Require(counts.WebsiteClicks == 1, "Analytics must count one website click.");
 
         var campaignId = Guid.Parse("0198fe00-0000-7000-8000-000000000201");
         var firstPromotionRequest = new PublishPromotionOverlayRequest(
             Guid.Parse("0198fe00-0000-7000-8000-000000000202"),
-            "berlin-recording-services",
+            CatalogKey,
             firstQuery.PublicReadRevisionId,
             ExpectedCurrentOverlayId: null,
             [
@@ -270,11 +325,11 @@ public sealed class AcceptanceScenario
             "Promotion command ID reused for changed content must return 409.");
 
         _ = await AcceptanceHttp.WaitAsync(
-            token => TryReadSponsoredAsync(
+            tokenValue => TryReadSponsoredAsync(
                 firstQuery.PublicReadRevisionId,
                 firstPromotion.OverlayId,
                 firstQuery.ListingId,
-                token),
+                tokenValue),
             deadline,
             "the first Promotion overlay in Query",
             cancellationToken);
@@ -300,17 +355,17 @@ public sealed class AcceptanceScenario
             acceptanceHeaders,
             cancellationToken);
         var secondQuery = await AcceptanceHttp.WaitAsync(
-            token => TryReadOrganicAsync(
+            tokenValue => TryReadOrganicAsync(
                 secondPublication.PublicationId,
                 "Beispiel Tonstudio – aktualisiert",
-                token),
+                tokenValue),
             deadline,
             "the second Catalog publication in Query",
             cancellationToken);
         Require(
             secondQuery.PublicReadRevisionId != firstQuery.PublicReadRevisionId,
             "A new Catalog publication must create a new public read revision.");
-        await RequireSponsoredEmptyAsync(secondQuery.PublicReadRevisionId, cancellationToken);
+        await RequireSponsoredUnavailableAsync(secondQuery.PublicReadRevisionId, cancellationToken);
 
         var rollback = await AcceptanceHttp.PostAsync<
             CatalogRollbackRequest,
@@ -327,20 +382,23 @@ public sealed class AcceptanceScenario
             rollback.CurrentPublicationId == catalogSeed.PublicationId && rollback.IsCurrent,
             "Catalog rollback must activate the requested historical publication.");
         var rollbackQuery = await AcceptanceHttp.WaitAsync(
-            token => TryReadOrganicAsync(
+            tokenValue => TryReadOrganicAsync(
                 catalogSeed.PublicationId,
                 candidate.Title,
-                token,
-                disallowedRevisionIds:
-                [firstQuery.PublicReadRevisionId, secondQuery.PublicReadRevisionId]),
+                tokenValue,
+                new HashSet<Guid>
+                {
+                    firstQuery.PublicReadRevisionId,
+                    secondQuery.PublicReadRevisionId,
+                }),
             deadline,
             "the rollback Catalog activation in Query",
             cancellationToken);
-        await RequireSponsoredEmptyAsync(rollbackQuery.PublicReadRevisionId, cancellationToken);
+        await RequireSponsoredUnavailableAsync(rollbackQuery.PublicReadRevisionId, cancellationToken);
 
         var rollbackPromotionRequest = new PublishPromotionOverlayRequest(
             Guid.Parse("0198fe00-0000-7000-8000-000000000203"),
-            "berlin-recording-services",
+            CatalogKey,
             rollbackQuery.PublicReadRevisionId,
             firstPromotion.OverlayId,
             [
@@ -363,11 +421,11 @@ public sealed class AcceptanceScenario
             headers: null,
             cancellationToken);
         _ = await AcceptanceHttp.WaitAsync(
-            token => TryReadSponsoredAsync(
+            tokenValue => TryReadSponsoredAsync(
                 rollbackQuery.PublicReadRevisionId,
                 rollbackPromotion.OverlayId,
                 rollbackQuery.ListingId,
-                token),
+                tokenValue),
             deadline,
             "the rollback-bound Promotion overlay in Query",
             cancellationToken);
@@ -385,23 +443,58 @@ public sealed class AcceptanceScenario
             secondQuery.PublicReadRevisionId,
             rollbackQuery.PublicReadRevisionId,
             rollbackPromotion.OverlayId,
-            metrics.ListingViews,
-            metrics.ContactClicks,
-            metrics.Leads,
+            counts.OrganicImpressions,
+            counts.ListingOpens,
+            counts.WebsiteClicks,
+            aggregateRebuild.MaterializedMetricCount,
             new List<string>
             {
                 "collector exact replay preserves candidate and subject identities",
                 "collector command ID collision fails with HTTP 409",
                 "Catalog publication reaches Query through durable asynchronous delivery",
-                "Query public read revision is tied to one exact Catalog publication activation",
-                "Analytics exact replay is idempotent and changed payload collision fails",
-                "Analytics stores keyed session hashes and updates listing aggregates exactly once",
+                "Query response is bound to one exact composite public-read revision",
+                "Analytics public-reference and listing-access projections are local",
+                "Analytics exact replay returns the prior semantic result and changed payload conflicts",
+                "Analytics distinguishes impression, listing open, and website click without inventing a lead",
+                "complete aggregate counts are consumed only after explicit readiness proof",
                 "Promotion overlay publication is idempotent and delivered through outbox/RabbitMQ",
-                "sponsored results are returned only for the exact source public read revision",
-                "new Catalog publication invalidates the previous sponsored overlay",
-                "Catalog rollback creates a new public read revision for the historical publication",
+                "new Catalog publication has no implicit compatible sponsored overlay",
+                "Catalog rollback creates a new public-read revision for the historical publication",
                 "rollback does not resurrect a stale Promotion overlay without explicit republication",
             });
+    }
+
+    private async Task<SubmitInteractionEventRequest> CreateAnalyticsRequestAsync(
+        Guid clientEventId,
+        InteractionEventKindContract eventKind,
+        QueryOrganicSnapshot query,
+        DateTimeOffset occurredAtUtc,
+        string pageContext,
+        PlacementExposureKindContract exposureKind,
+        CancellationToken cancellationToken)
+    {
+        var proof = await AcceptanceHttp.PostAsync<
+            IssueAnalyticsAntiAbuseTokenRequest,
+            AnalyticsAntiAbuseTokenResponse>(
+            _analyticsClient,
+            "api/analytics/anti-abuse-tokens",
+            new IssueAnalyticsAntiAbuseTokenRequest(clientEventId, occurredAtUtc),
+            bearerToken: null,
+            headers: null,
+            cancellationToken);
+        return new SubmitInteractionEventRequest(
+            clientEventId,
+            eventKind,
+            CatalogKey,
+            query.ListingId,
+            query.PublicReadRevisionId,
+            occurredAtUtc,
+            pageContext,
+            new PlacementContextContract(exposureKind, PlacementId: null, ScopeKey: null),
+            ReferrerClassContract.Internal,
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            ConsentModeContract.AnalyticsAllowed,
+            proof.Token);
     }
 
     private async Task WaitForRuntimeAsync(
@@ -420,6 +513,11 @@ public sealed class AcceptanceScenario
             cancellationToken);
         await AcceptanceHttp.WaitForHealthAsync(
             _catalogControlClient,
+            "health/ready",
+            deadline,
+            cancellationToken);
+        await AcceptanceHttp.WaitForHealthAsync(
+            _analyticsControlClient,
             "health/ready",
             deadline,
             cancellationToken);
@@ -446,46 +544,32 @@ public sealed class AcceptanceScenario
         CancellationToken cancellationToken,
         IReadOnlySet<Guid>? disallowedRevisionIds = null)
     {
-        using var document = await AcceptanceHttp.GetDocumentAsync(
+        var response = await AcceptanceHttp.GetAsync<PublicListingSearchResponse>(
             _queryClient,
-            "api/catalog-query/catalogs/berlin-recording-services/listings?locale=de-DE&pageSize=20",
+            $"api/catalog-query/catalogs/{CatalogKey}/listings?locale=de-DE&pageSize=20",
+            headers: null,
             cancellationToken);
-        var root = document.RootElement;
-        var metadata = root.GetProperty("metadata");
-        var publicReadRevisionId = metadata.GetProperty("publicReadRevisionId").GetGuid();
-        var sourcePublicationId = metadata.GetProperty("sourcePublicationId").GetGuid();
-        if (sourcePublicationId != expectedSourcePublicationId ||
-            disallowedRevisionIds?.Contains(publicReadRevisionId) == true)
+        if (response.Metadata.SourcePublicationId != expectedSourcePublicationId ||
+            disallowedRevisionIds?.Contains(response.Metadata.PublicReadRevisionId) == true)
         {
             return null;
         }
 
-        foreach (var listing in root.GetProperty("organic").EnumerateArray())
-        {
-            var title = listing.GetProperty("title").GetString();
-            if (!string.Equals(title, expectedTitle, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var listingId = listing.GetProperty("listingId").GetGuid();
-            var resolvedLocale = listing.GetProperty("resolvedLocale").GetString()
-                ?? throw new JsonException("Query listing resolvedLocale is absent.");
-            var routePath = listing.TryGetProperty("routePath", out var routeProperty)
-                ? routeProperty.GetString()
-                    ?? throw new JsonException("Query listing routePath is null.")
-                : $"/{resolvedLocale}/listings/{listingId:N}";
-            return new QueryOrganicSnapshot(
-                publicReadRevisionId,
-                sourcePublicationId,
-                listingId,
-                title
-                    ?? throw new JsonException("Query listing title is absent."),
-                routePath,
-                resolvedLocale);
-        }
-
-        return null;
+        var listing = response.Organic.FirstOrDefault(value =>
+            string.Equals(value.Title, expectedTitle, StringComparison.Ordinal));
+        return listing is null
+            ? null
+            : new QueryOrganicSnapshot(
+                response.Metadata.PublicReadRevisionId,
+                response.Metadata.BaseProjectionId,
+                response.Metadata.PromotionOverlayId,
+                response.Metadata.SafetyOverlayId,
+                response.Metadata.SourcePublicationId,
+                listing.ListingId,
+                listing.Title,
+                listing.RoutePath,
+                listing.ResolvedLocale,
+                response.Metadata.GeneratedAtUtc);
     }
 
     private async Task<SponsoredListingSearchResponse?> TryReadSponsoredAsync(
@@ -496,7 +580,7 @@ public sealed class AcceptanceScenario
     {
         var response = await AcceptanceHttp.GetAsync<SponsoredListingSearchResponse>(
             _queryClient,
-            $"api/catalog-query/catalogs/berlin-recording-services/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=de-DE",
+            $"api/catalog-query/catalogs/{CatalogKey}/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=de-DE",
             headers: null,
             cancellationToken);
         return response.OverlayId == expectedOverlayId &&
@@ -506,18 +590,19 @@ public sealed class AcceptanceScenario
             : null;
     }
 
-    private async Task RequireSponsoredEmptyAsync(
+    private async Task RequireSponsoredUnavailableAsync(
         Guid publicReadRevisionId,
         CancellationToken cancellationToken)
     {
-        var response = await AcceptanceHttp.GetAsync<SponsoredListingSearchResponse>(
+        var status = await AcceptanceHttp.GetForStatusAsync(
             _queryClient,
-            $"api/catalog-query/catalogs/berlin-recording-services/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=de-DE",
+            $"api/catalog-query/catalogs/{CatalogKey}/sponsored?publicReadRevisionId={publicReadRevisionId:D}&locale=de-DE",
+            bearerToken: null,
             headers: null,
             cancellationToken);
         Require(
-            response.OverlayId is null && response.Sponsored.Count == 0,
-            "A public read revision without an exact Promotion overlay must return an explicit empty sponsored slice.");
+            status == HttpStatusCode.ServiceUnavailable,
+            "A public-read revision without an exact Promotion overlay must return typed unavailable state.");
     }
 
     private static HttpClient CreateClient(Uri baseAddress) => new()
@@ -527,7 +612,7 @@ public sealed class AcceptanceScenario
     };
 
     private static Uri EnsureTrailingSlash(Uri value) =>
-        value.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        value.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? value
             : new Uri($"{value.AbsoluteUri}/", UriKind.Absolute);
 
