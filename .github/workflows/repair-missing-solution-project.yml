@@ -1,0 +1,136 @@
+name: Repair missing solution project references
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.codex/ci/authoritative-first-errors.txt'
+      - '.github/workflows/repair-missing-solution-project.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-missing-solution-project
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair-prove-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Remove only compiler-proven missing project references
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          diagnostics_path = Path('.codex/ci/authoritative-first-errors.txt')
+          if not diagnostics_path.exists():
+              raise SystemExit('No authoritative diagnostics exist.')
+          diagnostics = diagnostics_path.read_text(encoding='utf-8', errors='replace')
+          if 'MSB3202' not in diagnostics and 'project file' not in diagnostics.lower():
+              raise SystemExit('The authoritative blocker is not a missing project reference.')
+
+          paths = set()
+          for token in re.findall(r"(?:['\"])?([A-Za-z0-9_./\\-]+\.csproj)(?:['\"])?", diagnostics):
+              normalized = token.replace('\\', '/').lstrip('./')
+              if normalized.startswith(('src/', 'tests/', 'tools/')):
+                  paths.add(normalized)
+          if not paths:
+              raise RuntimeError('No repository-relative missing .csproj path was found in diagnostics.')
+
+          changed = []
+          for project_path in sorted(paths):
+              if Path(project_path).exists():
+                  raise RuntimeError(
+                      f'Diagnostics call {project_path} missing, but the project exists; refusing solution mutation.')
+              reference = f'<Project Path="{project_path}" />'
+              matched = 0
+              for solution in Path('.').glob('AggregatorBackend*.slnx'):
+                  text = solution.read_text(encoding='utf-8')
+                  if reference not in text:
+                      continue
+                  matched += text.count(reference)
+                  lines = [line for line in text.splitlines() if reference not in line]
+                  solution.write_text('\n'.join(lines) + '\n', encoding='utf-8', newline='\n')
+                  changed.append(str(solution))
+              if matched == 0:
+                  raise RuntimeError(
+                      f'Missing project {project_path} is not referenced by an authoritative solution.')
+          if not changed:
+              raise RuntimeError('No solution file changed.')
+
+      - name: Prove authoritative solution
+        shell: bash
+        run: |
+          dotnet restore AggregatorBackend.slnx
+          dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
+          dotnet build AggregatorBackend.slnx --no-restore -warnaserror /m:1 /nr:false
+          dotnet test AggregatorBackend.slnx \
+            --no-build --logger 'console;verbosity=normal' /m:1 /nr:false
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj \
+            --no-build --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Commit proven exact solution repair
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          test "$base" = "$(git rev-parse HEAD)" || {
+            echo 'Main advanced during solution proof.' >&2
+            exit 1
+          }
+          git rm -f \
+            .codex/ci/authoritative-first-errors.txt \
+            .github/workflows/repair-missing-solution-project.yml
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- \
+            AggregatorBackend.slnx AggregatorBackend.All.slnx AggregatorBackend.Runtime.slnx \
+            .codex/ci .github/workflows/repair-missing-solution-project.yml
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Remove missing project references from solution files' \
+            | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Missing solution project repair: ${process.env.JOB_STATUS}`,
+              context: 'ci/repair-missing-solution-project'
+            });
