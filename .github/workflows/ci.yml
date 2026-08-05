@@ -8,10 +8,9 @@ on:
 
 permissions:
   contents: read
-  statuses: write
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,46 +19,58 @@ env:
   NUGET_XMLDOC_MODE: skip
 
 jobs:
-  build-and-test:
+  verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.302
-      - name: Restore
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('global.json', 'Directory.Packages.props', 'NuGet.config') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Repository inventory
+        timeout-minutes: 1
+        run: python3 .tools/complete-backend.py --check
+
+      - name: Restore architecture gate
+        timeout-minutes: 2
+        run: dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
+
+      - name: Architecture and repository automation gate
+        timeout-minutes: 2
+        run: >-
+          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj
+          --no-restore -warnaserror
+          --logger "console;verbosity=normal" /m:1 /nr:false
+
+      - name: Restore solution
+        timeout-minutes: 3
         run: dotnet restore AggregatorBackend.slnx
-      - name: Format
-        run: dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
+
+      - name: Whitespace format gate
+        timeout-minutes: 3
+        run: >-
+          dotnet format whitespace AggregatorBackend.slnx
+          --verify-no-changes --no-restore
+
       - name: Build
+        timeout-minutes: 5
         run: >-
           dotnet build AggregatorBackend.slnx
-          --no-restore -warnaserror /m:1 /nr:false
-      - name: Test
+          --no-restore -warnaserror /m:2 /nr:false
+
+      - name: Tests
+        timeout-minutes: 8
         run: >-
           dotnet test AggregatorBackend.slnx
           --no-build --no-restore -warnaserror
           --logger "console;verbosity=normal" /m:1 /nr:false
-      - name: Architecture proof
-        run: >-
-          dotnet test tests/Architecture.Tests/Architecture.Tests.csproj
-          --no-build --no-restore -warnaserror
-          --logger "console;verbosity=normal" /m:1 /nr:false
-      - name: Publish connector-readable status
-        if: always()
-        uses: actions/github-script@v9
-        env:
-          JOB_STATUS: ${{ job.status }}
-        with:
-          script: |
-            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: context.sha,
-              state,
-              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: `Workflow ${context.runId}: ${process.env.JOB_STATUS}`,
-              context: 'ci/connector-report'
-            });

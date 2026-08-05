@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Reconcile the physical .NET repository inventory with the canonical solution.
+"""Reconcile physical .NET projects with the canonical full and runtime solutions.
 
-The script is deliberately deterministic and idempotent. It never invents projects:
-it includes every existing src/tests project, rejects broken ProjectReference edges,
-removes completion-session probes, and writes a reviewable inventory document.
+The script is deterministic and idempotent. It never invents projects:
+it includes every existing project under src/tests in the canonical solution,
+includes every existing project under src in the runtime solution, rejects broken
+ProjectReference edges, and writes the reviewable full-project inventory.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOLUTION = ROOT / "AggregatorBackend.slnx"
+RUNTIME_SOLUTION = ROOT / "AggregatorBackend.Runtime.slnx"
 INVENTORY = ROOT / "docs" / "decisions" / "project-inventory.md"
 PROJECT_REFERENCE_RE = re.compile(r'<ProjectReference\s+Include="([^"]+)"')
 
@@ -125,15 +127,6 @@ def render_inventory(projects: list[pathlib.Path], solution_text: str) -> str:
     return "\n".join(lines)
 
 
-def cleanup_probes() -> None:
-    probe = ROOT / ".codex" / "probes" / "current-session.txt"
-    if probe.exists():
-        probe.unlink()
-    parent = probe.parent
-    if parent.exists() and not any(parent.iterdir()):
-        parent.rmdir()
-
-
 def write_or_check(path: pathlib.Path, expected: str, check: bool) -> bool:
     actual = path.read_text(encoding="utf-8") if path.exists() else None
     if actual == expected:
@@ -149,15 +142,21 @@ def write_or_check(path: pathlib.Path, expected: str, check: bool) -> bool:
 
 def main() -> int:
     check = "--check" in sys.argv[1:]
-    cleanup_probes()
     projects = discover_projects()
     if not projects:
         raise RuntimeError("No .NET projects were discovered under src/ or tests/.")
+
     verify_references(projects)
+    runtime_projects = [
+        project for project in projects if project.relative_to(ROOT).parts[0] == "src"
+    ]
     solution_text = render_solution(projects)
+    runtime_solution_text = render_solution(runtime_projects)
     inventory_text = render_inventory(projects, solution_text)
+
     stale = False
     stale |= write_or_check(SOLUTION, solution_text, check)
+    stale |= write_or_check(RUNTIME_SOLUTION, runtime_solution_text, check)
     stale |= write_or_check(INVENTORY, inventory_text, check)
     return 1 if check and stale else 0
 

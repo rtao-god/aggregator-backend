@@ -17,3 +17,9 @@ coverage/
 *.log
 *.tmp
 .DS_Store
+
+# Agent/tooling runtime output is never repository state.
+.codex/ci/
+.codex/probes/
+.codex/tmp/
+.codex/patches/*.py

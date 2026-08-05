@@ -5,8 +5,10 @@ ARG PROJECT
 ARG ENTRY_DLL
 COPY . .
 RUN test -n "$PROJECT" && test -n "$ENTRY_DLL"
-RUN dotnet restore "$PROJECT"
-RUN dotnet publish "$PROJECT" --configuration Release --no-restore --output /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,id=aggregator-nuget,target=/root/.nuget/packages \
+    dotnet restore "$PROJECT"
+RUN --mount=type=cache,id=aggregator-nuget,target=/root/.nuget/packages \
+    dotnet publish "$PROJECT" --configuration Release --no-restore --output /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
