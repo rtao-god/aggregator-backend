@@ -2,10 +2,15 @@ using Aggregator.Query.Domain;
 
 namespace Aggregator.Query.Application;
 
+public sealed record PublicSponsoredListingSnapshot(
+    QueryPromotionPlacement Placement,
+    QueryListingDocument Document);
+
 public sealed record PublicReadPageSnapshot(
     PublicReadRevision Revision,
     QueryLocalePolicy LocalePolicy,
     IReadOnlyList<QueryListingDocument> Documents,
+    IReadOnlyList<PublicSponsoredListingSnapshot> SponsoredDocuments,
     IReadOnlyDictionary<string, int> CategoryFacetCounts);
 
 public sealed record PublicReadDocumentSnapshot(
@@ -20,6 +25,8 @@ public interface IPublicQueryStore
         Guid? afterListingId,
         int maximumDocuments,
         string? categoryKey,
+        string requestedLocale,
+        DateTimeOffset readAtUtc,
         CancellationToken cancellationToken);
 
     public Task<PublicReadDocumentSnapshot?> ReadByRouteAsync(

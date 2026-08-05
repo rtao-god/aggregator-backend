@@ -7,10 +7,12 @@ namespace Aggregator.Query.Application;
 public sealed class PublicQueryService
 {
     private readonly IPublicQueryStore _store;
+    private readonly IQueryClock _clock;
 
-    public PublicQueryService(IPublicQueryStore store)
+    public PublicQueryService(IPublicQueryStore store, IQueryClock clock)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     public async Task<PublicListingSearchResponse> SearchAsync(
@@ -55,11 +57,14 @@ public sealed class PublicQueryService
             }
         }
 
+        var readAtUtc = RequireUtc(_clock.GetUtcNow(), "Query public read clock");
         var snapshot = await _store.ReadPageAsync(
             normalizedCatalogKey,
             decodedCursor?.LastListingId,
             checked(pageSize + 1),
             normalizedCategoryKey,
+            normalizedLocale,
+            readAtUtc,
             cancellationToken);
         if (snapshot is null)
         {
@@ -67,7 +72,14 @@ public sealed class PublicQueryService
         }
 
         EnsureLocaleSupported(snapshot.LocalePolicy, normalizedLocale);
-        EnsurePageContract(snapshot, normalizedCatalogKey, decodedCursor?.LastListingId, pageSize + 1);
+        EnsurePageContract(
+            snapshot,
+            normalizedCatalogKey,
+            decodedCursor?.LastListingId,
+            pageSize + 1,
+            normalizedLocale,
+            normalizedCategoryKey,
+            readAtUtc);
         if (decodedCursor is { } expected && expected.PublicReadRevisionId != snapshot.Revision.Id)
         {
             throw new QueryReadException(
@@ -91,13 +103,19 @@ public sealed class PublicQueryService
         var organic = page
             .Select(document => ToSummary(document, normalizedLocale, snapshot.LocalePolicy))
             .ToArray();
+        var sponsored = snapshot.SponsoredDocuments
+            .Select(item => ToSponsoredSummary(
+                item,
+                normalizedLocale,
+                snapshot.LocalePolicy))
+            .ToArray();
         var facets = snapshot.CategoryFacetCounts
             .OrderBy(item => item.Key, StringComparer.Ordinal)
             .Select(item => new PublicFacetValue(item.Key, item.Value))
             .ToArray();
         return new PublicListingSearchResponse(
             ToMetadata(snapshot.Revision),
-            Array.Empty<PublicListingSummary>(),
+            sponsored,
             organic,
             facets,
             nextCursor);
@@ -171,11 +189,15 @@ public sealed class PublicQueryService
         PublicReadPageSnapshot snapshot,
         string expectedCatalogKey,
         Guid? afterListingId,
-        int maximumDocuments)
+        int maximumDocuments,
+        string requestedLocale,
+        string? categoryKey,
+        DateTimeOffset readAtUtc)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(snapshot.LocalePolicy);
         ArgumentNullException.ThrowIfNull(snapshot.Documents);
+        ArgumentNullException.ThrowIfNull(snapshot.SponsoredDocuments);
         ArgumentNullException.ThrowIfNull(snapshot.CategoryFacetCounts);
         EnsureRevisionCatalog(snapshot.Revision, expectedCatalogKey);
         if (snapshot.Documents.Count > maximumDocuments)
@@ -197,6 +219,70 @@ public sealed class PublicQueryService
         if (snapshot.CategoryFacetCounts.Any(item => string.IsNullOrWhiteSpace(item.Key) || item.Value < 0))
         {
             throw StoreContractFailure("Query store returned an invalid category facet count.");
+        }
+
+        var placementIds = new HashSet<Guid>();
+        foreach (var sponsored in snapshot.SponsoredDocuments)
+        {
+            ArgumentNullException.ThrowIfNull(sponsored);
+            ArgumentNullException.ThrowIfNull(sponsored.Placement);
+            ArgumentNullException.ThrowIfNull(sponsored.Document);
+            var placement = sponsored.Placement;
+            if (!placementIds.Add(placement.PlacementId))
+            {
+                throw StoreContractFailure(
+                    $"Query store returned sponsored placement '{placement.PlacementId}' more than once.");
+            }
+
+            if (!string.Equals(
+                    placement.CatalogKey,
+                    expectedCatalogKey,
+                    StringComparison.Ordinal))
+            {
+                throw StoreContractFailure(
+                    $"Sponsored placement '{placement.PlacementId}' belongs to another catalog.");
+            }
+
+            if (placement.ListingId != sponsored.Document.ListingId)
+            {
+                throw StoreContractFailure(
+                    $"Sponsored placement '{placement.PlacementId}' is paired with another listing.");
+            }
+
+            if (!placement.IsVisibleAt(readAtUtc))
+            {
+                throw StoreContractFailure(
+                    $"Query store returned inactive or expired sponsored placement '{placement.PlacementId}'.");
+            }
+
+            if (!placement.LocaleScope.Contains(requestedLocale, StringComparer.OrdinalIgnoreCase))
+            {
+                throw StoreContractFailure(
+                    $"Sponsored placement '{placement.PlacementId}' does not target locale '{requestedLocale}'.");
+            }
+
+            var scopeMatches = placement.Scope switch
+            {
+                QueryPromotionPlacementScope.Catalog =>
+                    string.Equals(
+                        placement.ScopeKey,
+                        expectedCatalogKey,
+                        StringComparison.Ordinal),
+                QueryPromotionPlacementScope.Category =>
+                    categoryKey is not null &&
+                    string.Equals(
+                        placement.ScopeKey,
+                        categoryKey,
+                        StringComparison.Ordinal),
+                QueryPromotionPlacementScope.District => false,
+                QueryPromotionPlacementScope.EditorialLanding => false,
+                _ => false,
+            };
+            if (!scopeMatches)
+            {
+                throw StoreContractFailure(
+                    $"Sponsored placement '{placement.PlacementId}' is outside the requested search scope.");
+            }
         }
     }
 
@@ -254,6 +340,36 @@ public sealed class PublicQueryService
             localization.Value.Description,
             document.CategoryKeys,
             document.Geography.DistrictKey);
+    }
+
+    private static PublicSponsoredListingSummary ToSponsoredSummary(
+        PublicSponsoredListingSnapshot item,
+        string requestedLocale,
+        QueryLocalePolicy localePolicy)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(item.Placement);
+        ArgumentNullException.ThrowIfNull(item.Document);
+        return new PublicSponsoredListingSummary(
+            item.Placement.PlacementId,
+            item.Placement.EntitlementId,
+            item.Placement.ProductKey,
+            item.Placement.Scope switch
+            {
+                QueryPromotionPlacementScope.Catalog => "catalog",
+                QueryPromotionPlacementScope.Category => "category",
+                QueryPromotionPlacementScope.District => "district",
+                QueryPromotionPlacementScope.EditorialLanding => "editorial_landing",
+                _ => throw StoreContractFailure(
+                    $"Unsupported sponsored placement scope '{item.Placement.Scope}'."),
+            },
+            item.Placement.ScopeKey,
+            item.Placement.PriorityBand,
+            item.Placement.CapacitySlot,
+            item.Placement.PresentationLabelKey,
+            item.Placement.StartsAtUtc,
+            item.Placement.HardExpiryAtUtc,
+            ToSummary(item.Document, requestedLocale, localePolicy));
     }
 
     private static ResolvedLocalization ResolveLocalization(
@@ -392,6 +508,16 @@ public sealed class PublicQueryService
         }
 
         return normalized;
+    }
+
+    private static DateTimeOffset RequireUtc(DateTimeOffset value, string owner)
+    {
+        if (value.Offset != TimeSpan.Zero)
+        {
+            throw StoreContractFailure($"{owner} returned a non-UTC timestamp.");
+        }
+
+        return value;
     }
 
     private static QueryReadException ProjectionUnavailable(string catalogKey) =>

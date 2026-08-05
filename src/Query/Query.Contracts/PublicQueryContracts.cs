@@ -38,9 +38,22 @@ public sealed record PublicListingSummary(
 
 public sealed record PublicFacetValue(string Key, int Count);
 
+public sealed record PublicSponsoredListingSummary(
+    Guid PlacementId,
+    Guid EntitlementId,
+    string ProductKey,
+    string ScopeType,
+    string ScopeKey,
+    int PriorityBand,
+    int CapacitySlot,
+    string DisclosureLabelKey,
+    DateTimeOffset StartsAtUtc,
+    DateTimeOffset HardExpiryAtUtc,
+    PublicListingSummary Listing);
+
 public sealed record PublicListingSearchResponse(
     PublicReadMetadata Metadata,
-    IReadOnlyList<PublicListingSummary> Sponsored,
+    IReadOnlyList<PublicSponsoredListingSummary> Sponsored,
     IReadOnlyList<PublicListingSummary> Organic,
     IReadOnlyList<PublicFacetValue> CategoryFacets,
     string? NextCursor);

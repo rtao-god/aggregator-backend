@@ -24,6 +24,7 @@ public static class QueryInfrastructureServiceCollectionExtensions
     public static IServiceCollection AddQueryPublicReadInfrastructure(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<IQueryClock, SystemQueryClock>();
         services.AddSingleton<IPublicQueryStore, NpgsqlPublicQueryStore>();
         services.AddSingleton<PublicQueryService>();
         return services;

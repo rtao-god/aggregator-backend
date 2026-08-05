@@ -30,6 +30,19 @@ public sealed class CatalogQueryApiTests
         var listing = root.GetProperty("organic")[0];
         Assert.Equal("fallback", listing.GetProperty("translationState").GetString());
         Assert.Equal("de-DE", listing.GetProperty("resolvedLocale").GetString());
+        var sponsored = root.GetProperty("sponsored")[0];
+        Assert.Equal(
+            CreateListing().ListingId,
+            sponsored.GetProperty("listing").GetProperty("listingId").GetGuid());
+        Assert.Equal("sponsored", sponsored.GetProperty("disclosureLabelKey").GetString());
+        Assert.Equal(
+            CreateRevision().PromotionOverlayId,
+            root.GetProperty("metadata").GetProperty("promotionOverlayId").GetGuid());
+        Assert.False(
+            (response.Headers.CacheControl?.ToString() ?? string.Empty)
+                .Contains("stale-while-revalidate", StringComparison.Ordinal));
+        Assert.Equal("en-GB", factory.Store.LastRequestedLocale);
+        Assert.Equal(factory.Clock.UtcNow, factory.Store.LastReadAtUtc);
         Assert.Equal(1, factory.Store.PageReadCount);
     }
 
@@ -107,15 +120,19 @@ public sealed class CatalogQueryApiTests
         Assert.Equal(1, factory.Store.RouteReadCount);
     }
 
-    private static PublicReadPageSnapshot CreatePageSnapshot() =>
-        new(
+    private static PublicReadPageSnapshot CreatePageSnapshot()
+    {
+        var listing = CreateListing();
+        return new PublicReadPageSnapshot(
             CreateRevision(),
             LocalePolicy(),
-            [CreateListing()],
+            [listing],
+            [new PublicSponsoredListingSnapshot(CreatePlacement(listing.ListingId), listing)],
             new Dictionary<string, int>(StringComparer.Ordinal)
             {
                 ["recording-studio"] = 1,
             });
+    }
 
     private static PublicReadRevision CreateRevision() =>
         PublicReadRevision.Restore(
@@ -130,6 +147,26 @@ public sealed class CatalogQueryApiTests
 
     private static QueryLocalePolicy LocalePolicy() =>
         QueryLocalePolicy.Create("de-DE", ["de-DE", "en-GB"]);
+
+    private static QueryPromotionPlacement CreatePlacement(Guid listingId) =>
+        QueryPromotionPlacement.Create(
+            Guid.Parse("0198a500-0000-7000-8000-000000000020"),
+            Guid.Parse("0198a500-0000-7000-8000-000000000021"),
+            listingId,
+            "berlin-recording-services",
+            "featured-listing",
+            QueryPromotionPlacementScope.Catalog,
+            "berlin-recording-services",
+            ["de-DE", "en-GB"],
+            new DateTimeOffset(2026, 8, 4, 11, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 5, 12, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 4, 13, 0, 0, TimeSpan.Zero),
+            10,
+            1,
+            "sponsored",
+            QueryPromotionPlacementState.Active,
+            2,
+            new DateTimeOffset(2026, 8, 4, 11, 30, 0, TimeSpan.Zero));
 
     private static QueryListingDocument CreateListing()
     {

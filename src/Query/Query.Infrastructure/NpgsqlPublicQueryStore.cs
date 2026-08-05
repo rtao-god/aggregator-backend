@@ -18,9 +18,20 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         Guid? afterListingId,
         int maximumDocuments,
         string? categoryKey,
+        string requestedLocale,
+        DateTimeOffset readAtUtc,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestedLocale);
+        if (readAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw StoreFailure(
+                "QUERY_STORE_READ_TIMESTAMP_NOT_UTC",
+                "Query public store received a non-UTC read timestamp.",
+                "Normalize the Query application clock to UTC before reading persistence.");
+        }
+
         if (maximumDocuments is < 1 or > 101)
         {
             throw StoreFailure(
@@ -50,6 +61,14 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                 context.Revision.BaseProjectionId,
                 coreRows,
                 cancellationToken);
+        var sponsored = await ReadSponsoredAsync(
+            connection,
+            context.Revision,
+            catalogKey,
+            requestedLocale,
+            categoryKey,
+            readAtUtc,
+            cancellationToken);
         var facets = await ReadFacetsAsync(
             connection,
             context.Revision.BaseProjectionId,
@@ -58,7 +77,147 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
             context.Revision,
             context.LocalePolicy,
             documents,
+            sponsored,
             facets);
+    }
+
+    private static async Task<IReadOnlyList<PublicSponsoredListingSnapshot>> ReadSponsoredAsync(
+        NpgsqlConnection connection,
+        PublicReadRevision revision,
+        string catalogKey,
+        string requestedLocale,
+        string? categoryKey,
+        DateTimeOffset readAtUtc,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT item.placement_id,
+                   item.entitlement_id,
+                   item.listing_id,
+                   item.product_key,
+                   item.scope_type,
+                   item.scope_key,
+                   item.locale_scope,
+                   item.starts_at_utc,
+                   item.ends_at_utc,
+                   item.hard_expiry_at_utc,
+                   item.priority_band,
+                   item.capacity_slot,
+                   item.presentation_label_key,
+                   item.placement_revision,
+                   state.state,
+                   state.source_event_occurred_at_utc,
+                   document.listing_id,
+                   document.listing_revision_id,
+                   document.subject_id,
+                   document.subject_revision_id,
+                   document.listing_kind,
+                   document.source_content_digest,
+                   document.published_at_utc
+            FROM projection.promotion_overlay_item item
+            LEFT JOIN projection.promotion_placement_state state
+              ON state.placement_id = item.placement_id
+             AND state.placement_revision = item.placement_revision
+             AND state.catalog_key = @catalog_key
+            LEFT JOIN documents.listing_document document
+              ON document.base_projection_id = @base_projection_id
+             AND document.listing_id = item.listing_id
+            WHERE item.overlay_id = @promotion_overlay_id
+              AND item.starts_at_utc <= @read_at_utc
+              AND @read_at_utc < item.hard_expiry_at_utc
+              AND @requested_locale = ANY (item.locale_scope)
+              AND
+              (
+                  (item.scope_type = 'catalog' AND item.scope_key = @catalog_key)
+                  OR
+                  (
+                      item.scope_type = 'category'
+                      AND @category_key IS NOT NULL
+                      AND item.scope_key = @category_key
+                  )
+              )
+            ORDER BY item.priority_band DESC,
+                     item.capacity_slot,
+                     item.placement_id;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter<Guid>(
+            "promotion_overlay_id",
+            revision.PromotionOverlayId));
+        command.Parameters.Add(new NpgsqlParameter<Guid>(
+            "base_projection_id",
+            revision.BaseProjectionId));
+        command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey));
+        command.Parameters.Add(new NpgsqlParameter<string>("requested_locale", requestedLocale));
+        command.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("read_at_utc", readAtUtc));
+        command.Parameters.Add(new NpgsqlParameter(
+            "category_key",
+            NpgsqlTypes.NpgsqlDbType.Text)
+        {
+            Value = categoryKey is null ? DBNull.Value : categoryKey,
+        });
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<SponsoredCoreRow>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.IsDBNull(14) || reader.IsDBNull(16))
+            {
+                throw StoreFailure(
+                    "QUERY_SPONSORED_COMPONENT_MISSING",
+                    $"Promotion overlay '{revision.PromotionOverlayId}' references a missing placement state or base listing.",
+                    "Rebuild the Query promotion overlay from the current Promotion placement events.");
+            }
+
+            var placement = QueryPromotionPlacement.Create(
+                reader.GetGuid(0),
+                reader.GetGuid(1),
+                reader.GetGuid(2),
+                catalogKey,
+                reader.GetString(3),
+                MapPromotionScope(reader.GetString(4)),
+                reader.GetString(5),
+                reader.GetFieldValue<string[]>(6),
+                reader.GetFieldValue<DateTimeOffset>(7),
+                reader.GetFieldValue<DateTimeOffset>(8),
+                reader.GetFieldValue<DateTimeOffset>(9),
+                reader.GetInt32(10),
+                reader.GetInt32(11),
+                reader.GetString(12),
+                MapPromotionState(reader.GetString(14)),
+                reader.GetInt64(13),
+                reader.GetFieldValue<DateTimeOffset>(15));
+            var core = new ListingCoreRow(
+                reader.GetGuid(16),
+                reader.GetGuid(17),
+                reader.GetGuid(18),
+                reader.GetGuid(19),
+                MapListingKind(reader.GetString(20)),
+                reader.GetString(21).TrimEnd(),
+                reader.GetFieldValue<DateTimeOffset>(22));
+            rows.Add(new SponsoredCoreRow(placement, core));
+        }
+
+        if (rows.Count == 0)
+        {
+            return Array.Empty<PublicSponsoredListingSnapshot>();
+        }
+
+        var distinctCoreRows = rows
+            .Select(item => item.Document)
+            .DistinctBy(item => item.ListingId)
+            .ToArray();
+        var documents = await LoadDocumentsAsync(
+            connection,
+            revision.BaseProjectionId,
+            distinctCoreRows,
+            cancellationToken);
+        var documentsById = documents.ToDictionary(item => item.ListingId);
+        return rows
+            .Select(item => new PublicSponsoredListingSnapshot(
+                item.Placement,
+                documentsById[item.Document.ListingId]))
+            .ToArray();
     }
 
     public async Task<PublicReadDocumentSnapshot?> ReadByRouteAsync(
@@ -376,17 +535,21 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         var values = new Dictionary<Guid, List<QueryAttributeDocument>>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            QueryValueKind? valueKind = reader.IsDBNull(3)
-                ? null
+            var state = MapFieldState(reader.GetString(2));
+            var valueKind = reader.IsDBNull(3)
+                ? (QueryValueKind?)null
                 : MapValueKind(reader.GetString(3));
+            var textCollection = reader.IsDBNull(7)
+                ? null
+                : reader.GetFieldValue<string[]>(7);
             Add(values, reader.GetGuid(0), new QueryAttributeDocument(
                 reader.GetString(1),
-                MapFieldState(reader.GetString(2)),
+                state,
                 valueKind,
                 reader.IsDBNull(4) ? null : reader.GetBoolean(4),
                 reader.IsDBNull(5) ? null : reader.GetDecimal(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                reader.IsDBNull(7) ? null : reader.GetFieldValue<string[]>(7)));
+                textCollection));
         }
 
         return ToReadOnly(values);
@@ -399,7 +562,11 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT listing_id, state, latitude, longitude, district_key
+            SELECT listing_id,
+                   state,
+                   latitude,
+                   longitude,
+                   district_key
             FROM documents.listing_geography
             WHERE base_projection_id = @base_projection_id
               AND listing_id = ANY (@listing_ids);
@@ -417,8 +584,8 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                     reader.IsDBNull(4) ? null : reader.GetString(4))))
             {
                 throw StoreFailure(
-                    "QUERY_GEOGRAPHY_DUPLICATE",
-                    $"Listing '{listingId}' has duplicate geography rows.",
+                    "QUERY_DOCUMENT_COMPONENT_DUPLICATE",
+                    $"Listing '{listingId}' has more than one persisted geography row.",
                     "Rebuild the Query projection from the sealed Catalog publication.");
             }
         }
@@ -433,7 +600,11 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT listing_id, kind, target, label
+            SELECT listing_id,
+                   ordinal,
+                   kind,
+                   target,
+                   label
             FROM documents.listing_contact
             WHERE base_projection_id = @base_projection_id
               AND listing_id = ANY (@listing_ids)
@@ -445,9 +616,9 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         while (await reader.ReadAsync(cancellationToken))
         {
             Add(values, reader.GetGuid(0), new QueryContactDocument(
-                MapContactKind(reader.GetString(1)),
-                reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3)));
+                MapContactKind(reader.GetString(2)),
+                reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
 
         return ToReadOnly(values);
@@ -501,20 +672,19 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(new NpgsqlParameter<Guid>("base_projection_id", baseProjectionId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var values = new Dictionary<string, int>(StringComparer.Ordinal);
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var key = reader.GetString(0);
-            if (!values.TryAdd(key, reader.GetInt32(1)))
+            if (!result.TryAdd(reader.GetString(0), reader.GetInt32(1)))
             {
                 throw StoreFailure(
                     "QUERY_FACET_DUPLICATE",
-                    $"Category facet '{key}' is duplicated in base projection '{baseProjectionId}'.",
+                    "Query persistence contains a duplicate category facet row.",
                     "Rebuild the Query projection from the sealed Catalog publication.");
             }
         }
 
-        return values;
+        return result;
     }
 
     private static NpgsqlCommand CreateOwnedRowsCommand(
@@ -531,16 +701,17 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
 
     private static void Add<T>(Dictionary<Guid, List<T>> values, Guid listingId, T value)
     {
-        if (!values.TryGetValue(listingId, out var items))
+        if (!values.TryGetValue(listingId, out var owned))
         {
-            items = [];
-            values.Add(listingId, items);
+            owned = [];
+            values.Add(listingId, owned);
         }
 
-        items.Add(value);
+        owned.Add(value);
     }
 
-    private static Dictionary<Guid, IReadOnlyList<T>> ToReadOnly<T>(Dictionary<Guid, List<T>> values) =>
+    private static Dictionary<Guid, IReadOnlyList<T>> ToReadOnly<T>(
+        Dictionary<Guid, List<T>> values) =>
         values.ToDictionary(
             item => item.Key,
             item => (IReadOnlyList<T>)item.Value.AsReadOnly());
@@ -611,6 +782,25 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         _ => throw UnsupportedValue("geography state", value),
     };
 
+    private static QueryPromotionPlacementScope MapPromotionScope(string value) => value switch
+    {
+        "catalog" => QueryPromotionPlacementScope.Catalog,
+        "category" => QueryPromotionPlacementScope.Category,
+        "district" => QueryPromotionPlacementScope.District,
+        "editorial_landing" => QueryPromotionPlacementScope.EditorialLanding,
+        _ => throw UnsupportedValue("promotion placement scope", value),
+    };
+
+    private static QueryPromotionPlacementState MapPromotionState(string value) => value switch
+    {
+        "scheduled" => QueryPromotionPlacementState.Scheduled,
+        "active" => QueryPromotionPlacementState.Active,
+        "paused" => QueryPromotionPlacementState.Paused,
+        "ended" => QueryPromotionPlacementState.Ended,
+        "revoked" => QueryPromotionPlacementState.Revoked,
+        _ => throw UnsupportedValue("promotion placement state", value),
+    };
+
     private static QueryContactKind MapContactKind(string value) => value switch
     {
         "website" => QueryContactKind.Website,
@@ -651,6 +841,10 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
     private sealed record PublicReadContext(
         PublicReadRevision Revision,
         QueryLocalePolicy LocalePolicy);
+
+    private sealed record SponsoredCoreRow(
+        QueryPromotionPlacement Placement,
+        ListingCoreRow Document);
 
     private sealed record ListingCoreRow(
         Guid ListingId,

@@ -22,6 +22,9 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
 
     public StubPublicQueryStore Store { get; } = new();
 
+    public StubQueryClock Clock { get; } = new(
+        new DateTimeOffset(2026, 8, 4, 12, 0, 0, TimeSpan.Zero));
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -29,7 +32,9 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IPublicQueryStore>();
+            services.RemoveAll<IQueryClock>();
             services.AddSingleton<IPublicQueryStore>(Store);
+            services.AddSingleton<IQueryClock>(Clock);
         });
     }
 
@@ -54,15 +59,23 @@ public sealed class StubPublicQueryStore : IPublicQueryStore
 
     public int RouteReadCount { get; private set; }
 
+    public string? LastRequestedLocale { get; private set; }
+
+    public DateTimeOffset? LastReadAtUtc { get; private set; }
+
     public Task<PublicReadPageSnapshot?> ReadPageAsync(
         string catalogKey,
         Guid? afterListingId,
         int maximumDocuments,
         string? categoryKey,
+        string requestedLocale,
+        DateTimeOffset readAtUtc,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         PageReadCount++;
+        LastRequestedLocale = requestedLocale;
+        LastReadAtUtc = readAtUtc;
         return Task.FromResult(Page);
     }
 
@@ -75,4 +88,11 @@ public sealed class StubPublicQueryStore : IPublicQueryStore
         RouteReadCount++;
         return Task.FromResult(Document);
     }
+}
+
+public sealed class StubQueryClock(DateTimeOffset utcNow) : IQueryClock
+{
+    public DateTimeOffset UtcNow { get; set; } = utcNow;
+
+    public DateTimeOffset GetUtcNow() => UtcNow;
 }
