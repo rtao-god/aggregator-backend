@@ -1,0 +1,104 @@
+name: analytics-acceptance-runtime-contract-proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Analytics/**'
+      - 'tests/Analytics/**'
+      - 'tests/Acceptance/**'
+      - '.github/workflows/analytics-acceptance-runtime-contract-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+concurrency:
+  group: analytics-acceptance-runtime-contract-proof
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Restore and build both sides of the contract
+        shell: bash
+        run: |
+          dotnet restore src/Analytics/Analytics.Api/Analytics.Api.csproj
+          dotnet restore tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj
+          dotnet build src/Analytics/Analytics.Api/Analytics.Api.csproj \
+            --no-restore -warnaserror /m:1 /nr:false
+          dotnet build tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj \
+            --no-restore -warnaserror /m:1 /nr:false
+
+      - name: Prove Acceptance obtains a real anti-abuse token
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'acceptance-token-required-at-runtime|placeholder.*anti.?abuse|fake.*anti.?abuse' \
+            tests/Acceptance/Acceptance.Runner; then
+            echo 'Acceptance still uses a placeholder anti-abuse token.' >&2
+            exit 1
+          fi
+          grep -R --line-number --include='*.cs' -Ei \
+            'anti.?abuse.*(token|challenge)|(token|challenge).*anti.?abuse' \
+            tests/Acceptance/Acceptance.Runner >/tmp/acceptance-anti-abuse.txt
+          test -s /tmp/acceptance-anti-abuse.txt || {
+            echo 'Acceptance has no explicit anti-abuse token acquisition path.' >&2
+            exit 1
+          }
+
+      - name: Prove Acceptance prepares Analytics public-read membership
+        shell: bash
+        run: |
+          grep -R --line-number --include='*.cs' -Ei \
+            'public.?read.?revision|membership|analytics.*projection|projection.*analytics' \
+            tests/Acceptance tests/Acceptance.Control src/Acceptance 2>/dev/null \
+            >/tmp/acceptance-analytics-projection.txt || true
+          test -s /tmp/acceptance-analytics-projection.txt || {
+            echo 'Acceptance has no explicit Analytics public-read membership preparation.' >&2
+            exit 1
+          }
+
+      - name: Reject retired Analytics transport
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'RecordAnalyticsInteractionRequest|AnalyticsInteractionReceipt|AnalyticsListingMetricsResponse|AnalyticsInteractionKindContract\.Lead|X-Analytics-Internal-Key|api/analytics/interactions' \
+            tests/Acceptance/Acceptance.Runner; then
+            echo 'Acceptance contains retired Analytics transport or lead semantics.' >&2
+            exit 1
+          fi
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const success = process.env.JOB_STATUS === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: success ? 'success' : 'failure',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: success
+                ? 'Acceptance uses the real Analytics runtime contract'
+                : 'Acceptance Analytics runtime contract is incomplete',
+              context: 'ci/analytics-acceptance-runtime-contract'
+            });
