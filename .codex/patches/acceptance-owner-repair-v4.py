@@ -21,20 +21,20 @@ def main() -> None:
     replace_once(
         REPOSITORY_ROOT
         / "tests/Acceptance/Acceptance.Control/AcceptanceAnalyticsScenarioService.cs",
-        "                sourceRevision: 1,\n",
-        "                sourceAggregateRevision: 1,\n",
+        "sourceRevision: 1,",
+        "sourceAggregateRevision: 1,",
         "Analytics access projection factory",
     )
     replace_once(
         REPOSITORY_ROOT / "tests/Acceptance/Acceptance.Control/Program.cs",
-        "        return catalogReady && analyticsReady\n",
-        "        return catalogReady.Ready && analyticsReady\n",
+        "return catalogReady && analyticsReady",
+        "return catalogReady.Ready && analyticsReady",
         "Acceptance readiness result",
     )
     replace_once(
         REPOSITORY_ROOT / "tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs",
-        "        IReadOnlySet<Guid>? disallowedRevisionIds = null)\n",
-        "        HashSet<Guid>? disallowedRevisionIds = null)\n",
+        "IReadOnlySet<Guid>? disallowedRevisionIds = null)",
+        "HashSet<Guid>? disallowedRevisionIds = null)",
         "Acceptance public-read exclusion set",
     )
 
