@@ -1,0 +1,162 @@
+{
+  "sha": "6886c2b243e07af2f36001546d320cb08a68d401",
+  "captured_at_utc": "2026-08-05T03:28:47.039Z",
+  "combined_status": "pending",
+  "statuses": [],
+  "check_runs": [
+    {
+      "id": 92199242538,
+      "name": "aggregate",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972349213/job/92199242538"
+    },
+    {
+      "id": 92199238292,
+      "name": "build-and-test",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347752/job/92199238292"
+    },
+    {
+      "id": 92199254774,
+      "name": "prove",
+      "status": "queued",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347813/job/92199254774"
+    },
+    {
+      "id": 92199238459,
+      "name": "prove",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347751/job/92199238459"
+    },
+    {
+      "id": 92199238445,
+      "name": "prove",
+      "status": "queued",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347764/job/92199238445"
+    },
+    {
+      "id": 92199238365,
+      "name": "snapshot",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347744/job/92199238365"
+    }
+  ],
+  "workflow_runs": [
+    {
+      "id": 30972346898,
+      "name": ".github/workflows/ingestion-catalog-e2e-proof.yml",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972346898",
+      "created_at": "2026-08-05T03:28:19Z",
+      "updated_at": "2026-08-05T03:28:19Z"
+    },
+    {
+      "id": 30972347288,
+      "name": ".github/workflows/repair-architecture-proof.yml",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347288",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:20Z"
+    },
+    {
+      "id": 30972346615,
+      "name": ".github/workflows/runtime-solution-ci.yml",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972346615",
+      "created_at": "2026-08-05T03:28:19Z",
+      "updated_at": "2026-08-05T03:28:19Z"
+    },
+    {
+      "id": 30972347751,
+      "name": "authoritative-solution-proof",
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347751",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:24Z"
+    },
+    {
+      "id": 30972349213,
+      "name": "capture-post-green-proof",
+      "event": "workflow_run",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972349213",
+      "created_at": "2026-08-05T03:28:22Z",
+      "updated_at": "2026-08-05T03:28:26Z"
+    },
+    {
+      "id": 30972347752,
+      "name": "ci",
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347752",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:24Z"
+    },
+    {
+      "id": 30972347756,
+      "name": "completion-diagnostics",
+      "event": "push",
+      "status": "pending",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347756",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:21Z"
+    },
+    {
+      "id": 30972347764,
+      "name": "final-repository-proof",
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347764",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:31Z"
+    },
+    {
+      "id": 30972347775,
+      "name": "full-solution-ci",
+      "event": "push",
+      "status": "pending",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347775",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:21Z"
+    },
+    {
+      "id": 30972347744,
+      "name": "Snapshot current proof state",
+      "event": "push",
+      "status": "in_progress",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347744",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:24Z"
+    },
+    {
+      "id": 30972347813,
+      "name": "stabilization-gate",
+      "event": "push",
+      "status": "queued",
+      "conclusion": null,
+      "html_url": "https://github.com/rtao-god/aggregator-backend/actions/runs/30972347813",
+      "created_at": "2026-08-05T03:28:20Z",
+      "updated_at": "2026-08-05T03:28:29Z"
+    }
+  ]
+}
