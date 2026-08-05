@@ -1,0 +1,142 @@
+name: capture-post-green-proof
+
+on:
+  workflow_run:
+    workflows:
+      - contract-artifacts
+      - repository-hardening
+      - ingestion-catalog-e2e-proof
+      - runtime-context-completion
+      - final-repository-proof
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: capture-post-green-proof-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Resolve one completed result per required proof workflow
+        id: aggregate
+        uses: actions/github-script@v9
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const required = [
+              'contract-artifacts.yml',
+              'repository-hardening.yml',
+              'ingestion-catalog-e2e-proof.yml',
+              'runtime-context-completion.yml',
+              'final-repository-proof.yml'
+            ];
+            const results = [];
+            for (const workflow_id of required) {
+              const workflow = await github.rest.actions.getWorkflow({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id
+              });
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow.data.id,
+                  branch: 'main',
+                  per_page: 100
+                }
+              );
+              const matching = runs
+                .filter(run => run.head_sha === process.env.HEAD_SHA)
+                .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
+              if (matching.length === 0) {
+                core.setOutput('state', 'waiting');
+                core.setOutput('summary', `${workflow_id}=missing`);
+                return;
+              }
+              const run = matching[0];
+              if (run.status !== 'completed') {
+                core.setOutput('state', 'waiting');
+                core.setOutput('summary', `${workflow_id}=${run.status}`);
+                return;
+              }
+              results.push({
+                workflow: workflow_id,
+                run_id: run.id,
+                conclusion: run.conclusion,
+                url: run.html_url
+              });
+            }
+            const failed = results.filter(result => result.conclusion !== 'success');
+            core.setOutput('state', failed.length === 0 ? 'success' : 'failure');
+            core.setOutput('summary', JSON.stringify(results));
+
+      - name: Stop while sibling proofs are still running
+        if: steps.aggregate.outputs.state == 'waiting'
+        run: echo '${{ steps.aggregate.outputs.summary }}'
+
+      - name: Write exact aggregate marker
+        if: steps.aggregate.outputs.state != 'waiting'
+        shell: bash
+        env:
+          AGGREGATE_STATE: ${{ steps.aggregate.outputs.state }}
+          AGGREGATE_SUMMARY: ${{ steps.aggregate.outputs.summary }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p .codex/ci
+          if [ "$AGGREGATE_STATE" = 'success' ]; then
+            target=.codex/ci/post-green-proof.txt
+            stale=.codex/ci/post-green-failures.txt
+          else
+            target=.codex/ci/post-green-failures.txt
+            stale=.codex/ci/post-green-proof.txt
+          fi
+          {
+            printf 'head_sha=%s\n' "$HEAD_SHA"
+            printf 'state=%s\n' "$AGGREGATE_STATE"
+            printf 'results=%s\n' "$AGGREGATE_SUMMARY"
+          } > "$target"
+          rm -f "$stale"
+
+      - name: Commit aggregate marker only while the proof head is current
+        if: steps.aggregate.outputs.state != 'waiting'
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          AGGREGATE_STATE: ${{ steps.aggregate.outputs.state }}
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$HEAD_SHA" ]; then
+            echo "Skipping stale aggregate for $HEAD_SHA; main is $base."
+            exit 0
+          fi
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- \
+            .codex/ci/post-green-proof.txt \
+            .codex/ci/post-green-failures.txt
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf 'Record post-build proof: %s\n' "$AGGREGATE_STATE" \
+            | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
