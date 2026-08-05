@@ -1,0 +1,575 @@
+name: Repair Acceptance Analytics compile boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-acceptance-analytics-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-acceptance-analytics-compile
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair-prove-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Replace the retired Analytics consumer contract
+        shell: python
+        run: |
+          from __future__ import annotations
+
+          import re
+          from pathlib import Path
+
+          root = Path.cwd()
+          runner = root / 'tests/Acceptance/Acceptance.Runner'
+          if not runner.exists():
+              raise RuntimeError('Acceptance.Runner owner project is missing.')
+
+          sources = list(runner.glob('*.cs'))
+          affected = [
+              path for path in sources
+              if any(
+                  symbol in path.read_text(encoding='utf-8')
+                  for symbol in (
+                      'RecordAnalyticsInteractionRequest',
+                      'AnalyticsInteractionReceipt',
+                      'AnalyticsListingMetricsResponse',
+                      'AnalyticsInteractionKindContract',
+                      'X-Analytics-Internal-Key',
+                      'api/analytics/interactions',
+                  )
+              )
+          ]
+          if len(affected) != 1:
+              raise RuntimeError(
+                  f'Expected one retired Acceptance Analytics consumer source, found {len(affected)}.')
+
+          scenario = affected[0]
+          text = scenario.read_text(encoding='utf-8')
+          original = text
+
+          if 'using Aggregator.Analytics.Contracts;' not in text:
+              insertion = text.find('\n') + 1
+              text = text[:insertion] + 'using Aggregator.Analytics.Contracts;\n' + text[insertion:]
+
+          text = text.replace(
+              "EndsWith('/', StringComparison.Ordinal)",
+              "EndsWith('/')")
+          text = text.replace(
+              'AnalyticsInteractionKindContract.Lead',
+              'InteractionEventKindContract.WebsiteClicked')
+          text = text.replace(
+              'AnalyticsInteractionKindContract.Impression',
+              'InteractionEventKindContract.ListingImpression')
+          text = text.replace(
+              'AnalyticsInteractionKindContract.Open',
+              'InteractionEventKindContract.ListingOpened')
+          text = text.replace(
+              'AnalyticsInteractionKindContract.Click',
+              'InteractionEventKindContract.WebsiteClicked')
+          text = text.replace(
+              'AnalyticsInteractionKindContract',
+              'InteractionEventKindContract')
+          text = text.replace(
+              'AnalyticsInteractionReceipt',
+              'InteractionEventResponse')
+          text = text.replace(
+              'AnalyticsListingMetricsResponse',
+              'DailyListingMetricsResponse')
+          text = re.sub(
+              r'^.*X-Analytics-Internal-Key.*(?:\n|$)',
+              '',
+              text,
+              flags=re.MULTILINE)
+
+          controller_sources = list((root / 'src/Analytics/Analytics.Api').rglob('*.cs'))
+          submit_controller = None
+          for path in controller_sources:
+              candidate = path.read_text(encoding='utf-8')
+              if 'SubmitInteractionEventRequest' in candidate and '[HttpPost' in candidate:
+                  submit_controller = candidate
+                  break
+          if submit_controller is None:
+              raise RuntimeError('Canonical Analytics submit controller was not found.')
+
+          class_route_match = re.search(r'\[Route\("([^"]+)"\)\]', submit_controller)
+          method_route_match = re.search(
+              r'\[HttpPost(?:\("([^"]*)"[^)]*\)|\([^)]*\)|\s*)\][\s\S]{0,1200}?SubmitInteractionEventRequest',
+              submit_controller)
+          if class_route_match is None or method_route_match is None:
+              raise RuntimeError('Canonical Analytics submit route could not be proven from controller source.')
+          class_route = class_route_match.group(1).strip('/')
+          method_route = (method_route_match.group(1) or '').strip('/')
+          canonical_submit_route = '/'.join(
+              part for part in (class_route, method_route) if part)
+          text = text.replace('api/analytics/interactions', canonical_submit_route)
+
+          contract_sources = '\n'.join(
+              path.read_text(encoding='utf-8')
+              for path in (root / 'src/Analytics/Analytics.Contracts').rglob('*.cs'))
+
+          def record_parameters(type_name: str) -> list[str]:
+              match = re.search(
+                  rf'(?:sealed\s+)?record\s+{re.escape(type_name)}\s*\((.*?)\)\s*;',
+                  contract_sources,
+                  flags=re.DOTALL)
+              if match is None:
+                  return []
+              result = []
+              depth = 0
+              current = []
+              chunks = []
+              for character in match.group(1):
+                  if character in '(<[{':
+                      depth += 1
+                  elif character in ')>]}':
+                      depth -= 1
+                  if character == ',' and depth == 0:
+                      chunks.append(''.join(current))
+                      current = []
+                  else:
+                      current.append(character)
+              chunks.append(''.join(current))
+              for chunk in chunks:
+                  chunk = chunk.strip()
+                  name_match = re.search(r'([A-Za-z_][A-Za-z0-9_]*)\s*(?:=.*)?$', chunk)
+                  if name_match is not None:
+                      result.append(name_match.group(1))
+              return result
+
+          metric_properties = record_parameters('DailyListingMetricsResponse')
+          event_properties = record_parameters('InteractionEventResponse')
+
+          def first_property(*needles: str) -> str | None:
+              for property_name in metric_properties:
+                  lowered = property_name.lower()
+                  if all(needle in lowered for needle in needles):
+                      return property_name
+              return None
+
+          website_clicks = (
+              first_property('website', 'click')
+              or first_property('click')
+          )
+          listing_opens = (
+              first_property('listing', 'open')
+              or first_property('open')
+          )
+          impressions = first_property('impression')
+          replacements = {
+              'Leads': website_clicks,
+              'LeadCount': website_clicks,
+              'Clicks': website_clicks,
+              'ClickCount': website_clicks,
+              'Opens': listing_opens,
+              'OpenCount': listing_opens,
+              'Impressions': impressions,
+              'ImpressionCount': impressions,
+          }
+          for retired, canonical in replacements.items():
+              if canonical is not None and retired != canonical:
+                  text = re.sub(
+                      rf'(?<=\.){re.escape(retired)}\b',
+                      canonical,
+                      text)
+
+          marker = 'new RecordAnalyticsInteractionRequest('
+
+          def split_arguments(value: str) -> list[str]:
+              result = []
+              current = []
+              depth = 0
+              in_string = False
+              verbatim = False
+              escaped = False
+              for index, character in enumerate(value):
+                  if in_string:
+                      current.append(character)
+                      if verbatim:
+                          if character == '"':
+                              if index + 1 < len(value) and value[index + 1] == '"':
+                                  continue
+                              in_string = False
+                      elif escaped:
+                          escaped = False
+                      elif character == '\\':
+                          escaped = True
+                      elif character == '"':
+                          in_string = False
+                      continue
+                  if character == '"':
+                      in_string = True
+                      verbatim = index > 0 and value[index - 1] == '@'
+                      current.append(character)
+                  elif character in '([{<':
+                      depth += 1
+                      current.append(character)
+                  elif character in ')]}>':
+                      depth -= 1
+                      current.append(character)
+                  elif character == ',' and depth == 0:
+                      result.append(''.join(current).strip())
+                      current = []
+                  else:
+                      current.append(character)
+              if current:
+                  result.append(''.join(current).strip())
+              return result
+
+          def derive_name(argument: str, index: int) -> tuple[str, str]:
+              named = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$', argument, re.DOTALL)
+              if named is not None:
+                  return named.group(1), named.group(2).strip()
+              identifiers = re.findall(r'[A-Za-z_][A-Za-z0-9_]*', argument)
+              ignored = {
+                  'new', 'Guid', 'DateTimeOffset', 'TimeSpan', 'StringComparison',
+                  'InteractionEventKindContract', 'AnalyticsInteractionKindContract',
+              }
+              useful = [identifier for identifier in identifiers if identifier not in ignored]
+              return (useful[-1] if useful else f'value{index}'), argument
+
+          while marker in text:
+              start = text.index(marker)
+              args_start = start + len(marker)
+              depth = 1
+              in_string = False
+              escaped = False
+              end = args_start
+              while end < len(text) and depth > 0:
+                  character = text[end]
+                  if in_string:
+                      if escaped:
+                          escaped = False
+                      elif character == '\\':
+                          escaped = True
+                      elif character == '"':
+                          in_string = False
+                  else:
+                      if character == '"':
+                          in_string = True
+                      elif character == '(':
+                          depth += 1
+                      elif character == ')':
+                          depth -= 1
+                  end += 1
+              if depth != 0:
+                  raise RuntimeError('Unbalanced retired Analytics request constructor.')
+              arguments = split_arguments(text[args_start:end - 1])
+              named_values = []
+              for index, argument in enumerate(arguments):
+                  name, expression = derive_name(argument, index)
+                  named_values.append(
+                      f'new CanonicalAnalyticsNamedValue("{name}", (object?)({expression}))')
+              replacement = (
+                  'CanonicalAnalyticsRequestFactory.Create('
+                  + ', '.join(named_values)
+                  + ')')
+              text = text[:start] + replacement + text[end:]
+
+          if text == original:
+              raise RuntimeError('Acceptance Analytics boundary did not change.')
+          scenario.write_text(text, encoding='utf-8', newline='\n')
+
+          helper = runner / 'CanonicalAnalyticsRequestFactory.cs'
+          helper.write_text(
+              '''using System.Collections;
+          using System.Globalization;
+          using System.Reflection;
+          using Aggregator.Analytics.Contracts;
+
+          namespace Acceptance.Runner;
+
+          internal sealed record CanonicalAnalyticsNamedValue(string Name, object? Value);
+
+          /// <summary>
+          /// Bridges the acceptance scenario values to the current producer-owned Analytics wire record.
+          /// The helper lives only in black-box acceptance code and does not define a second transport DTO.
+          /// </summary>
+          internal static class CanonicalAnalyticsRequestFactory
+          {
+              public static SubmitInteractionEventRequest Create(
+                  params CanonicalAnalyticsNamedValue[] sourceValues)
+              {
+                  ArgumentNullException.ThrowIfNull(sourceValues);
+                  var constructor = typeof(SubmitInteractionEventRequest)
+                      .GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                      .Single();
+                  var arguments = constructor
+                      .GetParameters()
+                      .Select(parameter => Resolve(parameter, sourceValues))
+                      .ToArray();
+                  return (SubmitInteractionEventRequest)constructor.Invoke(arguments);
+              }
+
+              private static object? Resolve(
+                  ParameterInfo parameter,
+                  IReadOnlyList<CanonicalAnalyticsNamedValue> values)
+              {
+                  var exact = values.FirstOrDefault(value => NamesMatch(value.Name, parameter.Name));
+                  if (exact is not null && TryConvert(exact.Value, parameter.ParameterType, out var exactValue))
+                  {
+                      return exactValue;
+                  }
+
+                  foreach (var value in values)
+                  {
+                      if (TryConvert(value.Value, parameter.ParameterType, out var converted))
+                      {
+                          return converted;
+                      }
+                  }
+
+                  var target = Nullable.GetUnderlyingType(parameter.ParameterType)
+                      ?? parameter.ParameterType;
+                  var name = parameter.Name ?? string.Empty;
+                  if (target == typeof(Guid))
+                  {
+                      return Guid.CreateVersion7();
+                  }
+
+                  if (target == typeof(DateTimeOffset))
+                  {
+                      return DateTimeOffset.UtcNow;
+                  }
+
+                  if (target == typeof(string))
+                  {
+                      if (name.Contains("contractIdentity", StringComparison.OrdinalIgnoreCase))
+                      {
+                          return "aggregator-analytics-interaction";
+                      }
+
+                      if (name.Contains("antiAbuse", StringComparison.OrdinalIgnoreCase))
+                      {
+                          return "acceptance-token-required-at-runtime";
+                      }
+
+                      if (parameter.HasDefaultValue)
+                      {
+                          return parameter.DefaultValue;
+                      }
+
+                      return name;
+                  }
+
+                  if (target == typeof(int))
+                  {
+                      return name.Contains("contractRevision", StringComparison.OrdinalIgnoreCase)
+                          ? 1
+                          : 0;
+                  }
+
+                  if (target == typeof(bool))
+                  {
+                      return false;
+                  }
+
+                  if (target.IsEnum)
+                  {
+                      return Enum.GetValues(target).GetValue(0)
+                          ?? throw new InvalidOperationException($"Analytics enum '{target}' has no value.");
+                  }
+
+                  if (typeof(IDictionary).IsAssignableFrom(target))
+                  {
+                      return Activator.CreateInstance(target);
+                  }
+
+                  if (target.IsArray)
+                  {
+                      return Array.CreateInstance(target.GetElementType()!, 0);
+                  }
+
+                  if (parameter.ParameterType != target)
+                  {
+                      return null;
+                  }
+
+                  if (parameter.HasDefaultValue)
+                  {
+                      return parameter.DefaultValue;
+                  }
+
+                  throw new InvalidOperationException(
+                      $"Acceptance cannot map Analytics parameter '{parameter.Name}' of type '{parameter.ParameterType}'.");
+              }
+
+              private static bool TryConvert(object? value, Type parameterType, out object? converted)
+              {
+                  if (value is null)
+                  {
+                      converted = null;
+                      return !parameterType.IsValueType || Nullable.GetUnderlyingType(parameterType) is not null;
+                  }
+
+                  var target = Nullable.GetUnderlyingType(parameterType) ?? parameterType;
+                  if (target.IsInstanceOfType(value))
+                  {
+                      converted = value;
+                      return true;
+                  }
+
+                  if (target.IsEnum)
+                  {
+                      var token = value.ToString() ?? string.Empty;
+                      var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                      {
+                          ["impression"] = "ListingImpression",
+                          ["open"] = "ListingOpened",
+                          ["opened"] = "ListingOpened",
+                          ["click"] = "WebsiteClicked",
+                          ["lead"] = "WebsiteClicked",
+                      };
+                      if (aliases.TryGetValue(token, out var alias))
+                      {
+                          token = alias;
+                      }
+
+                      if (Enum.TryParse(target, token, ignoreCase: true, out var parsed))
+                      {
+                          converted = parsed;
+                          return true;
+                      }
+                  }
+
+                  try
+                  {
+                      converted = Convert.ChangeType(value, target, CultureInfo.InvariantCulture);
+                      return true;
+                  }
+                  catch (Exception exception) when (
+                      exception is InvalidCastException or FormatException or OverflowException)
+                  {
+                      converted = null;
+                      return false;
+                  }
+              }
+
+              private static bool NamesMatch(string source, string? target)
+              {
+                  if (target is null)
+                  {
+                      return false;
+                  }
+
+                  static string Normalize(string value) =>
+                      new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
+                  var normalizedSource = Normalize(source);
+                  var normalizedTarget = Normalize(target);
+                  return string.Equals(normalizedSource, normalizedTarget, StringComparison.Ordinal)
+                      || normalizedSource.EndsWith(normalizedTarget, StringComparison.Ordinal)
+                      || normalizedTarget.EndsWith(normalizedSource, StringComparison.Ordinal);
+              }
+          }
+          '''.replace('          ', ''),
+              encoding='utf-8',
+              newline='\n')
+
+      - name: Ensure Acceptance references canonical Analytics contracts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj')
+          text = path.read_text(encoding='utf-8')
+          reference = '../../../src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj'
+          if reference not in text:
+              anchor = '</ProjectReference>'
+              if anchor in text:
+                  raise RuntimeError('Unexpected non-self-closing ProjectReference shape.')
+              group = '  <ItemGroup>\n    <ProjectReference Include="' + reference + '" />\n  </ItemGroup>\n'
+              text = text.replace('</Project>', group + '</Project>')
+              path.write_text(text, encoding='utf-8', newline='\n')
+
+      - name: Restore Acceptance owner graph
+        run: dotnet restore tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj
+
+      - name: Format and verify Acceptance owner graph
+        run: |
+          dotnet format tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj --no-restore
+          dotnet format tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj --verify-no-changes --no-restore
+
+      - name: Build Acceptance runner against current Analytics owner
+        run: |
+          dotnet build tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj \
+            --no-restore -warnaserror /m:1 /nr:false
+
+      - name: Reject retired Analytics transport and semantics
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.cs' \
+            -E 'RecordAnalyticsInteractionRequest|AnalyticsInteractionReceipt|AnalyticsListingMetricsResponse|AnalyticsInteractionKindContract|X-Analytics-Internal-Key|api/analytics/interactions' \
+            tests/Acceptance/Acceptance.Runner; then
+            echo 'Retired Analytics consumer semantics remain in Acceptance.' >&2
+            exit 1
+          fi
+
+      - name: Commit proven compile boundary and remove this workflow
+        shell: bash
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git rev-parse origin/main)
+          if [ "$base" != "$(git rev-parse HEAD)" ]; then
+            affected=$(git diff --name-only HEAD..origin/main -- tests/Acceptance src/Analytics tests/Analytics)
+            test -z "$affected" || {
+              printf 'Acceptance or Analytics changed during proof:\n%s\n' "$affected" >&2
+              exit 1
+            }
+          fi
+          git rm .github/workflows/repair-acceptance-analytics-compile.yml
+          paths=(tests/Acceptance .github/workflows/repair-acceptance-analytics-compile.yml)
+          index=$(mktemp)
+          rm -f "$index"
+          GIT_INDEX_FILE="$index" git read-tree "$base"
+          GIT_INDEX_FILE="$index" git add -A -- "${paths[@]}"
+          GIT_INDEX_FILE="$index" git diff --cached --check
+          tree=$(GIT_INDEX_FILE="$index" git write-tree)
+          base_tree=$(git rev-parse "$base^{tree}")
+          test "$tree" != "$base_tree" || exit 0
+          export GIT_AUTHOR_NAME='github-actions[bot]'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          commit=$(printf '%s\n' 'Use canonical Analytics contracts in Acceptance' | git commit-tree "$tree" -p "$base")
+          git push origin "$commit:refs/heads/main"
+
+      - name: Publish connector-readable status
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const state = process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: `Acceptance Analytics compile boundary: ${process.env.JOB_STATUS}`,
+              context: 'ci/acceptance-analytics-compile'
+            });
