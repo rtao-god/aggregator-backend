@@ -1,0 +1,26 @@
+name: Trigger Acceptance Analytics owner repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trigger-acceptance-analytics-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'repair-acceptance-analytics-compile.yml',
+              ref: 'main'
+            });
