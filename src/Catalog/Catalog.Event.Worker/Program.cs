@@ -187,8 +187,8 @@ internal sealed class CatalogEventOutboxWorker : BackgroundService, IAsyncDispos
                     lease,
                     _timeProvider.GetUtcNow(),
                     stoppingToken);
-                _logger.LogInformation(
-                    "Dispatched Catalog event {EventId} after {DeliveryAttempts} attempt(s)",
+                CatalogEventWorkerLog.EventDispatched(
+                    _logger,
                     lease.EventId,
                     lease.DeliveryAttempts);
             }
@@ -198,9 +198,9 @@ internal sealed class CatalogEventOutboxWorker : BackgroundService, IAsyncDispos
             }
             catch (Exception exception)
             {
-                _logger.LogError(
+                CatalogEventWorkerLog.EventDeliveryFailed(
+                    _logger,
                     exception,
-                    "Catalog event {EventId} delivery attempt {DeliveryAttempts} failed",
                     lease.EventId,
                     lease.DeliveryAttempts);
                 await MarkFailedAsync(
@@ -400,4 +400,26 @@ internal sealed class CatalogEventOutboxWorker : BackgroundService, IAsyncDispos
             cancellationToken: cancellationToken);
         return _channel;
     }
+}
+
+internal static partial class CatalogEventWorkerLog
+{
+    [LoggerMessage(
+        EventId = 1001,
+        Level = LogLevel.Information,
+        Message = "Dispatched Catalog event {EventId} after {DeliveryAttempts} attempt(s)")]
+    public static partial void EventDispatched(
+        ILogger logger,
+        Guid eventId,
+        int deliveryAttempts);
+
+    [LoggerMessage(
+        EventId = 1002,
+        Level = LogLevel.Error,
+        Message = "Catalog event {EventId} delivery attempt {DeliveryAttempts} failed")]
+    public static partial void EventDeliveryFailed(
+        ILogger logger,
+        Exception exception,
+        Guid eventId,
+        int deliveryAttempts);
 }
