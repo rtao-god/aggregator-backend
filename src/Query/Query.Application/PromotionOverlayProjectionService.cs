@@ -1,128 +1,115 @@
 using Aggregator.Promotion.Contracts;
+using Aggregator.Query.Domain;
 
 namespace Aggregator.Query.Application;
 
-public sealed record PromotionOverlayInboxMessage(
+public sealed record PromotionPlacementInboxMessage(
     Guid EventId,
     string PayloadDigest,
-    long ActivationRevision,
     DateTimeOffset ReceivedAtUtc);
 
-public sealed record PromotionOverlayProjectionResult(
-    Guid OverlayId,
-    Guid SourcePublicReadRevisionId,
-    long ActivationRevision,
-    bool Replayed,
-    bool StaleIgnored);
-
-public interface IPromotionOverlayProjectionStore
+public enum PromotionPlacementProjectionDisposition
 {
-    public Task<PromotionOverlayProjectionResult> ActivateAsync(
-        PromotionOverlayActivated activation,
-        PromotionOverlayInboxMessage inboxMessage,
+    Activated = 1,
+    Replayed = 2,
+    IgnoredStale = 3,
+}
+
+public sealed record PromotionPlacementProjectionResult(
+    PublicReadRevision PublicReadRevision,
+    PromotionPlacementProjectionDisposition Disposition)
+{
+    public bool Replayed => Disposition == PromotionPlacementProjectionDisposition.Replayed;
+
+    public bool StaleIgnored => Disposition == PromotionPlacementProjectionDisposition.IgnoredStale;
+}
+
+public sealed record PromotionOverlayProjectionMaterialization(
+    QueryOverlayRevision PromotionOverlay,
+    PublicReadRevision PublicReadRevision,
+    IReadOnlyList<QueryPromotionPlacement> Placements);
+
+public interface IPromotionPlacementProjectionStore
+{
+    public Task<PromotionPlacementProjectionResult> ApplyAsync(
+        QueryPromotionPlacement change,
+        PromotionPlacementInboxMessage inboxMessage,
         CancellationToken cancellationToken);
 }
 
 public sealed class PromotionOverlayProjectionService(
-    IPromotionOverlayProjectionStore store,
+    IPromotionPlacementProjectionStore store,
     IQueryClock clock)
 {
-    public async Task<PromotionOverlayProjectionResult> ApplyAsync(
-        PromotionOverlayActivated activation,
+    public async Task<PromotionPlacementProjectionResult> ApplyAsync(
+        SponsoredPlacementChanged change,
         string eventPayloadDigest,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(activation);
-        ValidateActivation(activation);
+        ArgumentNullException.ThrowIfNull(change);
         ValidateDigest(eventPayloadDigest, "event payload");
-        var receivedAtUtc = clock.GetUtcNow();
-        var inbox = new PromotionOverlayInboxMessage(
-            activation.EventId,
+        var placement = Map(change);
+        var inbox = new PromotionPlacementInboxMessage(
+            change.EventId,
             eventPayloadDigest,
-            activation.ActivationRevision,
-            receivedAtUtc);
-        return await store.ActivateAsync(activation, inbox, cancellationToken);
+            clock.GetUtcNow());
+        return await store.ApplyAsync(placement, inbox, cancellationToken);
     }
 
-    private static void ValidateActivation(PromotionOverlayActivated activation)
+    private static QueryPromotionPlacement Map(SponsoredPlacementChanged change)
     {
-        if (activation.EventId == Guid.Empty ||
-            activation.OverlayId == Guid.Empty ||
-            activation.SourcePublicReadRevisionId == Guid.Empty)
+        if (change.EventId == Guid.Empty)
         {
             throw Failure(
-                "QUERY_PROMOTION_EVENT_IDENTITY_INVALID",
-                "Promotion overlay event contains an empty required identity.",
-                "Correct the Promotion producer event before replaying it.");
+                "QUERY_PROMOTION_EVENT_ID_INVALID",
+                "Promotion placement event ID is empty.",
+                "Correct the Promotion outbox event before replaying it.");
         }
 
-        if (string.IsNullOrWhiteSpace(activation.CatalogKey) ||
-            activation.ActivationRevision <= 0)
-        {
-            throw Failure(
-                "QUERY_PROMOTION_EVENT_CONTRACT_INVALID",
-                "Promotion overlay event violates the Query projection contract.",
-                "Correct the Promotion producer event before replaying it.");
-        }
-
-        ValidateDigest(activation.ContentDigest, "overlay content");
-        if (activation.OccurredAtUtc.Offset != TimeSpan.Zero)
-        {
-            throw Failure(
-                "QUERY_PROMOTION_EVENT_TIMESTAMP_NOT_UTC",
-                "Promotion overlay event timestamp is not UTC.",
-                "Correct the Promotion producer timestamp before replaying it.");
-        }
-
-        var items = activation.Items
-            ?? throw Failure(
-                "QUERY_PROMOTION_ITEMS_REQUIRED",
-                "Promotion overlay event contains no item collection.",
-                "Publish the exact bounded Promotion overlay contract.");
-        if (items.Count is < 1 or > 100)
-        {
-            throw Failure(
-                "QUERY_PROMOTION_ITEM_COUNT_INVALID",
-                "Promotion overlay item count is outside the supported range.",
-                "Publish between one and 100 sponsored placements.");
-        }
-
-        if (items.Any(item => item is null))
-        {
-            throw Failure(
-                "QUERY_PROMOTION_ITEM_NULL",
-                "Promotion overlay contains a null item.",
-                "Republish a complete exact overlay contract.");
-        }
-
-        if (items.Select(item => item.Position).Distinct().Count() != items.Count ||
-            items.Select(item => item.ListingId).Distinct().Count() != items.Count)
-        {
-            throw Failure(
-                "QUERY_PROMOTION_ITEM_DUPLICATE",
-                "Promotion overlay contains duplicate positions or listings.",
-                "Correct the Promotion overlay before replaying it.");
-        }
-
-        foreach (var item in items)
-        {
-            if (item.ListingId == Guid.Empty ||
-                item.CampaignId == Guid.Empty ||
-                item.Position is < 1 or > 100 ||
-                string.IsNullOrWhiteSpace(item.Locale) ||
-                string.IsNullOrWhiteSpace(item.Title) ||
-                string.IsNullOrWhiteSpace(item.RoutePath) ||
-                !item.RoutePath.StartsWith('/') ||
-                item.RoutePath.Contains("..", StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(item.DisclosureLabel))
-            {
-                throw Failure(
-                    "QUERY_PROMOTION_ITEM_INVALID",
-                    "Promotion overlay contains an invalid sponsored placement.",
-                    "Correct the exact Promotion item contract before replaying it.");
-            }
-        }
+        return QueryPromotionPlacement.Create(
+            change.PlacementId,
+            change.EntitlementId,
+            change.ListingId,
+            change.CatalogKey,
+            change.ProductKey,
+            MapScope(change.ScopeType),
+            change.ScopeKey,
+            change.LocaleScope,
+            change.StartsAtUtc,
+            change.EndsAtUtc,
+            change.HardExpiryAtUtc,
+            change.PriorityBand,
+            change.CapacitySlot,
+            change.PresentationLabelKey,
+            MapState(change.State),
+            change.AggregateRevision,
+            change.OccurredAtUtc);
     }
+
+    private static QueryPromotionPlacementScope MapScope(PlacementScopeTypeContract value) => value switch
+    {
+        PlacementScopeTypeContract.Catalog => QueryPromotionPlacementScope.Catalog,
+        PlacementScopeTypeContract.Category => QueryPromotionPlacementScope.Category,
+        PlacementScopeTypeContract.District => QueryPromotionPlacementScope.District,
+        PlacementScopeTypeContract.EditorialLanding => QueryPromotionPlacementScope.EditorialLanding,
+        _ => throw Failure(
+            "QUERY_PROMOTION_SCOPE_UNSUPPORTED",
+            $"Promotion placement scope '{value}' is unsupported.",
+            "Upgrade Query to the exact Promotion contract before replaying the event."),
+    };
+
+    private static QueryPromotionPlacementState MapState(SponsoredPlacementStateContract value) => value switch
+    {
+        SponsoredPlacementStateContract.Scheduled => QueryPromotionPlacementState.Scheduled,
+        SponsoredPlacementStateContract.Active => QueryPromotionPlacementState.Active,
+        SponsoredPlacementStateContract.Paused => QueryPromotionPlacementState.Paused,
+        SponsoredPlacementStateContract.Ended => QueryPromotionPlacementState.Ended,
+        SponsoredPlacementStateContract.Revoked => QueryPromotionPlacementState.Revoked,
+        _ => throw Failure(
+            "QUERY_PROMOTION_STATE_UNSUPPORTED",
+            $"Promotion placement state '{value}' is unsupported.",
+            "Upgrade Query to the exact Promotion contract before replaying the event."),
+    };
 
     private static void ValidateDigest(string digest, string owner)
     {
@@ -145,6 +132,114 @@ public sealed class PromotionOverlayProjectionService(
             "Query.PromotionProjection",
             code,
             422,
+            message,
+            requiredAction);
+}
+
+public static class PromotionOverlayProjectionBuilder
+{
+    public static PromotionOverlayProjectionMaterialization Build(
+        PublicReadRevision currentPublicReadRevision,
+        string baseProjectionDigest,
+        string safetyOverlayDigest,
+        long sourceRevision,
+        IReadOnlyList<QueryPromotionPlacement> placements,
+        Guid promotionOverlayId,
+        Guid publicReadRevisionId,
+        DateTimeOffset builtAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(currentPublicReadRevision);
+        ArgumentNullException.ThrowIfNull(placements);
+        if (sourceRevision <= 0)
+        {
+            throw Failure(
+                "QUERY_PROMOTION_SOURCE_REVISION_INVALID",
+                "Promotion overlay source revision must be positive.",
+                "Correct Query projection revision allocation before persistence.");
+        }
+
+        var orderedPlacements = placements
+            .Where(item => item.IsMaterialized)
+            .OrderByDescending(item => item.PriorityBand)
+            .ThenBy(item => item.CapacitySlot)
+            .ThenBy(item => item.PlacementId)
+            .ToArray();
+        if (orderedPlacements.Select(item => item.PlacementId).Distinct().Count() != orderedPlacements.Length)
+        {
+            throw Failure(
+                "QUERY_PROMOTION_PLACEMENT_DUPLICATE",
+                "Promotion overlay contains a duplicate placement identity.",
+                "Correct the Query placement-state projection before materialization.");
+        }
+
+        var builtAt = builtAtUtc.Offset == TimeSpan.Zero
+            ? builtAtUtc
+            : throw Failure(
+                "QUERY_PROMOTION_BUILD_TIMESTAMP_NOT_UTC",
+                "Promotion overlay build timestamp is not UTC.",
+                "Normalize the Query owner clock to UTC before materialization.");
+        var overlayDigest = QueryCanonicalJson.ComputeDigest(new
+        {
+            currentPublicReadRevision.CatalogKey,
+            kind = "promotion",
+            sourceRevision,
+            items = orderedPlacements.Select(item => new
+            {
+                item.PlacementId,
+                item.EntitlementId,
+                item.ListingId,
+                item.ProductKey,
+                scope = item.Scope.ToString(),
+                item.ScopeKey,
+                item.LocaleScope,
+                item.StartsAtUtc,
+                item.EndsAtUtc,
+                item.HardExpiryAtUtc,
+                item.PriorityBand,
+                item.CapacitySlot,
+                item.PresentationLabelKey,
+                state = item.State.ToString(),
+                item.AggregateRevision,
+            }),
+        });
+        var overlay = QueryOverlayRevision.Create(
+            promotionOverlayId,
+            currentPublicReadRevision.CatalogKey,
+            QueryOverlayKind.Promotion,
+            sourceRevision,
+            builtAt,
+            overlayDigest,
+            orderedPlacements.Length);
+        var publicReadDigest = QueryCanonicalJson.ComputeDigest(new
+        {
+            baseProjectionDigest,
+            promotionOverlayDigest = overlay.ContentDigest,
+            safetyOverlayDigest,
+            currentPublicReadRevision.SourcePublicationId,
+        });
+        var publicReadRevision = PublicReadRevision.Restore(
+            publicReadRevisionId,
+            currentPublicReadRevision.CatalogKey,
+            currentPublicReadRevision.BaseProjectionId,
+            overlay.Id,
+            currentPublicReadRevision.SafetyOverlayId,
+            currentPublicReadRevision.SourcePublicationId,
+            builtAt,
+            publicReadDigest);
+        return new PromotionOverlayProjectionMaterialization(
+            overlay,
+            publicReadRevision,
+            Array.AsReadOnly(orderedPlacements));
+    }
+
+    private static QueryProjectionException Failure(
+        string code,
+        string message,
+        string requiredAction) =>
+        new(
+            "Query.PromotionProjectionBuilder",
+            code,
+            500,
             message,
             requiredAction);
 }

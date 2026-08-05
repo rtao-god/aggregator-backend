@@ -150,18 +150,35 @@ public sealed record QueryOverlayRevision
 
     public int ItemCount { get; }
 
-    public static QueryOverlayRevision CreateEmpty(
+    public static QueryOverlayRevision Create(
         Guid id,
         string catalogKey,
         QueryOverlayKind kind,
         long sourceRevision,
         DateTimeOffset createdAtUtc,
-        string contentDigest)
+        string contentDigest,
+        int itemCount)
     {
         QueryContractRules.RequireId(id, nameof(id));
+        if (!Enum.IsDefined(kind))
+        {
+            throw new QueryDomainException(
+                "QUERY_OVERLAY_KIND_INVALID",
+                $"Overlay kind '{kind}' is unsupported.");
+        }
+
         if (sourceRevision < 0)
         {
-            throw new QueryDomainException("QUERY_OVERLAY_SOURCE_REVISION_INVALID", "Overlay source revision cannot be negative.");
+            throw new QueryDomainException(
+                "QUERY_OVERLAY_SOURCE_REVISION_INVALID",
+                "Overlay source revision cannot be negative.");
+        }
+
+        if (itemCount < 0)
+        {
+            throw new QueryDomainException(
+                "QUERY_OVERLAY_ITEM_COUNT_INVALID",
+                "Overlay item count cannot be negative.");
         }
 
         return new QueryOverlayRevision(
@@ -171,8 +188,24 @@ public sealed record QueryOverlayRevision
             sourceRevision,
             QueryContractRules.RequireUtc(createdAtUtc, nameof(createdAtUtc)),
             QueryContractRules.RequireDigest(contentDigest, nameof(contentDigest)),
-            0);
+            itemCount);
     }
+
+    public static QueryOverlayRevision CreateEmpty(
+        Guid id,
+        string catalogKey,
+        QueryOverlayKind kind,
+        long sourceRevision,
+        DateTimeOffset createdAtUtc,
+        string contentDigest) =>
+        Create(
+            id,
+            catalogKey,
+            kind,
+            sourceRevision,
+            createdAtUtc,
+            contentDigest,
+            itemCount: 0);
 }
 
 public sealed record PublicReadRevision
