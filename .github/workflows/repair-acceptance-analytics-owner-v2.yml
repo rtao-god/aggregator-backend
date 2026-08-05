@@ -1,0 +1,166 @@
+name: Repair Acceptance Analytics owner v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-acceptance-analytics-owner-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: repair-acceptance-analytics-owner-v2
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.302
+
+      - name: Execute corrected owner-alignment source script
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/repair-acceptance-analytics-owner.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          step_marker = '      - name: Align Acceptance with canonical Analytics contracts\n'
+          next_step_marker = '      - name: Synchronize project inventory and solutions\n'
+          step_start = workflow.find(step_marker)
+          run_start = workflow.find('        run: |\n', step_start)
+          script_start = run_start + len('        run: |\n')
+          script_end = workflow.find(next_step_marker, script_start)
+          if step_start < 0 or run_start < 0 or script_end < 0:
+              raise SystemExit('Canonical owner-alignment script boundaries were not found.')
+
+          script_lines = []
+          for line in workflow[script_start:script_end].splitlines():
+              if line.startswith('          '):
+                  script_lines.append(line[10:])
+              elif not line.strip():
+                  script_lines.append('')
+              else:
+                  raise SystemExit(f'Unexpected owner-script indentation: {line!r}')
+          script = '\n'.join(script_lines) + '\n'
+
+          fragile_start_marker = "old_get = '''    public static async Task<TResponse> GetAsync<TResponse>("
+          fragile_end_marker = "http.write_text(source, encoding='utf-8', newline='\\\\n')"
+          fragile_start = script.find(fragile_start_marker)
+          fragile_end = script.find(fragile_end_marker, fragile_start)
+          if fragile_start < 0 or fragile_end < 0:
+              raise SystemExit('Fragile AcceptanceHttp source block was not found in owner script.')
+          fragile_end += len(fragile_end_marker)
+
+          replacement = r'''get_start = source.find(
+              '    public static async Task<TResponse> GetAsync<TResponse>(\n')
+          get_end = source.find(
+              '    public static async Task<JsonDocument> GetDocumentAsync(\n',
+              get_start)
+          if get_start < 0 or get_end < 0:
+              raise SystemExit('Acceptance GET method boundaries are missing.')
+          new_get = (
+              '    public static Task<TResponse> GetAsync<TResponse>(\n'
+              '        HttpClient client,\n'
+              '        string relativePath,\n'
+              '        IReadOnlyDictionary<string, string>? headers,\n'
+              '        CancellationToken cancellationToken) =>\n'
+              '        GetAsync<TResponse>(\n'
+              '            client,\n'
+              '            relativePath,\n'
+              '            bearerToken: null,\n'
+              '            headers,\n'
+              '            cancellationToken);\n'
+              '\n'
+              '    public static async Task<TResponse> GetAsync<TResponse>(\n'
+              '        HttpClient client,\n'
+              '        string relativePath,\n'
+              '        string? bearerToken,\n'
+              '        IReadOnlyDictionary<string, string>? headers,\n'
+              '        CancellationToken cancellationToken)\n'
+              '    {\n'
+              '        ArgumentNullException.ThrowIfNull(client);\n'
+              '        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);\n'
+              '        using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);\n'
+              '        AddHeaders(request, bearerToken, headers);\n'
+              '        using var response = await client.SendAsync(request, cancellationToken);\n'
+              '        return await ReadRequiredAsync<TResponse>(response, cancellationToken);\n'
+              '    }\n'
+              '\n')
+          source = source[:get_start] + new_get + source[get_end:]
+          http.write_text(source, encoding='utf-8', newline='\n')'''
+          script = script[:fragile_start] + replacement + script[fragile_end:]
+          exec(compile(script, '<acceptance-owner-alignment>', 'exec'), {'__name__': '__main__'})
+
+          # The repository token may mutate source but not workflow files. The permanent
+          # acceptance workflow is published through the GitHub connector after proof.
+          Path('.github/workflows/backend-acceptance-e2e.yml').unlink(missing_ok=True)
+
+      - name: Synchronize project inventory and solutions
+        shell: bash
+        run: |
+          python3 .tools/complete-backend.py
+          project='tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj'
+          if ! dotnet sln AggregatorBackend.All.slnx list | grep -Fq "$project"; then
+            dotnet sln AggregatorBackend.All.slnx add "$project"
+          fi
+          python3 .tools/complete-backend.py --check
+
+      - name: Restore
+        run: dotnet restore AggregatorBackend.slnx
+
+      - name: Format owned solution
+        run: |
+          dotnet format AggregatorBackend.slnx --no-restore
+          dotnet format AggregatorBackend.slnx --verify-no-changes --no-restore
+
+      - name: Build with warnings as errors
+        run: >-
+          dotnet build AggregatorBackend.slnx
+          --no-restore -warnaserror /m:1 /nr:false
+
+      - name: Execute complete test suite
+        run: >-
+          dotnet test AggregatorBackend.slnx
+          --no-build --no-restore -warnaserror
+          --logger 'console;verbosity=normal' /m:1 /nr:false
+
+      - name: Generate and verify producer contracts
+        run: |
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj \
+            --no-build -- --write
+          dotnet run --project tools/ContractArtifacts/ContractArtifacts.csproj \
+            --no-build -- --verify
+
+      - name: Verify workflow files are outside the source commit
+        run: |
+          if git status --short -- .github/workflows | grep -q .; then
+            echo 'Unexpected workflow mutation in source proof:' >&2
+            git status --short -- .github/workflows >&2
+            exit 1
+          fi
+
+      - name: Commit proven owner-aligned source
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Align acceptance with canonical Analytics owner'
+          git pull --rebase origin main
+          git push origin HEAD:main
