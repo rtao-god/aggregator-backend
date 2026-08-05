@@ -21,7 +21,6 @@
     <Project Path="src/Catalog/Catalog.Application/Catalog.Application.csproj" />
     <Project Path="src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <Project Path="src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
-    <Project Path="src/Catalog/Catalog.Event.Worker/Catalog.Event.Worker.csproj" />
     <Project Path="src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj" />
@@ -36,12 +35,6 @@
   <Folder Name="/src/Ingestion/">
     <Project Path="src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
     <Project Path="src/Ingestion/Ingestion.Application/Ingestion.Application.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Api/Ingestion.Collector.Api.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Application/Ingestion.Collector.Application.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Domain/Ingestion.Collector.Domain.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Infrastructure/Ingestion.Collector.Infrastructure.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Migrations/Ingestion.Collector.Migrations.csproj" />
     <Project Path="src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
     <Project Path="src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj" />
     <Project Path="src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
@@ -55,11 +48,6 @@
     <Project Path="src/Promotion/Promotion.Domain/Promotion.Domain.csproj" />
     <Project Path="src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj" />
     <Project Path="src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Api/Promotion.Overlay.Api.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Application/Promotion.Overlay.Application.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Infrastructure/Promotion.Overlay.Infrastructure.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Migrations/Promotion.Overlay.Migrations.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Worker/Promotion.Overlay.Worker.csproj" />
     <Project Path="src/Promotion/Promotion.Worker/Promotion.Worker.csproj" />
   </Folder>
   <Folder Name="/src/Query/">

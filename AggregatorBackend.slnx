@@ -21,7 +21,6 @@
     <Project Path="src/Catalog/Catalog.Application/Catalog.Application.csproj" />
     <Project Path="src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <Project Path="src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
-    <Project Path="src/Catalog/Catalog.Event.Worker/Catalog.Event.Worker.csproj" />
     <Project Path="src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj" />
@@ -36,12 +35,6 @@
   <Folder Name="/src/Ingestion/">
     <Project Path="src/Ingestion/Ingestion.Api/Ingestion.Api.csproj" />
     <Project Path="src/Ingestion/Ingestion.Application/Ingestion.Application.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Api/Ingestion.Collector.Api.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Application/Ingestion.Collector.Application.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Domain/Ingestion.Collector.Domain.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Infrastructure/Ingestion.Collector.Infrastructure.csproj" />
-    <Project Path="src/Ingestion/Ingestion.Collector.Migrations/Ingestion.Collector.Migrations.csproj" />
     <Project Path="src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
     <Project Path="src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj" />
     <Project Path="src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj" />
@@ -55,11 +48,6 @@
     <Project Path="src/Promotion/Promotion.Domain/Promotion.Domain.csproj" />
     <Project Path="src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj" />
     <Project Path="src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Api/Promotion.Overlay.Api.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Application/Promotion.Overlay.Application.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Infrastructure/Promotion.Overlay.Infrastructure.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Migrations/Promotion.Overlay.Migrations.csproj" />
-    <Project Path="src/Promotion/Promotion.Overlay.Worker/Promotion.Overlay.Worker.csproj" />
     <Project Path="src/Promotion/Promotion.Worker/Promotion.Worker.csproj" />
   </Folder>
   <Folder Name="/src/Query/">
@@ -76,7 +64,6 @@
     <Project Path="tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj" />
     <Project Path="tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj" />
     <Project Path="tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj" />
-    <Project Path="tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj" />
   </Folder>
   <Folder Name="/tests/Analytics/">
     <Project Path="tests/Analytics/Analytics.Api.Tests/Analytics.Api.Tests.csproj" />
@@ -104,8 +91,6 @@
   <Folder Name="/tests/Ingestion/">
     <Project Path="tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj" />
-    <Project Path="tests/Ingestion/Ingestion.Collector.Api.Tests/Ingestion.Collector.Api.Tests.csproj" />
-    <Project Path="tests/Ingestion/Ingestion.Collector.Application.Tests/Ingestion.Collector.Application.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj" />
     <Project Path="tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj" />
@@ -116,8 +101,6 @@
     <Project Path="tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj" />
-    <Project Path="tests/Promotion/Promotion.Overlay.Api.Tests/Promotion.Overlay.Api.Tests.csproj" />
-    <Project Path="tests/Promotion/Promotion.Overlay.Application.Tests/Promotion.Overlay.Application.Tests.csproj" />
     <Project Path="tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Query/">
