@@ -55,6 +55,16 @@ public enum InteractionAcceptanceStateContract
     AlreadyApplied = 2,
 }
 
+/// <summary>Requests one short-lived proof bound to an exact interaction identity and occurrence time.</summary>
+public sealed record IssueAnalyticsAntiAbuseTokenRequest(
+    Guid ClientEventId,
+    DateTimeOffset OccurredAtUtc);
+
+/// <summary>Returns one opaque proof that can be used only for the exact requested interaction.</summary>
+public sealed record AnalyticsAntiAbuseTokenResponse(
+    string Token,
+    DateTimeOffset ExpiresAtUtc);
+
 public sealed record PlacementContextContract(
     PlacementExposureKindContract ExposureKind,
     Guid? PlacementId,

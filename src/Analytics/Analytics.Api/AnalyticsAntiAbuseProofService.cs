@@ -2,19 +2,10 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Aggregator.Analytics.Application;
+using Aggregator.Analytics.Contracts;
 using Microsoft.Extensions.Configuration;
 
 namespace Aggregator.Analytics.Api;
-
-/// <summary>Requests one short-lived proof bound to an exact interaction identity and occurrence time.</summary>
-public sealed record IssueAnalyticsAntiAbuseTokenRequest(
-    Guid ClientEventId,
-    DateTimeOffset OccurredAtUtc);
-
-/// <summary>Returns one opaque proof that can be used only for the exact requested interaction.</summary>
-public sealed record AnalyticsAntiAbuseTokenResponse(
-    string Token,
-    DateTimeOffset ExpiresAtUtc);
 
 public sealed record AnalyticsAntiAbuseOptions
 {
