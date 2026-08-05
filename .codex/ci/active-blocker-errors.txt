@@ -1,4 +1,370 @@
-source_blocker=.codex/ci/stabilization-controller-blocker.txt
-child_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962594179
+source_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30963116181
 
-[converge] log download failed: Unknown error
+## repair (success)
+Mechanical changes:
+src/Ingestion/Ingestion.Application/IngestionDocumentDigest.cs
+src/Ingestion/Ingestion.Application/IngestionCanonicalJson.cs
+src/BuildingBlocks/Platform.ObjectStorage/S3ObjectStore.cs
+src/BuildingBlocks/Platform.Persistence/MigrationScript.cs
+src/Query/Query.Application/QueryCursorCodec.cs
+src/Query/Query.Application/QueryCanonicalJson.cs
+src/Query/Query.Api/CatalogQueryController.cs
+src/Catalog/Catalog.Contracts/CatalogIngestionCommandDigest.cs
+src/Catalog/Catalog.Infrastructure/CatalogIngestionDraftPersistence.cs
+src/Catalog/Catalog.Application/CatalogCanonicalJson.cs
+src/Analytics/Analytics.Application/AnalyticsCanonicalJson.cs
+tests/Ingestion/Ingestion.Application.Tests/IngestionCanonicalDocumentDigestTests.cs
+tests/Ingestion/Ingestion.Application.Tests/IngestionDocumentDigestTests.cs
+tests/BuildingBlocks/Platform.Messaging.Tests/OutboxMessageIntegrityTests.cs
+tests/Query/Query.Infrastructure.Tests/ObjectStoreCatalogPublicationArtifactReaderTests.cs
+tests/Catalog/Catalog.Application.Tests/CatalogEndToEndTests.cs
+tests/Catalog/Catalog.Application.Tests/CatalogOutboxMessageFactoryTests.cs
+
+
+## restore (success)
+  Determining projects to restore...
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj (in 271 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Overlay.Application/Promotion.Overlay.Application.csproj (in 270 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj (in 270 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj (in 1.67 sec).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj (in 1.69 sec).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Domain/Catalog.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj (in 2.02 sec).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj (in 1.72 sec).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Event.Worker/Catalog.Event.Worker.csproj (in 799 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj (in 739 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Query/Query.Application.Tests/Query.Application.Tests.csproj (in 71 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Query/Query.Infrastructure.Tests/Query.Infrastructure.Tests.csproj (in 844 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Query/Query.Worker.Tests/Query.Worker.Tests.csproj (in 849 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Overlay.Application.Tests/Promotion.Overlay.Application.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj (in 12 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj (in 6 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj (in 9 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Query/Query.Api.Tests/Query.Api.Tests.csproj (in 293 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj (in 8 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Collector.Application.Tests/Ingestion.Collector.Application.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Overlay.Api.Tests/Promotion.Overlay.Api.Tests.csproj (in 355 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj (in 236 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Collector.Api.Tests/Ingestion.Collector.Api.Tests.csproj (in 27 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj (in 6 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Worker.Tests/Catalog.Worker.Tests.csproj (in 13 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj (in 15 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj (in 26 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj (in 13 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Architecture.Tests/Architecture.Tests.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/BuildingBlocks/Platform.Messaging.Tests/Platform.Messaging.Tests.csproj (in 10 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Analytics/Analytics.Infrastructure.Tests/Analytics.Infrastructure.Tests.csproj (in 8 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Analytics/Analytics.Api.Tests/Analytics.Api.Tests.csproj (in 54 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Worker/Query.Worker.csproj (in 17 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Migrations/Query.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Domain/Query.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Contracts/Query.Contracts.csproj (in 0.8 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Infrastructure/Query.Infrastructure.csproj (in 4 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Application/Query.Application.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Query/Query.Api/Query.Api.csproj (in 7 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Worker/Promotion.Worker.csproj (in 9 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Overlay.Migrations/Promotion.Overlay.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Overlay.Worker/Promotion.Overlay.Worker.csproj (in 7 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Overlay.Infrastructure/Promotion.Overlay.Infrastructure.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Overlay.Api/Promotion.Overlay.Api.csproj (in 7 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Domain/Promotion.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj (in 5 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Application/Promotion.Application.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Promotion/Promotion.Api/Promotion.Api.csproj (in 10 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj (in 12 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Migrations/Ingestion.Collector.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj (in 6 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Domain/Ingestion.Collector.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Contracts/Ingestion.Collector.Contracts.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Infrastructure/Ingestion.Collector.Infrastructure.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Application/Ingestion.Collector.Application.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Application/Ingestion.Application.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Collector.Api/Ingestion.Collector.Api.csproj (in 7 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Worker/Catalog.Worker.csproj (in 7 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Ingestion/Ingestion.Api/Ingestion.Api.csproj (in 16 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Application/Catalog.Application.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj (in 11 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.Security/Platform.Security.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Catalog/Catalog.Api/Catalog.Api.csproj (in 11 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.Observability/Platform.Observability.csproj (in 5 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj (in 2 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Worker/Analytics.Worker.csproj (in 11 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj (in 5 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Domain/Analytics.Domain.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj (in 1 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Application/Analytics.Application.csproj (in 3 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/src/Analytics/Analytics.Api/Analytics.Api.csproj (in 11 ms).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj (in 1.29 sec).
+  Restored /home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj (in 845 ms).
+
+
+## format (failure)
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateConstructorCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix CSharpAddParameterCodeFixProvider doesn't support Fix All in Solution.
+Unable to fix CS1503. Code fix GenerateMethodCodeFixProvider doesn't support Fix All in Solution.
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(131,17): error CS0246: The type or namespace name 'RecordAnalyticsInteractionRequest' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(139,17): error CS0246: The type or namespace name 'RecordAnalyticsInteractionRequest' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(147,17): error CS0246: The type or namespace name 'RecordAnalyticsInteractionRequest' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(159,17): error CS0246: The type or namespace name 'RecordAnalyticsInteractionRequest' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(160,17): error CS0246: The type or namespace name 'AnalyticsInteractionReceipt' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(171,13): error CS0246: The type or namespace name 'RecordAnalyticsInteractionRequest' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(172,13): error CS0246: The type or namespace name 'AnalyticsInteractionReceipt' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(198,59): error CS0246: The type or namespace name 'AnalyticsListingMetricsResponse' could not be found (are you missing a using directive or an assembly reference?) [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/AcceptanceScenario.cs(530,36): error CS1503: Argument 1: cannot convert from 'char' to 'string' [/home/runner/work/aggregator-backend/aggregator-backend/tests/Acceptance/Acceptance.Runner/Acceptance.Runner.csproj]
+/home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Ingestion.Api.Tests/CatalogIngestionApiFactory.cs(100,38): error CA1062: In externally visible method 'Task<CatalogIngestionCommandOutcome> TestStore.UpsertAsync(CatalogIngestionUpsertDraftCommand command, string callerIdentity, CancellationToken cancellationToken)', validate parameter 'command' is non-null before using it. If appropriate, throw an 'ArgumentNullException' when the argument is 'null'. [/home/runner/work/aggregator-backend/aggregator-backend/tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj]
+
+## build (skipped)
+
+## test (skipped)
