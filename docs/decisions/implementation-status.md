@@ -13,6 +13,8 @@ This document records implemented production owners and exact remaining work. An
 - [x] S3-compatible object-store port and adapter.
 - [x] OpenTelemetry and OIDC authorization bootstrap.
 - [x] Explicit project-topology manifest, generated canonical solutions, forbidden-contour guards, and read-only CI foundation.
+- [x] One canonical `compose.yaml`, `.env.example`, Caddy edge, SeaweedFS adapter, separate migration/grant jobs, container limits, healthchecks, and deployment topology guards.
+- [ ] Add runtime-contract and Compose-config steps to `.github/workflows/ci.yml`; the current GitHub connector cannot modify workflow files and returns `404` for that path.
 
 ## Catalog owner progress
 
@@ -63,7 +65,7 @@ A context is checked only after its real Domain/Application/Infrastructure/API/W
 ## Release proof not yet complete
 
 - Berlin product configuration artifacts, schema validation, import, and explicit activation proof.
-- One canonical Docker Compose/deployment owner with coherent environment contract, healthchecks, limits, and clean startup.
+- Clean Docker image build, migration/grant execution, startup, health, and Compose smoke on a Docker host.
 - Generated OpenAPI/JSON Schema/client artifacts and drift checks.
 - Real PostgreSQL/PostGIS/RabbitMQ/object-storage integration tests and fresh/upgrade migration tests.
 - Two production-path E2E scenarios without direct owner bypasses.

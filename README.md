@@ -17,16 +17,16 @@ Contexts do not share a business database or `DbContext`. Cross-context communic
 ## Prerequisites
 
 - .NET SDK 10
-- Docker Engine with Compose
+- Docker Engine with Compose v2
 - PowerShell 7 for repository commands
-- Python 3 for deterministic topology and solution validation
+- Python 3 for deterministic topology, contract, and solution validation
 
 ## Development feedback loop
 
 Run the cheapest sufficient proof first:
 
 ```powershell
-# Approved topology, dependency boundaries, security and CI invariants.
+# Approved topology, generated contract guard, Compose config, architecture and CI invariants.
 pwsh ./tools/repo.ps1 preflight
 
 # Compile only approved production projects.
@@ -42,7 +42,7 @@ pwsh ./tools/repo.ps1 test-all
 
 `docs/architecture/project-topology.json` is the only project-topology owner. `AggregatorBackend.slnx` contains exactly its approved project set; `AggregatorBackend.Runtime.slnx` contains exactly its approved production subset. `.tools/complete-backend.py --check` rejects missing, unknown, forbidden, or duplicate projects, broken `ProjectReference` edges, obsolete contour references, and stale generated solution/inventory files before restore.
 
-Automatic CI is read-only and ordered to stop on cheap structural failures before the full solution restore/build/test. Full semantic formatting is explicit:
+Automatic CI is read-only and stops on inventory and architecture failures before the full solution restore/build/test. `preflight` additionally validates the runtime-contract manifest and canonical Compose graph. The workflow still needs the same contract/Compose commands wired after GitHub workflow-write permission is available. Full semantic formatting is explicit:
 
 ```powershell
 pwsh ./tools/repo.ps1 format-check
@@ -51,15 +51,19 @@ pwsh ./tools/repo.ps1 format-full-check
 
 ## Local runtime
 
-Image compilation is explicit and separate from startup:
+`compose.yaml` is the only deployment graph. It exposes only the reverse proxy on loopback; databases, broker, object storage, scanner, APIs, workers, migrations, and grant jobs stay on the internal Docker network.
 
 ```powershell
+Copy-Item .env.example .env
+# Replace every CHANGE_ME value in .env.
+
+pwsh ./tools/repo.ps1 compose-config
 pwsh ./tools/repo.ps1 compose-build
+pwsh ./tools/repo.ps1 db-migrate
 pwsh ./tools/repo.ps1 compose-up
-pwsh ./tools/repo.ps1 compose-up-runtime
 pwsh ./tools/repo.ps1 compose-down
 ```
 
-`compose-up` never rebuilds images. Database schema changes are applied only by context-specific migration executables; API and worker startup never applies migrations.
+Image compilation is explicit and separate from startup. `compose-up` uses `--no-build`; migrations and grants run in separate one-shot containers before runtime services. API and worker startup never applies DDL. The public local endpoint is `http://127.0.0.1:$BACKEND_HTTP_PORT`.
 
-The current Compose topology is still being consolidated into one deployment owner. The checked-in implementation and remaining release proof are tracked in [`docs/decisions/implementation-status.md`](docs/decisions/implementation-status.md); no unchecked item is represented by a fake endpoint or placeholder contract.
+The checked-in implementation and remaining release proof are tracked in [`docs/decisions/implementation-status.md`](docs/decisions/implementation-status.md). A checked topology or build is not reported as runtime/E2E proof.
