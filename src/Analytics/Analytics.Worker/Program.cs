@@ -102,8 +102,8 @@ internal sealed class AnalyticsAggregationWorker(
                         todayUtc.AddDays(-options.LookbackDays),
                         todayUtc),
                     stoppingToken);
-                logger.LogInformation(
-                    "Analytics aggregate rebuild materialized {MetricCount} rows and removed {StaleMetricCount} stale rows for [{FromDate}, {ToDate}).",
+                AnalyticsAggregationWorkerLog.RebuildCompleted(
+                    logger,
                     result.MaterializedMetricCount,
                     result.RemovedStaleMetricCount,
                     result.FromInclusive,
@@ -118,9 +118,9 @@ internal sealed class AnalyticsAggregationWorker(
             catch (Exception exception)
             {
                 consecutiveFailures++;
-                logger.LogError(
+                AnalyticsAggregationWorkerLog.RebuildFailed(
+                    logger,
                     exception,
-                    "Analytics aggregate rebuild failed ({FailureCount}/{FailureLimit}).",
                     consecutiveFailures,
                     options.MaximumConsecutiveFailures);
                 if (consecutiveFailures >= options.MaximumConsecutiveFailures)
@@ -132,4 +132,28 @@ internal sealed class AnalyticsAggregationWorker(
             }
         }
     }
+}
+
+internal static partial class AnalyticsAggregationWorkerLog
+{
+    [LoggerMessage(
+        EventId = 2001,
+        Level = LogLevel.Information,
+        Message = "Analytics aggregate rebuild materialized {MetricCount} rows and removed {StaleMetricCount} stale rows for [{FromDate}, {ToDate}).")]
+    public static partial void RebuildCompleted(
+        ILogger logger,
+        int metricCount,
+        int staleMetricCount,
+        DateOnly fromDate,
+        DateOnly toDate);
+
+    [LoggerMessage(
+        EventId = 2002,
+        Level = LogLevel.Error,
+        Message = "Analytics aggregate rebuild failed ({FailureCount}/{FailureLimit}).")]
+    public static partial void RebuildFailed(
+        ILogger logger,
+        Exception exception,
+        int failureCount,
+        int failureLimit);
 }
