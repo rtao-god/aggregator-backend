@@ -1,5 +1,5 @@
-gate=Architecture semantic repair
-error=Architecture semantic repair: skipped; child_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30961857447; child_sha=d06a8d9639f128f67cbe08b181e2e19c8823b999
-controller_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30961847456
-source_sha=d06a8d9639f128f67cbe08b181e2e19c8823b999
-recorded_at=2026-08-05T00:00:11.844Z
+gate=Canonical atomic static gate
+error=Canonical atomic static gate: skipped; child_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962031964; child_sha=f7e76dc92bbb0c7fc43acd3cef83e094ac7b6ab8
+controller_run=https://github.com/rtao-god/aggregator-backend/actions/runs/30962025894
+source_sha=f7e76dc92bbb0c7fc43acd3cef83e094ac7b6ab8
+recorded_at=2026-08-05T00:03:13.912Z
