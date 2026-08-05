@@ -364,30 +364,24 @@ services:
       object-storage-init: { condition: service_completed_successfully }
     environment:
       ConnectionStrings__Query: Host=postgres;Database=query_db;Username=query_app;Password=${QUERY_APP_PASSWORD}
-      QueryWorker__BrokerUri: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
-      QueryWorker__Exchange: ${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}
+      Query__Worker__BrokerUri: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      Query__Worker__Exchange: ${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}
+      Query__Worker__Queue: query.catalog-publication-projection
+      Query__Worker__RoutingKey: catalog.publication.activated
+      Query__Worker__PrefetchCount: "8"
+      Query__PromotionWorker__BrokerUri: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      Query__PromotionWorker__Exchange: ${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}
+      Query__PromotionWorker__Queue: query.promotion-placement-projection
+      Query__PromotionWorker__DeadLetterExchange: aggregator.dead-letter
+      Query__PromotionWorker__DeadLetterQueue: query.promotion-placement-projection.dead-letter
+      Query__PromotionWorker__RoutingKey: promotion.placement.changed
+      Query__PromotionWorker__PrefetchCount: "8"
+      Query__PromotionWorker__DeliveryLimit: "8"
+      Query__PromotionWorker__RetryDelayMilliseconds: "500"
       Query__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Query__ObjectStorage__Bucket: ${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}
       Query__ObjectStorage__AccessKey: ${OBJECT_STORAGE_ACCESS_KEY}
       Query__ObjectStorage__SecretKey: ${OBJECT_STORAGE_SECRET_KEY}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-    networks: [backend]
-
-  query-promotion-worker:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.dotnet-service
-      args:
-        PROJECT_PATH: src/Query/Query.PromotionWorker/Query.PromotionWorker.csproj
-        ASSEMBLY_NAME: Query.PromotionWorker.dll
-    restart: unless-stopped
-    depends_on:
-      query-grants: { condition: service_completed_successfully }
-      rabbitmq: { condition: service_healthy }
-    environment:
-      ConnectionStrings__Query: Host=postgres;Database=query_db;Username=query_app;Password=${QUERY_APP_PASSWORD}
-      QueryPromotionWorker__BrokerUri: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
-      QueryPromotionWorker__Exchange: ${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     networks: [backend]
 
