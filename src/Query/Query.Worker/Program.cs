@@ -58,6 +58,14 @@ var promotionWorkerOptions = new QueryPromotionWorkerOptions
         builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:PrefetchCount"],
         8,
         $"{QueryPromotionWorkerOptions.SectionName}:PrefetchCount"),
+    DeliveryLimit = ParseInt(
+        builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:DeliveryLimit"],
+        8,
+        $"{QueryPromotionWorkerOptions.SectionName}:DeliveryLimit"),
+    RetryDelay = TimeSpan.FromMilliseconds(ParseInt(
+        builder.Configuration[$"{QueryPromotionWorkerOptions.SectionName}:RetryDelayMilliseconds"],
+        500,
+        $"{QueryPromotionWorkerOptions.SectionName}:RetryDelayMilliseconds")),
 };
 promotionWorkerOptions.Validate();
 var objectStoreOptions = new S3ObjectStoreOptions
@@ -139,6 +147,17 @@ static ushort ParseUShort(string? value, ushort defaultValue, string path) =>
             out var parsed)
             ? parsed
             : throw new InvalidOperationException($"Configuration value '{path}' must be an unsigned integer.");
+
+static int ParseInt(string? value, int defaultValue, string path) =>
+    value is null
+        ? defaultValue
+        : int.TryParse(
+            value,
+            System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : throw new InvalidOperationException($"Configuration value '{path}' must be an integer.");
 
 static long ParseLong(string? value, long defaultValue, string path) =>
     value is null

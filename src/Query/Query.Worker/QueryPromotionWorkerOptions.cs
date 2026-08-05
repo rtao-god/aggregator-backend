@@ -20,6 +20,10 @@ public sealed record QueryPromotionWorkerOptions
 
     public ushort PrefetchCount { get; init; } = 8;
 
+    public int DeliveryLimit { get; init; } = 8;
+
+    public TimeSpan RetryDelay { get; init; } = TimeSpan.FromMilliseconds(500);
+
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(BrokerUri);
@@ -37,6 +41,19 @@ public sealed record QueryPromotionWorkerOptions
         {
             throw new InvalidOperationException(
                 "Query Promotion worker prefetch count must be between one and 256.");
+        }
+
+        if (DeliveryLimit is < 2 or > 100)
+        {
+            throw new InvalidOperationException(
+                "Query Promotion worker delivery limit must be between two and 100.");
+        }
+
+        if (RetryDelay < TimeSpan.FromMilliseconds(100) ||
+            RetryDelay > TimeSpan.FromMinutes(1))
+        {
+            throw new InvalidOperationException(
+                "Query Promotion worker retry delay must be between 100 milliseconds and one minute.");
         }
     }
 

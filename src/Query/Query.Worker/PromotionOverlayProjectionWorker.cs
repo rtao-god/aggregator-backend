@@ -1,3 +1,6 @@
+using System.Data.Common;
+using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -104,11 +107,13 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
                     $"Promotion message contract '{eventArgs.BasicProperties.Type}' is unsupported.");
             }
 
+            var payloadDigest = ReadRequiredHeader(eventArgs.BasicProperties.Headers, "payload-digest");
+            VerifyPayloadIntegrity(eventArgs.Body.Span, payloadDigest);
             var change = JsonSerializer.Deserialize<SponsoredPlacementChanged>(
                 eventArgs.Body.Span,
                 SerializerOptions)
                 ?? throw new JsonException("Promotion placement change payload is empty.");
-            var payloadDigest = ReadRequiredHeader(eventArgs.BasicProperties.Headers, "payload-digest");
+            ValidateMessageIdentity(change.EventId, eventArgs.BasicProperties.MessageId);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<PromotionOverlayProjectionService>();
             var result = await service.ApplyAsync(change, payloadDigest, cancellationToken);
@@ -129,6 +134,18 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
         {
             throw;
         }
+        catch (Exception exception) when (IsRetryableProjectionFailure(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "Requeueing transient Promotion placement message {MessageId}",
+                eventArgs.BasicProperties.MessageId);
+            await Task.Delay(_options.RetryDelay, cancellationToken);
+            await channel.BasicRejectAsync(
+                deliveryTag: eventArgs.DeliveryTag,
+                requeue: true,
+                cancellationToken: cancellationToken);
+        }
         catch (Exception exception) when (exception is QueryProjectionException or JsonException or ArgumentException)
         {
             _logger.LogError(
@@ -145,7 +162,7 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
         {
             _logger.LogError(
                 exception,
-                "Dead-lettering Promotion placement message {MessageId} after projection failure",
+                "Dead-lettering non-transient Promotion placement message {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,
@@ -173,12 +190,16 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             arguments: null,
             noWait: false,
             cancellationToken: cancellationToken);
+        var deadLetterQueueArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["x-queue-type"] = "quorum",
+        };
         await channel.QueueDeclareAsync(
             queue: _options.DeadLetterQueue,
             durable: true,
             exclusive: false,
             autoDelete: false,
-            arguments: null,
+            arguments: deadLetterQueueArguments,
             cancellationToken: cancellationToken);
         await channel.QueueBindAsync(
             queue: _options.DeadLetterQueue,
@@ -188,6 +209,8 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             cancellationToken: cancellationToken);
         var queueArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
+            ["x-queue-type"] = "quorum",
+            ["x-delivery-limit"] = _options.DeliveryLimit,
             ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
             ["x-dead-letter-routing-key"] = _options.RoutingKey,
         };
@@ -204,6 +227,50 @@ public sealed class PromotionOverlayProjectionWorker : BackgroundService
             routingKey: _options.RoutingKey,
             arguments: null,
             cancellationToken: cancellationToken);
+    }
+
+    internal static void VerifyPayloadIntegrity(
+        ReadOnlySpan<byte> payload,
+        string expectedDigest)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDigest) ||
+            expectedDigest.Length != 64 ||
+            expectedDigest.Any(character =>
+                character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+        {
+            throw new JsonException("Promotion payload digest header is invalid.");
+        }
+
+        var actualDigest = Convert
+            .ToHexString(SHA256.HashData(payload))
+            .ToLowerInvariant();
+        if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
+        {
+            throw new JsonException(
+                "Promotion payload digest does not match the received message body.");
+        }
+    }
+
+    internal static void ValidateMessageIdentity(Guid eventId, string? messageId)
+    {
+        if (eventId == Guid.Empty ||
+            !Guid.TryParse(messageId, out var parsedMessageId) ||
+            parsedMessageId != eventId)
+        {
+            throw new JsonException(
+                "Promotion message ID must match the producer-owned event identity.");
+        }
+    }
+
+    internal static bool IsRetryableProjectionFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is QueryProjectionException { StatusCode: 503 } ||
+               exception is DbException { IsTransient: true } ||
+               exception is TimeoutException ||
+               exception is IOException ||
+               exception.InnerException is not null &&
+               IsRetryableProjectionFailure(exception.InnerException);
     }
 
     private static string ReadRequiredHeader(
