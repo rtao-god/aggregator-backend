@@ -26,7 +26,7 @@ public sealed class CatalogMigrationIntegrationTests
     ];
 
     [Fact]
-    public async Task FreshCatalogMigrationsCreateExactPayloadOutboxAndSuppressionSchema()
+    public async Task FreshCatalogMigrationsCreateExactPayloadOutboxesSuppressionAndMediaSchema()
     {
         await using var database = await CatalogPostgresTestDatabase.CreateAsync();
 
@@ -36,12 +36,25 @@ public sealed class CatalogMigrationIntegrationTests
             ExactOutboxColumns,
             await database.ReadColumnNamesAsync("catalog", "outbox_message"));
         Assert.Equal(
+            ExactOutboxColumns,
+            await database.ReadColumnNamesAsync("media_messaging", "outbox_message"));
+        Assert.Equal(
             "text",
             await database.ScalarAsync<string>(
                 """
                 SELECT data_type
                 FROM information_schema.columns
                 WHERE table_schema = 'catalog'
+                  AND table_name = 'outbox_message'
+                  AND column_name = 'payload_json';
+                """));
+        Assert.Equal(
+            "text",
+            await database.ScalarAsync<string>(
+                """
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'media_messaging'
                   AND table_name = 'outbox_message'
                   AND column_name = 'payload_json';
                 """));
@@ -63,6 +76,40 @@ public sealed class CatalogMigrationIntegrationTests
                 WHERE table_schema = 'catalog'
                   AND table_name = 'public_visibility_suppression_revision';
                 """));
+        Assert.Equal(
+            5,
+            await database.ScalarAsync<int>(
+                """
+                SELECT count(*)
+                FROM information_schema.tables
+                WHERE (table_schema, table_name) IN
+                (
+                    ('media', 'asset'),
+                    ('media', 'variant'),
+                    ('operations', 'media_command_result'),
+                    ('operations', 'processing_work'),
+                    ('media_messaging', 'outbox_message')
+                );
+                """));
+        Assert.Equal(
+            1,
+            await database.ScalarAsync<int>(
+                """
+                SELECT count(*)
+                FROM pg_constraint
+                WHERE conname = 'fk_catalog_listing_media_asset'
+                  AND conrelid = 'catalog.media'::regclass;
+                """));
+        Assert.Equal(
+            1,
+            await database.ScalarAsync<int>(
+                """
+                SELECT count(*)
+                FROM pg_trigger
+                WHERE tgname = 'tr_catalog_publication_media_safe'
+                  AND tgrelid = 'catalog.publication_entry'::regclass
+                  AND NOT tgisinternal;
+                """));
 
         await InsertValidOutboxMessageAsync(database);
         await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync(
@@ -78,6 +125,26 @@ public sealed class CatalogMigrationIntegrationTests
                 dead_letter_reason = NULL
             WHERE message_id = '0192f5f0-0000-7000-8000-000000000001';
             """));
+    }
+
+    [Fact]
+    public async Task PartialLegacyMediaOwnerSchemaBlocksCatalogOwnershipTransfer()
+    {
+        await using var database = await CatalogPostgresTestDatabase.CreateAsync();
+        await ApplyPreMediaCatalogMigrationsAsync(database);
+        await database.ExecuteAsync(
+            """
+            CREATE SCHEMA media;
+            CREATE TABLE media.asset (id uuid PRIMARY KEY);
+            """);
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+            database.ExecuteCatalogMigrationAsync("V008__catalog_media_owner_merge.sql"));
+
+        Assert.Contains(
+            "blocked by a partial legacy schema",
+            exception.MessageText,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -129,6 +196,25 @@ public sealed class CatalogMigrationIntegrationTests
             "existing jsonb rows cannot prove their original UTF-8 payload bytes",
             exception.MessageText,
             StringComparison.Ordinal);
+    }
+
+    private static async Task ApplyPreMediaCatalogMigrationsAsync(
+        CatalogPostgresTestDatabase database)
+    {
+        foreach (var migration in new[]
+                 {
+                     "V001__catalog_owner_schema.sql",
+                     "V002__catalog_durable_outbox.sql",
+                     "V002__catalog_ingestion_drafts.sql",
+                     "V003__catalog_publication_activation_revision.sql",
+                     "V004__catalog_visibility_suppression.sql",
+                     "V005__catalog_contact_identity_contract.sql",
+                     "V006__catalog_outbox_exact_payload_text.sql",
+                     "V007__catalog_outbox_dead_letter_shape.sql",
+                 })
+        {
+            await database.ExecuteCatalogMigrationAsync(migration);
+        }
     }
 
     private static Task InsertValidOutboxMessageAsync(CatalogPostgresTestDatabase database) =>
