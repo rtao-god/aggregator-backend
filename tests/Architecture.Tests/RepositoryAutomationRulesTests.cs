@@ -6,6 +6,14 @@ namespace Architecture.Tests;
 
 public sealed class RepositoryAutomationRulesTests
 {
+    private static readonly string[] ProductionTuple =
+    [
+        "path", "role", "deployableName", "databaseOwnerOverride", "migrationOwnerOverride",
+    ];
+
+    private static readonly string[] TestTuple = ["path", "testCategory"];
+    private static readonly string[] ProjectRoots = ["src", "tests"];
+
     private static readonly HashSet<string> ScannedTextExtensions = new(
         [
             ".cs", ".csproj", ".json", ".md", ".props", ".ps1", ".py", ".sh",
@@ -175,10 +183,8 @@ public sealed class RepositoryAutomationRulesTests
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         var root = document.RootElement;
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(
-            new[] { "path", "role", "deployableName", "databaseOwnerOverride", "migrationOwnerOverride" },
-            ReadStringArray(root, "productionTuple"));
-        Assert.Equal(new[] { "path", "testCategory" }, ReadStringArray(root, "testTuple"));
+        Assert.Equal(ProductionTuple, ReadStringArray(root, "productionTuple"));
+        Assert.Equal(TestTuple, ReadStringArray(root, "testTuple"));
 
         var projects = new List<ProjectEntry>();
         foreach (var context in root.GetProperty("contexts").EnumerateArray())
@@ -225,7 +231,7 @@ public sealed class RepositoryAutomationRulesTests
     }
 
     private static string[] DiscoverProjects(string root) =>
-        new[] { "src", "tests" }
+        ProjectRoots
             .SelectMany(owner => Directory.EnumerateFiles(Path.Combine(root, owner), "*.csproj", SearchOption.AllDirectories))
             .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/'))
             .Order(StringComparer.Ordinal)
