@@ -50,4 +50,20 @@ public sealed class CatalogMediaOwnerIdentityTests
             "The obsolete Catalog Media CLR or diagnostic identity remains active:\n" +
             string.Join('\n', violations.Order(StringComparer.Ordinal)));
     }
+
+    [Fact]
+    public void CatalogMediaTransportDoesNotNormalizeLegacyOwnerIdentity()
+    {
+        var repository = RepositoryModel.Load();
+        var middlewarePath = Path.Combine(
+            repository.Root,
+            "src",
+            "Catalog",
+            "Catalog.Api",
+            "CatalogMediaFailureMiddleware.cs");
+        var middleware = File.ReadAllText(middlewarePath);
+
+        Assert.DoesNotContain("NormalizeOwner", middleware, StringComparison.Ordinal);
+        Assert.Contains("exception.Owner", middleware, StringComparison.Ordinal);
+    }
 }
