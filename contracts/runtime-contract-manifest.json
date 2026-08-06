@@ -86,6 +86,17 @@
   ],
   "http": [
     {
+      "file": "src/Catalog/Catalog.Api/CatalogMediaController.cs",
+      "required": [
+        "[Route(\"api/catalog-command/media/assets\")]",
+        "[HttpPost(Name = CatalogMediaOperationIds.Register)]",
+        "[HttpPost(\"{assetId:guid}/upload-authorizations\", Name = CatalogMediaOperationIds.PrepareUpload)]",
+        "[HttpPost(\"{assetId:guid}/upload-completions\", Name = CatalogMediaOperationIds.CompleteUpload)]",
+        "[HttpPost(\"{assetId:guid}/rights-revocations\", Name = CatalogMediaOperationIds.RevokeRights)]",
+        "[HttpGet(\"{assetId:guid}\", Name = CatalogMediaOperationIds.Get)]"
+      ]
+    },
+    {
       "file": "src/Ingestion/Ingestion.Api/IngestionBatchesController.cs",
       "required": [
         "[Route(\"api/ingestion/batches\")]",
@@ -127,6 +138,7 @@
     }
   ],
   "strictJsonPrograms": [
+    "src/Catalog/Catalog.Api/Program.cs",
     "src/Ingestion/Ingestion.Api/Program.cs",
     "src/Analytics/Analytics.Api/Program.cs",
     "src/Promotion/Promotion.Api/Program.cs",
