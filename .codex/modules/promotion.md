@@ -9,7 +9,7 @@ Promotion is the canonical owner of product definitions, manual entitlements, li
 - `Promotion.Domain`: immutable product and sponsored-placement revisions, entitlement lifecycle, local eligibility projection, half-open UTC windows, hard expiry, scope validation, and capacity-overlap semantics.
 - `Promotion.Contracts`: explicit admin API contracts plus entitlement and sponsored-placement integration events.
 - `Promotion.Application`: one canonical `PromotionCommandIdentity`, idempotent owner commands, deterministic request/revision digests, eligibility checks, capacity checks, exact contract mapping, and transactional outbox effects.
-- `Promotion.Infrastructure`: Promotion-only PostgreSQL persistence, local Catalog eligibility projection, atomic idempotency/outbox transactions, overlap enforcement, scheduling, and readiness.
+- `Promotion.Infrastructure`: Promotion-only PostgreSQL persistence, local Catalog eligibility projection, atomic idempotency/outbox transactions with exact UTF-8 payload text, overlap enforcement, scheduling, and readiness.
 - `Promotion.Api`: authenticated product, entitlement, placement and calendar command/read endpoints with scoped policies, request limits, rate limits, typed errors, and read-only health.
 - `Promotion.Worker`: bounded schedule transitions plus dispatch of committed outbox messages; it never migrates, changes Catalog content, or builds a public read model.
 - `Promotion.Migrations`: one-shot schema owner; runtime hosts never apply DDL.

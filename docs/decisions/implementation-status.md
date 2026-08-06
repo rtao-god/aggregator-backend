@@ -9,7 +9,7 @@ This document records implemented production owners and exact remaining work. An
 - [x] Typed owner error and correlation middleware.
 - [x] UUIDv7/UTC technical owners.
 - [x] Checksum-verified, owner-scoped PostgreSQL migration runner.
-- [x] Integration event envelope, durable outbox/inbox primitives, bounded attempts, and dead-letter contracts.
+- [x] Integration event envelope, exact-payload durable outbox/inbox primitives, bounded attempts, and dead-letter contracts.
 - [x] S3-compatible object-store port and adapter.
 - [x] OpenTelemetry and OIDC authorization bootstrap.
 - [x] Explicit project-topology manifest, generated canonical solutions, forbidden-contour guards, and read-only CI foundation.
@@ -23,7 +23,7 @@ This document records implemented production owners and exact remaining work. An
 - [x] Catalog application use cases, idempotent commands, deterministic publication composition, and owner-level tests.
 - [x] Normalized EF Core/PostgreSQL persistence, one-shot migration project, authenticated command API, S3 publication adapter, listing claims, and listing-scoped access persistence.
 - [x] One canonical Catalog worker composition root using the shared durable outbox dispatcher.
-- [x] Revisioned public-visibility suppression commands, durable Catalog outbox events, and stable media/contact target identities through publication artifacts.
+- [x] Revisioned public-visibility suppression commands, atomic PostgreSQL history/outbox persistence, and stable media/contact target identities through publication artifacts.
 - [ ] Merge media lifecycle into the canonical Catalog owner, bind listing revisions to exact approved media revisions/variants, and prove suppression/rollback behavior against PostgreSQL and object storage.
 
 ## Query owner progress
@@ -72,5 +72,5 @@ A context is checked only after its real Domain/Application/Infrastructure/API/W
 - Generated OpenAPI/JSON Schema/client artifacts and drift checks.
 - Real PostgreSQL/PostGIS/RabbitMQ/object-storage integration tests and fresh/upgrade migration tests.
 - Two production-path E2E scenarios without direct owner bypasses.
-- Test-discovery guard and removal of silent infrastructure no-op tests.
+- Broader test-discovery guard beyond the PostgreSQL/RabbitMQ integration paths now required by CI.
 - Container build/scan, dependency/security audit, SBOM, backup/restore drill, load proof, and production runbooks.

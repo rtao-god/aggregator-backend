@@ -50,7 +50,7 @@ Visibility commands use the dedicated `catalog.manage-visibility` scope. Admin r
 
 ## Messaging boundary
 
-Catalog persists business state and the producer-owned event envelope in one PostgreSQL transaction. The row carries the exact routing key, contract identity, canonical payload digest, correlation/causation, delivery attempts, lease state, dispatch completion, and dead-letter state. Migration from the legacy outbox fails closed when undelivered legacy rows exist because their missing digest and correlation cannot be reconstructed safely.
+Catalog persists business state and the producer-owned event envelope in one PostgreSQL transaction. The row carries the exact routing key, contract identity, canonical UTF-8 payload text and digest, correlation/causation, delivery attempts, lease state, dispatch completion, and dead-letter state. Migration from either the legacy envelope or lossy `jsonb` payload storage fails closed while rows exist because missing producer bytes, digest, or correlation cannot be reconstructed safely.
 
 `catalog.public-visibility-suppression.changed` carries exact target identity, public reason class, Catalog-selected response mode, lifecycle state, effective interval, and aggregate revision. Private legal evidence and transition notes remain exclusively in Catalog.
 
@@ -59,6 +59,7 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 - Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, and suppression target/lifecycle rules.
 - Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `3`, approval, two deterministic publications, and exact rollback.
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
+- PostgreSQL integration tests cover requested/active/resolved rows, exact outbox payload bytes, optimistic concurrency, and transaction rollback when the outbox identity conflicts.
 - Catalog event tests cover canonical payload digest and explicit correlation/causation.
 - Catalog API contract tests cover anonymous liveness, authentication, actor mapping, route/body identity mismatch, and enum wire rejection.
 - Catalog worker tests cover strict required configuration and bounded transport settings.

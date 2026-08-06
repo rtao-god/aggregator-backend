@@ -12,13 +12,7 @@ public sealed class RabbitMqEventPublisherIntegrationTests
     [Fact]
     public async Task ConfirmedPublishPreservesExactProducerEnvelope()
     {
-        var brokerUriValue = Environment.GetEnvironmentVariable(EnvironmentVariable);
-        if (string.IsNullOrWhiteSpace(brokerUriValue))
-        {
-            return;
-        }
-
-        var brokerUri = new Uri(brokerUriValue, UriKind.Absolute);
+        var brokerUri = new Uri(RequireEnvironment(), UriKind.Absolute);
         var suffix = Guid.NewGuid().ToString("N");
         var exchange = $"platform.messaging.test.{suffix}";
         var queueName = $"platform.messaging.test.{suffix}";
@@ -154,6 +148,15 @@ public sealed class RabbitMqEventPublisherIntegrationTests
             string text => text,
             _ => value.ToString(),
         };
+    }
+
+    private static string RequireEnvironment()
+    {
+        var value = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        return !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException(
+                $"Environment variable '{EnvironmentVariable}' is required for RabbitMQ publisher integration proof.");
     }
 
     private static OutboxMessage CreateMessage()

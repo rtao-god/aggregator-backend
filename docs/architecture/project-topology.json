@@ -91,6 +91,7 @@
         ["tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj", "api-contract"],
         ["tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj", "unit"],
         ["tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj", "unit"],
+        ["tests/Catalog/Catalog.Infrastructure.Tests/Catalog.Infrastructure.Tests.csproj", "infrastructure-contract"],
         ["tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj", "api-contract"],
         ["tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj", "unit"],
         ["tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj", "unit"],

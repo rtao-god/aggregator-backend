@@ -216,7 +216,7 @@ public sealed class PromotionDbContext(DbContextOptions<PromotionDbContext> opti
             entity.HasKey(row => row.MessageId);
             entity.Property(row => row.RoutingKey).HasMaxLength(256);
             entity.Property(row => row.ContractIdentity).HasMaxLength(256);
-            entity.Property(row => row.PayloadJson).HasColumnType("jsonb");
+            entity.Property(row => row.PayloadJson).HasColumnType("text");
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.CorrelationId).HasMaxLength(128);
             entity.Property(row => row.LeasedBy).HasMaxLength(200);

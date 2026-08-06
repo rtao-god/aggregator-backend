@@ -218,7 +218,7 @@ public sealed partial class PostgresCatalogVisibilitySuppressionRepository
         command.Parameters.AddWithValue("message_id", NpgsqlDbType.Uuid, message.Id);
         command.Parameters.AddWithValue("routing_key", NpgsqlDbType.Varchar, message.EventType);
         command.Parameters.AddWithValue("contract_identity", NpgsqlDbType.Varchar, message.ContractIdentity);
-        command.Parameters.AddWithValue("payload_json", NpgsqlDbType.Jsonb, message.Payload);
+        command.Parameters.AddWithValue("payload_json", NpgsqlDbType.Text, message.Payload);
         command.Parameters.AddWithValue("payload_digest", NpgsqlDbType.Char, message.PayloadDigest);
         command.Parameters.AddWithValue("occurred_at_utc", NpgsqlDbType.TimestampTz, message.OccurredAtUtc);
         command.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Varchar, message.CorrelationId);

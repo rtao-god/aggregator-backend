@@ -15,13 +15,8 @@ public sealed class PostgresRabbitMqOutboxEndToEndTests
     [Fact]
     public async Task DurableOutboxDeliveryReachesRabbitMqAndPersistsCompletion()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresEnvironmentVariable);
-        var brokerUriValue = Environment.GetEnvironmentVariable(RabbitMqEnvironmentVariable);
-        if (string.IsNullOrWhiteSpace(postgresConnectionString) ||
-            string.IsNullOrWhiteSpace(brokerUriValue))
-        {
-            return;
-        }
+        var postgresConnectionString = RequireEnvironment(PostgresEnvironmentVariable);
+        var brokerUriValue = RequireEnvironment(RabbitMqEnvironmentVariable);
 
         var suffix = Guid.NewGuid().ToString("N");
         var schema = $"messaging_e2e_{suffix}";
@@ -248,5 +243,14 @@ public sealed class PostgresRabbitMqOutboxEndToEndTests
     private sealed class FixedTimeProvider(DateTimeOffset timestamp) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => timestamp;
+    }
+
+    private static string RequireEnvironment(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException(
+                $"Environment variable '{name}' is required for messaging end-to-end proof.");
     }
 }

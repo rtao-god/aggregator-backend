@@ -103,6 +103,9 @@ public sealed class PromotionPersistenceModelTests
         Assert.Contains("DeliveryAttempts", properties);
         Assert.Contains("DispatchedAtUtc", properties);
         Assert.Contains("DeadLetteredAtUtc", properties);
+        var payload = outbox.FindProperty("PayloadJson")
+            ?? throw new InvalidOperationException("Promotion outbox payload property is missing.");
+        Assert.Equal("text", payload.GetColumnType());
     }
 
     private static PromotionDbContext CreateContext()

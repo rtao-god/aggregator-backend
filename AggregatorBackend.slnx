@@ -81,6 +81,7 @@
     <Project Path="tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
+    <Project Path="tests/Catalog/Catalog.Infrastructure.Tests/Catalog.Infrastructure.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj" />

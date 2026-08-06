@@ -14,108 +14,84 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
     [Fact]
     public async Task ExactMessageIsClaimedPublishedAndCompleted()
     {
-        var scope = await PostgresOutboxScope.TryCreateAsync();
-        if (scope is null)
-        {
-            return;
-        }
+        await using var scope = await PostgresOutboxScope.CreateAsync();
+        var message = CreateMessage("{\"state\":\"active\"}");
+        await scope.InsertAsync(message);
+        var publisher = new RecordingPublisher();
+        var dispatcher = CreateDispatcher(scope, publisher, maximumDeliveryAttempts: 3);
 
-        await using (scope)
-        {
-            var message = CreateMessage("{\"state\":\"active\"}");
-            await scope.InsertAsync(message);
-            var publisher = new RecordingPublisher();
-            var dispatcher = CreateDispatcher(scope, publisher, maximumDeliveryAttempts: 3);
+        var dispatched = await dispatcher.DispatchOnceAsync(CancellationToken.None);
 
-            var dispatched = await dispatcher.DispatchOnceAsync(CancellationToken.None);
-
-            Assert.Equal(1, dispatched);
-            Assert.Equal(message, Assert.Single(publisher.Messages));
-            var state = await scope.ReadStateAsync(message.MessageId);
-            Assert.Equal(1, state.DeliveryAttempts);
-            Assert.True(state.IsDispatched);
-            Assert.False(state.IsDeadLettered);
-            Assert.Null(state.LeaseToken);
-            Assert.Null(state.LeaseOwner);
-            Assert.Null(state.LeaseUntilUtc);
-            Assert.Null(state.LastError);
-        }
+        Assert.Equal(1, dispatched);
+        Assert.Equal(message, Assert.Single(publisher.Messages));
+        var state = await scope.ReadStateAsync(message.MessageId);
+        Assert.Equal(1, state.DeliveryAttempts);
+        Assert.True(state.IsDispatched);
+        Assert.False(state.IsDeadLettered);
+        Assert.Null(state.LeaseToken);
+        Assert.Null(state.LeaseOwner);
+        Assert.Null(state.LeaseUntilUtc);
+        Assert.Null(state.LastError);
     }
 
     [Fact]
     public async Task CorruptedPayloadIsDeadLetteredOnFinalAllowedAttempt()
     {
-        var scope = await PostgresOutboxScope.TryCreateAsync();
-        if (scope is null)
+        await using var scope = await PostgresOutboxScope.CreateAsync();
+        var valid = CreateMessage("{\"state\":\"active\"}");
+        var corrupted = valid with
         {
-            return;
-        }
+            PayloadJson = "{\"state\":\"corrupted\"}",
+        };
+        await scope.InsertAsync(corrupted);
+        var publisher = new RecordingPublisher();
+        var dispatcher = CreateDispatcher(
+            scope,
+            publisher,
+            maximumDeliveryAttempts: 1);
 
-        await using (scope)
-        {
-            var valid = CreateMessage("{\"state\":\"active\"}");
-            var corrupted = valid with
-            {
-                PayloadJson = "{\"state\":\"corrupted\"}",
-            };
-            await scope.InsertAsync(corrupted);
-            var publisher = new RecordingPublisher();
-            var dispatcher = CreateDispatcher(
-                scope,
-                publisher,
-                maximumDeliveryAttempts: 1);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchOnceAsync(CancellationToken.None));
 
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                dispatcher.DispatchOnceAsync(CancellationToken.None));
-
-            Assert.Contains("digest does not match", exception.Message, StringComparison.Ordinal);
-            Assert.Empty(publisher.Messages);
-            var state = await scope.ReadStateAsync(corrupted.MessageId);
-            Assert.Equal(1, state.DeliveryAttempts);
-            Assert.False(state.IsDispatched);
-            Assert.True(state.IsDeadLettered);
-            Assert.Null(state.LeaseToken);
-            Assert.Null(state.LeaseOwner);
-            Assert.Null(state.LeaseUntilUtc);
-            Assert.Contains("digest does not match", state.DeadLetterReason, StringComparison.Ordinal);
-        }
+        Assert.Contains("digest does not match", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(publisher.Messages);
+        var state = await scope.ReadStateAsync(corrupted.MessageId);
+        Assert.Equal(1, state.DeliveryAttempts);
+        Assert.False(state.IsDispatched);
+        Assert.True(state.IsDeadLettered);
+        Assert.Null(state.LeaseToken);
+        Assert.Null(state.LeaseOwner);
+        Assert.Null(state.LeaseUntilUtc);
+        Assert.Contains("digest does not match", state.DeadLetterReason, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task StaleDispatcherCannotCompleteAReplacementLease()
     {
-        var scope = await PostgresOutboxScope.TryCreateAsync();
-        if (scope is null)
-        {
-            return;
-        }
+        await using var scope = await PostgresOutboxScope.CreateAsync();
+        var message = CreateMessage("{\"state\":\"active\"}");
+        await scope.InsertAsync(message);
+        const string dispatcherIdentity = "messaging-integration-test";
+        var replacementLeaseToken = Guid.Parse("0192f5f0-0000-7000-8000-000000000099");
+        var publisher = new LeaseReplacingPublisher(
+            scope,
+            dispatcherIdentity,
+            replacementLeaseToken);
+        var dispatcher = CreateDispatcher(
+            scope,
+            publisher,
+            maximumDeliveryAttempts: 3,
+            dispatcherIdentity);
 
-        await using (scope)
-        {
-            var message = CreateMessage("{\"state\":\"active\"}");
-            await scope.InsertAsync(message);
-            const string dispatcherIdentity = "messaging-integration-test";
-            var replacementLeaseToken = Guid.Parse("0192f5f0-0000-7000-8000-000000000099");
-            var publisher = new LeaseReplacingPublisher(
-                scope,
-                dispatcherIdentity,
-                replacementLeaseToken);
-            var dispatcher = CreateDispatcher(
-                scope,
-                publisher,
-                maximumDeliveryAttempts: 3,
-                dispatcherIdentity);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchOnceAsync(CancellationToken.None));
 
-            var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                dispatcher.DispatchOnceAsync(CancellationToken.None));
-
-            Assert.Contains("lost its exact lease", exception.Message, StringComparison.Ordinal);
-            var state = await scope.ReadStateAsync(message.MessageId);
-            Assert.Equal(replacementLeaseToken, state.LeaseToken);
-            Assert.Equal(dispatcherIdentity, state.LeaseOwner);
-            Assert.False(state.IsDispatched);
-            Assert.False(state.IsDeadLettered);
-        }
+        Assert.Contains("lost its exact lease", exception.Message, StringComparison.Ordinal);
+        var state = await scope.ReadStateAsync(message.MessageId);
+        Assert.Equal(replacementLeaseToken, state.LeaseToken);
+        Assert.Equal(dispatcherIdentity, state.LeaseOwner);
+        Assert.False(state.IsDispatched);
+        Assert.False(state.IsDeadLettered);
     }
 
     private static PostgresOutboxDispatcher CreateDispatcher(
@@ -210,12 +186,13 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
 
         public string Schema { get; }
 
-        public static async Task<PostgresOutboxScope?> TryCreateAsync()
+        public static async Task<PostgresOutboxScope> CreateAsync()
         {
             var connectionString = Environment.GetEnvironmentVariable(EnvironmentVariable);
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                return null;
+                throw new InvalidOperationException(
+                    $"Environment variable '{EnvironmentVariable}' is required for PostgreSQL outbox integration proof.");
             }
 
             var schema = $"messaging_test_{Guid.NewGuid():N}";
