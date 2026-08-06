@@ -1,20 +1,40 @@
 {
   "schemaVersion": 2,
-  "productionTuple": ["path", "role", "deployableName", "databaseOwnerOverride", "migrationOwnerOverride"],
-  "testTuple": ["path", "testCategory"],
+  "productionTuple": [
+    "path",
+    "role",
+    "deployableName",
+    "databaseOwnerOverride",
+    "migrationOwnerOverride"
+  ],
+  "testTuple": [
+    "path",
+    "testCategory"
+  ],
   "contexts": [
     {
       "name": "Acceptance",
       "status": "active",
       "databaseOwner": null,
       "migrationOwner": null,
-      "production": [
-      ],
+      "production": [],
       "tests": [
-        ["tests/Acceptance/Acceptance.Analytics.Control/Acceptance.Analytics.Control.csproj", "acceptance-support"],
-        ["tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj", "acceptance-support"],
-        ["tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj", "acceptance-support"],
-        ["tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj", "acceptance-support"]
+        [
+          "tests/Acceptance/Acceptance.Analytics.Control/Acceptance.Analytics.Control.csproj",
+          "acceptance-support"
+        ],
+        [
+          "tests/Acceptance/Acceptance.Contracts/Acceptance.Contracts.csproj",
+          "acceptance-support"
+        ],
+        [
+          "tests/Acceptance/Acceptance.Control/Acceptance.Control.csproj",
+          "acceptance-support"
+        ],
+        [
+          "tests/Acceptance/Acceptance.Identity/Acceptance.Identity.csproj",
+          "acceptance-support"
+        ]
       ]
     },
     {
@@ -23,19 +43,73 @@
       "databaseOwner": "analytics",
       "migrationOwner": "src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj",
       "production": [
-        ["src/Analytics/Analytics.Api/Analytics.Api.csproj", "api", "analytics-api", null, null],
-        ["src/Analytics/Analytics.Application/Analytics.Application.csproj", "application", null, null, null],
-        ["src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj", "contracts", null, null, null],
-        ["src/Analytics/Analytics.Domain/Analytics.Domain.csproj", "domain", null, null, null],
-        ["src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj", "infrastructure", null, null, null],
-        ["src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj", "migrations", "analytics-migrations", null, null],
-        ["src/Analytics/Analytics.Worker/Analytics.Worker.csproj", "worker", "analytics-worker", null, null]
+        [
+          "src/Analytics/Analytics.Api/Analytics.Api.csproj",
+          "api",
+          "analytics-api",
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Application/Analytics.Application.csproj",
+          "application",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Contracts/Analytics.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Domain/Analytics.Domain.csproj",
+          "domain",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj",
+          "migrations",
+          "analytics-migrations",
+          null,
+          null
+        ],
+        [
+          "src/Analytics/Analytics.Worker/Analytics.Worker.csproj",
+          "worker",
+          "analytics-worker",
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/Analytics/Analytics.Api.Tests/Analytics.Api.Tests.csproj", "api-contract"],
-        ["tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj", "unit"],
-        ["tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj", "unit"],
-        ["tests/Analytics/Analytics.Infrastructure.Tests/Analytics.Infrastructure.Tests.csproj", "infrastructure-contract"]
+        [
+          "tests/Analytics/Analytics.Api.Tests/Analytics.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Analytics/Analytics.Infrastructure.Tests/Analytics.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ]
       ]
     },
     {
@@ -43,10 +117,12 @@
       "status": "active",
       "databaseOwner": null,
       "migrationOwner": null,
-      "production": [
-      ],
+      "production": [],
       "tests": [
-        ["tests/Architecture.Tests/Architecture.Tests.csproj", "architecture"]
+        [
+          "tests/Architecture.Tests/Architecture.Tests.csproj",
+          "architecture"
+        ]
       ]
     },
     {
@@ -55,15 +131,54 @@
       "databaseOwner": null,
       "migrationOwner": null,
       "production": [
-        ["src/BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj", "building-block", null, null, null],
-        ["src/BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj", "building-block", null, null, null],
-        ["src/BuildingBlocks/Platform.Observability/Platform.Observability.csproj", "building-block", null, null, null],
-        ["src/BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj", "building-block", null, null, null],
-        ["src/BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj", "building-block", null, null, null],
-        ["src/BuildingBlocks/Platform.Security/Platform.Security.csproj", "building-block", null, null, null]
+        [
+          "src/BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/BuildingBlocks/Platform.Observability/Platform.Observability.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/BuildingBlocks/Platform.Persistence/Platform.Persistence.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/BuildingBlocks/Platform.ProblemDetails/Platform.ProblemDetails.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/BuildingBlocks/Platform.Security/Platform.Security.csproj",
+          "building-block",
+          null,
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/BuildingBlocks/Platform.Messaging.Tests/Platform.Messaging.Tests.csproj", "unit"]
+        [
+          "tests/BuildingBlocks/Platform.Messaging.Tests/Platform.Messaging.Tests.csproj",
+          "unit"
+        ]
       ]
     },
     {
@@ -72,32 +187,128 @@
       "databaseOwner": "catalog",
       "migrationOwner": "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj",
       "production": [
-        ["src/Catalog/Catalog.Api/Catalog.Api.csproj", "api", "catalog-api", null, null],
-        ["src/Catalog/Catalog.Application/Catalog.Application.csproj", "application", null, null, null],
-        ["src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj", "contracts", null, null, null],
-        ["src/Catalog/Catalog.Domain/Catalog.Domain.csproj", "domain", null, null, null],
-        ["src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj", "infrastructure", null, null, null],
-        ["src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj", "api", "catalog-media-api", null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj", "application", null, null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj", "contracts", null, null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj", "domain", null, null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj", "infrastructure", null, null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj", "migrations", "catalog-media-migrations", null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj", "worker", "catalog-media-worker", null, "src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj"],
-        ["src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj", "migrations", "catalog-migrations", null, null],
-        ["src/Catalog/Catalog.Worker/Catalog.Worker.csproj", "worker", "catalog-worker", null, null]
+        [
+          "src/Catalog/Catalog.Api/Catalog.Api.csproj",
+          "api",
+          "catalog-api",
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Application/Catalog.Application.csproj",
+          "application",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Domain/Catalog.Domain.csproj",
+          "domain",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj",
+          "application",
+          null,
+          null,
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj"
+        ],
+        [
+          "src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj"
+        ],
+        [
+          "src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj",
+          "domain",
+          null,
+          null,
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj"
+        ],
+        [
+          "src/Catalog/Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj"
+        ],
+        [
+          "src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj",
+          "worker",
+          "catalog-media-worker",
+          null,
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj"
+        ],
+        [
+          "src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj",
+          "migrations",
+          "catalog-migrations",
+          null,
+          null
+        ],
+        [
+          "src/Catalog/Catalog.Worker/Catalog.Worker.csproj",
+          "worker",
+          "catalog-worker",
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj", "api-contract"],
-        ["tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj", "unit"],
-        ["tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj", "unit"],
-        ["tests/Catalog/Catalog.Infrastructure.Tests/Catalog.Infrastructure.Tests.csproj", "infrastructure-contract"],
-        ["tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj", "api-contract"],
-        ["tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj", "unit"],
-        ["tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj", "unit"],
-        ["tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj", "unit"],
-        ["tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj", "infrastructure-contract"],
-        ["tests/Catalog/Catalog.Worker.Tests/Catalog.Worker.Tests.csproj", "unit"]
+        [
+          "tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Catalog/Catalog.Media.Domain.Tests/Catalog.Media.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Catalog/Catalog.Media.Infrastructure.Tests/Catalog.Media.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ],
+        [
+          "tests/Catalog/Catalog.Worker.Tests/Catalog.Worker.Tests.csproj",
+          "unit"
+        ]
       ]
     },
     {
@@ -106,21 +317,81 @@
       "databaseOwner": "ingestion",
       "migrationOwner": "src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj",
       "production": [
-        ["src/Ingestion/Ingestion.Api/Ingestion.Api.csproj", "api", "ingestion-api", null, null],
-        ["src/Ingestion/Ingestion.Application/Ingestion.Application.csproj", "application", null, null, null],
-        ["src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj", "contracts", null, null, null],
-        ["src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj", "domain", null, null, null],
-        ["src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj", "infrastructure", null, null, null],
-        ["src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj", "migrations", "ingestion-migrations", null, null],
-        ["src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj", "worker", "ingestion-worker", null, null]
+        [
+          "src/Ingestion/Ingestion.Api/Ingestion.Api.csproj",
+          "api",
+          "ingestion-api",
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Application/Ingestion.Application.csproj",
+          "application",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Domain/Ingestion.Domain.csproj",
+          "domain",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Infrastructure/Ingestion.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj",
+          "migrations",
+          "ingestion-migrations",
+          null,
+          null
+        ],
+        [
+          "src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj",
+          "worker",
+          "ingestion-worker",
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj", "api-contract"],
-        ["tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj", "unit"],
-        ["tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj", "unit"],
-        ["tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj", "infrastructure-contract"],
-        ["tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj", "unit"],
-        ["tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj", "unit"]
+        [
+          "tests/Ingestion/Ingestion.Api.Tests/Ingestion.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Ingestion/Ingestion.Application.Tests/Ingestion.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Ingestion/Ingestion.Domain.Tests/Ingestion.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Ingestion/Ingestion.Infrastructure.Tests/Ingestion.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ],
+        [
+          "tests/Ingestion/Ingestion.Processing.Tests/Ingestion.Processing.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Ingestion/Ingestion.Worker.Tests/Ingestion.Worker.Tests.csproj",
+          "unit"
+        ]
       ]
     },
     {
@@ -129,20 +400,77 @@
       "databaseOwner": "promotion",
       "migrationOwner": "src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj",
       "production": [
-        ["src/Promotion/Promotion.Api/Promotion.Api.csproj", "api", "promotion-api", null, null],
-        ["src/Promotion/Promotion.Application/Promotion.Application.csproj", "application", null, null, null],
-        ["src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj", "contracts", null, null, null],
-        ["src/Promotion/Promotion.Domain/Promotion.Domain.csproj", "domain", null, null, null],
-        ["src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj", "infrastructure", null, null, null],
-        ["src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj", "migrations", "promotion-migrations", null, null],
-        ["src/Promotion/Promotion.Worker/Promotion.Worker.csproj", "worker", "promotion-worker", null, null]
+        [
+          "src/Promotion/Promotion.Api/Promotion.Api.csproj",
+          "api",
+          "promotion-api",
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Application/Promotion.Application.csproj",
+          "application",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Domain/Promotion.Domain.csproj",
+          "domain",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Infrastructure/Promotion.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj",
+          "migrations",
+          "promotion-migrations",
+          null,
+          null
+        ],
+        [
+          "src/Promotion/Promotion.Worker/Promotion.Worker.csproj",
+          "worker",
+          "promotion-worker",
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj", "api-contract"],
-        ["tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj", "unit"],
-        ["tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj", "unit"],
-        ["tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj", "infrastructure-contract"],
-        ["tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj", "unit"]
+        [
+          "tests/Promotion/Promotion.Api.Tests/Promotion.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Promotion/Promotion.Application.Tests/Promotion.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Promotion/Promotion.Domain.Tests/Promotion.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Promotion/Promotion.Infrastructure.Tests/Promotion.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ],
+        [
+          "tests/Promotion/Promotion.Worker.Tests/Promotion.Worker.Tests.csproj",
+          "unit"
+        ]
       ]
     },
     {
@@ -151,23 +479,114 @@
       "databaseOwner": "query",
       "migrationOwner": "src/Query/Query.Migrations/Query.Migrations.csproj",
       "production": [
-        ["src/Query/Query.Api/Query.Api.csproj", "api", "query-api", null, null],
-        ["src/Query/Query.Application/Query.Application.csproj", "application", null, null, null],
-        ["src/Query/Query.Contracts/Query.Contracts.csproj", "contracts", null, null, null],
-        ["src/Query/Query.Domain/Query.Domain.csproj", "domain", null, null, null],
-        ["src/Query/Query.Infrastructure/Query.Infrastructure.csproj", "infrastructure", null, null, null],
-        ["src/Query/Query.Migrations/Query.Migrations.csproj", "migrations", "query-migrations", null, null],
-        ["src/Query/Query.Worker/Query.Worker.csproj", "worker", "query-worker", null, null]
+        [
+          "src/Query/Query.Api/Query.Api.csproj",
+          "api",
+          "query-api",
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Application/Query.Application.csproj",
+          "application",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Contracts/Query.Contracts.csproj",
+          "contracts",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Domain/Query.Domain.csproj",
+          "domain",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Infrastructure/Query.Infrastructure.csproj",
+          "infrastructure",
+          null,
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Migrations/Query.Migrations.csproj",
+          "migrations",
+          "query-migrations",
+          null,
+          null
+        ],
+        [
+          "src/Query/Query.Worker/Query.Worker.csproj",
+          "worker",
+          "query-worker",
+          null,
+          null
+        ]
       ],
       "tests": [
-        ["tests/Query/Query.Api.Tests/Query.Api.Tests.csproj", "api-contract"],
-        ["tests/Query/Query.Application.Tests/Query.Application.Tests.csproj", "unit"],
-        ["tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj", "unit"],
-        ["tests/Query/Query.Infrastructure.Tests/Query.Infrastructure.Tests.csproj", "infrastructure-contract"],
-        ["tests/Query/Query.Worker.Tests/Query.Worker.Tests.csproj", "unit"]
+        [
+          "tests/Query/Query.Api.Tests/Query.Api.Tests.csproj",
+          "api-contract"
+        ],
+        [
+          "tests/Query/Query.Application.Tests/Query.Application.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Query/Query.Domain.Tests/Query.Domain.Tests.csproj",
+          "unit"
+        ],
+        [
+          "tests/Query/Query.Infrastructure.Tests/Query.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ],
+        [
+          "tests/Query/Query.Worker.Tests/Query.Worker.Tests.csproj",
+          "unit"
+        ]
       ]
     }
   ],
-  "forbiddenProjectPathPrefixes": ["src/Promotion/Promotion.Overlay.", "tests/Promotion/Promotion.Overlay.", "src/Ingestion/Ingestion.Collector.", "tests/Ingestion/Ingestion.Collector.", "src/Catalog/Catalog.Event.Worker", "tests/Acceptance/Acceptance.Runner", "src/Query/Query.PromotionWorker"],
-  "forbiddenReferenceTokens": ["src/Promotion/Promotion.Overlay.", "tests/Promotion/Promotion.Overlay.", "Aggregator.Promotion.Overlay", "promotion-overlay-api", "promotion-overlay-migrations", "api/promotion-overlays", "src/Ingestion/Ingestion.Collector.", "tests/Ingestion/Ingestion.Collector.", "Aggregator.Ingestion.Collector", "api/collector-candidates", "src/Catalog/Catalog.Event.Worker/", "Catalog.Event.Worker", "src/Query/Query.PromotionWorker/", "Query.PromotionWorker"]
- }
+  "forbiddenProjectPathPrefixes": [
+    "src/Promotion/Promotion.Overlay.",
+    "tests/Promotion/Promotion.Overlay.",
+    "src/Ingestion/Ingestion.Collector.",
+    "tests/Ingestion/Ingestion.Collector.",
+    "src/Catalog/Catalog.Event.Worker",
+    "tests/Acceptance/Acceptance.Runner",
+    "src/Query/Query.PromotionWorker",
+    "src/Catalog/Catalog.Media.Api/",
+    "src/Catalog/Catalog.Media.Migrations/"
+  ],
+  "forbiddenReferenceTokens": [
+    "src/Promotion/Promotion.Overlay.",
+    "tests/Promotion/Promotion.Overlay.",
+    "Aggregator.Promotion.Overlay",
+    "promotion-overlay-api",
+    "promotion-overlay-migrations",
+    "api/promotion-overlays",
+    "src/Ingestion/Ingestion.Collector.",
+    "tests/Ingestion/Ingestion.Collector.",
+    "Aggregator.Ingestion.Collector",
+    "api/collector-candidates",
+    "src/Catalog/Catalog.Event.Worker/",
+    "Catalog.Event.Worker",
+    "src/Query/Query.PromotionWorker/",
+    "Query.PromotionWorker",
+    "Catalog.Media.Api.csproj",
+    "Catalog.Media.Migrations.csproj",
+    "Catalog.Media.Api.dll",
+    "Catalog.Media.Migrations.dll",
+    "catalog-media-api",
+    "catalog-media-migrations",
+    "/api/catalog-media",
+    "CATALOG_MEDIA_MIGRATOR_CONNECTION_STRING",
+    "Aggregator.CatalogMedia.Api"
+  ]
+}
