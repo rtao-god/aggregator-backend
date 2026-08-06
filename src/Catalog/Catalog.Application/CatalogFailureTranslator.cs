@@ -49,6 +49,21 @@ public static class CatalogFailureTranslator
                         ["actualVersion"] = concurrency.ActualVersion,
                     });
                 return true;
+            case CatalogSuppressionConcurrencyException concurrency:
+                failure = Create(
+                    "Catalog.VisibilitySuppression",
+                    "PUBLIC_VISIBILITY_SUPPRESSION_REVISION_CONFLICT",
+                    "Public visibility suppression revision conflict",
+                    409,
+                    concurrency.Message,
+                    "Reload the current suppression revision before submitting another transition.",
+                    new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["suppressionId"] = concurrency.SuppressionId,
+                        ["expectedRevision"] = concurrency.ExpectedRevision,
+                        ["actualRevision"] = concurrency.ActualRevision,
+                    });
+                return true;
             case CatalogAuthorizationException authorization:
                 failure = Create(
                     "Catalog.Access",

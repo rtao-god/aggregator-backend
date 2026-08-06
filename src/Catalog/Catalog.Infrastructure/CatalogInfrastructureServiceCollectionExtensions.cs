@@ -25,6 +25,9 @@ public static class CatalogInfrastructureServiceCollectionExtensions
         services.AddDbContext<CatalogDbContext>(options =>
             options.UseNpgsql(connectionString));
         services.AddScoped<ICatalogRepository, EfCatalogRepository>();
+        services.AddScoped<
+            ICatalogVisibilitySuppressionRepository,
+            PostgresCatalogVisibilitySuppressionRepository>();
         services.AddScoped<CatalogReadinessProbe>();
         services.AddSingleton<ICatalogIdSource, UuidV7CatalogIdSource>();
         services.AddSingleton<IOptions<CatalogObjectStorageOptions>>(Options.Create(storageOptions));

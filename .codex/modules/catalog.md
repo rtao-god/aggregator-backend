@@ -2,14 +2,14 @@
 
 ## Owner
 
-Catalog is the canonical owner of product configuration, listing identities and immutable revisions, accepted provenance, editorial decisions, listing-scoped claims/access, immutable publications, and the current Catalog publication pointer.
+Catalog is the canonical owner of product configuration, listing identities and immutable revisions, accepted provenance, editorial decisions, listing-scoped claims/access, immutable publications, the current Catalog publication pointer, and emergency public-visibility suppressions including private evidence and their revisioned lifecycle.
 
 ## Projects
 
 - `Catalog.Domain`: owner invariants and state transitions; no framework dependencies.
-- `Catalog.Contracts`: producer-owned wire contracts, publication artifact, and integration events.
+- `Catalog.Contracts`: producer-owned wire contracts, publication artifact, and integration events. Visibility events expose only public target/reason/response state and never private evidence.
 - `Catalog.Application`: use cases, deterministic serialization, explicit mapping, ports, typed failure translation, event correlation, and canonical payload digests.
-- `Catalog.Infrastructure`: EF Core/PostgreSQL persistence, durable outbox rows, S3-compatible artifact adapter, and read-only readiness.
+- `Catalog.Infrastructure`: EF Core/PostgreSQL persistence, suppression revision persistence, durable outbox rows, S3-compatible artifact adapter, and read-only readiness.
 - `Catalog.Api`: authenticated command transport only; thin Controllers, no repository access or domain decisions.
 - `Catalog.Worker`: fail-fast outbox dispatcher; it has no HTTP surface and never applies migrations.
 - `Catalog.Migrations`: one-shot owner migrations; API/worker startup never migrates.
@@ -31,18 +31,34 @@ validated product configuration artifact
 → exact rollback by publication ID
 ```
 
+```text
+exact public target
+→ requested suppression revision
+→ active suppression revision
+→ current suppression + both revisions + minimal public event in one transaction
+→ Query safety consumer
+→ resolved suppression revision + minimal public event
+```
+
+The create command intentionally persists both `requested/1` and `active/2` while exposing only the active public event. Resolve requires exact revision `2` and creates `resolved/3`. Listing, media, and contact targets are validated against Catalog-owned current state; route targets require an active publication. External-reference suppression remains fail-closed until stable external-reference identities exist in the Catalog publication contract.
+
 ## API boundary
 
 `Catalog.Api` accepts only `Catalog.Contracts`, resolves an explicit `actor_id` projection from the authenticated principal, requires operation-specific OAuth scopes, rejects numeric enum tokens, and translates known owner failures into RFC 7807 responses. Missing actor mapping fails closed; it never provisions an Actor lazily. HTTP correlation is propagated into every resulting integration event.
+
+Visibility commands use the dedicated `catalog.manage-visibility` scope. Admin responses may contain the private evidence reference; the producer event contract cannot contain it.
 
 ## Messaging boundary
 
 Catalog persists business state and the producer-owned event envelope in one PostgreSQL transaction. The row carries the exact routing key, contract identity, canonical payload digest, correlation/causation, delivery attempts, lease state, dispatch completion, and dead-letter state. Migration from the legacy outbox fails closed when undelivered legacy rows exist because their missing digest and correlation cannot be reconstructed safely.
 
+`catalog.public-visibility-suppression.changed` carries exact target identity, public reason class, Catalog-selected response mode, lifecycle state, effective interval, and aggregate revision. Private legal evidence and transition notes remain exclusively in Catalog.
+
 ## Proof
 
-- Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, and scoped access revocation.
+- Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, and suppression target/lifecycle rules.
 - Catalog application E2E covers configuration import/activation, listing revisions, approval, two deterministic publications, and exact rollback.
+- Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
 - Catalog event tests cover canonical payload digest and explicit correlation/causation.
 - Catalog API contract tests cover anonymous liveness, authentication, actor mapping, route/body identity mismatch, and enum wire rejection.
 - Catalog worker tests cover strict required configuration and bounded transport settings.

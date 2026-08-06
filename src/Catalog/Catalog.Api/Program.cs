@@ -73,6 +73,9 @@ public partial class Program
                 CatalogAuthorizationPolicies.Rollback,
                 CatalogAuthorizationPolicies.Rollback)
             .AddRequiredScopePolicy(
+                CatalogAuthorizationPolicies.ManageVisibility,
+                CatalogAuthorizationPolicies.ManageVisibility)
+            .AddRequiredScopePolicy(
                 CatalogAuthorizationPolicies.SubmitClaim,
                 CatalogAuthorizationPolicies.SubmitClaim)
             .AddRequiredScopePolicy(
