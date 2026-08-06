@@ -19,10 +19,6 @@
         }
     }
 
-    handle /api/catalog-media* {
-        reverse_proxy catalog-media-api:8080
-    }
-
     handle /api/catalog-query* {
         reverse_proxy query-api:8080
     }
