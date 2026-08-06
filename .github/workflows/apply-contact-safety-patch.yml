@@ -23,17 +23,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply owner patch and remove bootstrap artifacts
+      - name: Apply source owner patch
         shell: bash
         run: |
           set -euo pipefail
+          patch_root=.codex/patches/contact-safety
+          if [[ ! -d "$patch_root" ]]; then
+            exit 0
+          fi
           git config user.name "rtao-god"
           git config user.email "rtaogod@gmail.com"
-          for patch in .codex/patches/contact-safety/*.patch; do
+          shopt -s nullglob
+          patches=("$patch_root"/*.patch)
+          if (( ${#patches[@]} == 0 )); then
+            exit 0
+          fi
+          for patch in "${patches[@]}"; do
+            if [[ $(basename "$patch") == 03.patch ]]; then
+              continue
+            fi
             git apply --index --whitespace=error-all "$patch"
           done
-          rm -rf .codex/patches/contact-safety
-          rm .github/workflows/apply-contact-safety-patch.yml
+          rm -rf "$patch_root"
           git add -A
           git diff --cached --check
           git commit -m "Complete stable contact visibility suppression"
