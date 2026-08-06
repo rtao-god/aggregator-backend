@@ -89,6 +89,7 @@ public sealed class CatalogPublicationService(
             }
 
             selection.Revision.Content.EnsurePublishable(activeConfiguration);
+            EnsureCurrentRevisionDigest(selection.Revision);
         }
 
         var publicationId = idSource.CreateId();
@@ -249,6 +250,19 @@ public sealed class CatalogPublicationService(
             outboxMessage,
             cancellationToken);
         return CatalogContractMapper.ToResponse(target, isCurrent: true);
+    }
+
+    private static void EnsureCurrentRevisionDigest(ListingRevision revision)
+    {
+        ArgumentNullException.ThrowIfNull(revision);
+        var canonicalContent = CatalogCanonicalJson.SerializeListingContent(revision.Content);
+        var currentDigest = CatalogCanonicalJson.ComputeSha256(canonicalContent);
+        if (!string.Equals(currentDigest, revision.ContentDigest, StringComparison.Ordinal))
+        {
+            throw new CatalogContractException(
+                "catalog.listing_revision_digest_contract_stale",
+                $"Listing revision '{revision.Id}' was not authored with the current immutable content identity contract.");
+        }
     }
 
     private static Guid? ToInternalExpectation(PublicationPointerExpectationContract expectation)

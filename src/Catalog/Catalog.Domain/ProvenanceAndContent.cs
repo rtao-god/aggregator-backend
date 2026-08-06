@@ -426,13 +426,16 @@ public sealed record GeographyValue
 
 public sealed record ContactValue
 {
-    private ContactValue(ContactKind kind, Uri target, string? label, Guid assertionId)
+    private ContactValue(Guid id, ContactKind kind, Uri target, string? label, Guid assertionId)
     {
+        Id = id;
         Kind = kind;
         Target = target;
         Label = label;
         AssertionId = assertionId;
     }
+
+    public Guid Id { get; }
 
     public ContactKind Kind { get; }
 
@@ -442,8 +445,18 @@ public sealed record ContactValue
 
     public Guid AssertionId { get; }
 
-    public static ContactValue Create(ContactKind kind, Uri target, string? label, Guid assertionId)
+    public static ContactValue Create(
+        Guid id,
+        ContactKind kind,
+        Uri target,
+        string? label,
+        Guid assertionId)
     {
+        if (id == Guid.Empty)
+        {
+            throw new ArgumentException("Contact ID is required.", nameof(id));
+        }
+
         ArgumentNullException.ThrowIfNull(target);
         if (!target.IsAbsoluteUri)
         {
@@ -455,7 +468,12 @@ public sealed record ContactValue
             throw new ArgumentException("Assertion ID is required for a contact.", nameof(assertionId));
         }
 
-        return new ContactValue(kind, target, string.IsNullOrWhiteSpace(label) ? null : label.Trim(), assertionId);
+        return new ContactValue(
+            id,
+            kind,
+            target,
+            string.IsNullOrWhiteSpace(label) ? null : label.Trim(),
+            assertionId);
     }
 }
 
@@ -601,7 +619,11 @@ public sealed class ListingRevisionContent
         var descriptionMap = descriptions.ToDictionary(value => value.Locale);
         var categorySet = categories.ToHashSet();
         var attributeMap = attributes.ToDictionary(value => value.Key);
-        var contactList = contacts.ToArray();
+        var contactList = contacts
+            .OrderBy(contact => contact.Kind)
+            .ThenBy(contact => contact.Target.AbsoluteUri, StringComparer.Ordinal)
+            .ThenBy(contact => contact.Id)
+            .ToArray();
         var mediaList = media.ToArray();
 
         if (nameMap.Count == 0)
@@ -646,6 +668,18 @@ public sealed class ListingRevisionContent
         foreach (var contact in contactList)
         {
             RequirePublicAssertion(assertionMap, contact.AssertionId, $"contact:{contact.Kind}");
+        }
+
+        if (contactList.Select(contact => contact.Id).Distinct().Count() != contactList.Length)
+        {
+            throw new CatalogInvariantException("A listing revision cannot contain duplicate contact identities.");
+        }
+
+        if (contactList
+            .GroupBy(contact => new { contact.Kind, Target = contact.Target.AbsoluteUri })
+            .Any(group => group.Count() > 1))
+        {
+            throw new CatalogInvariantException("A listing revision cannot contain duplicate contact targets of the same kind.");
         }
 
         foreach (var mediaItem in mediaList)

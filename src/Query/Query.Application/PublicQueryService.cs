@@ -173,7 +173,11 @@ public sealed class PublicQueryService
                 document.Geography.Longitude,
                 document.Geography.DistrictKey),
             document.Contacts
-                .Select(item => new PublicContactValue(MapContactKind(item.Kind), item.Target, item.Label))
+                .Select(item => new PublicContactValue(
+                    item.ContactId,
+                    MapContactKind(item.Kind),
+                    item.Target,
+                    item.Label))
                 .ToArray(),
             document.Media
                 .Select(item => new PublicMediaValue(

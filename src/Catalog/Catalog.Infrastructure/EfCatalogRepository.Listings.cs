@@ -104,6 +104,7 @@ public sealed partial class EfCatalogRepository
                 geography.DistrictKey,
                 geography.AssertionId),
             contacts.Select(row => ContactValue.Create(
+                row.Id,
                 RequireEnum<ContactKind>(row.Kind, "contact kind"),
                 RequireAbsoluteUri(row.Target, "contact target"),
                 row.Label,
@@ -291,7 +292,7 @@ public sealed partial class EfCatalogRepository
         {
             _dbContext.Contacts.Add(new CatalogContactRow
             {
-                Id = Guid.CreateVersion7(),
+                Id = contact.Id,
                 ListingRevisionId = revision.Id,
                 Kind = (int)contact.Kind,
                 Target = contact.Target.AbsoluteUri,

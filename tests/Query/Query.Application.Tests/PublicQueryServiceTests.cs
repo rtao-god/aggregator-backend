@@ -186,6 +186,7 @@ public sealed class PublicQueryServiceTests
     public async Task CardUsesExactRequestedLocalizationWhenAvailable()
     {
         var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000030"));
+        var contactId = Guid.Parse("0198a300-0000-7000-8000-000000000039");
         var document = QueryListingDocument.Create(
             Guid.Parse("0198a300-0000-7000-8000-000000000031"),
             Guid.CreateVersion7(),
@@ -199,7 +200,13 @@ public sealed class PublicQueryServiceTests
             ["recording-studio"],
             [],
             new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.5m, 13.4m, "mitte"),
-            [],
+            [
+                new QueryContactDocument(
+                    contactId,
+                    QueryContactKind.Website,
+                    "https://example.test",
+                    null),
+            ],
             [],
             new string('a', 64),
             revision.CreatedAtUtc);
@@ -218,6 +225,7 @@ public sealed class PublicQueryServiceTests
         Assert.Equal("exact", result.Listing.TranslationState);
         Assert.Equal("Studio EN", result.Listing.Title);
         Assert.Equal("Description", result.Listing.Description);
+        Assert.Equal(contactId, Assert.Single(result.Contacts).ContactId);
     }
 
     [Fact]

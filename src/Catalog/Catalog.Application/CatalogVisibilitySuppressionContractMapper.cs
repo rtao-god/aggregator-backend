@@ -87,9 +87,7 @@ internal static class CatalogVisibilitySuppressionContractMapper
             PublicVisibilitySuppressionTargetKindContract.Route =>
                 PublicVisibilitySuppressionTargetKind.Route,
             PublicVisibilitySuppressionTargetKindContract.Contact =>
-                throw new CatalogContractException(
-                    "catalog.visibility_contact_identity_unsupported",
-                    "Contact suppression requires a stable Catalog-owned public contact ID, which the current publication contract does not expose."),
+                PublicVisibilitySuppressionTargetKind.Contact,
             PublicVisibilitySuppressionTargetKindContract.ExternalReference =>
                 throw new CatalogContractException(
                     "catalog.visibility_external_reference_identity_unsupported",

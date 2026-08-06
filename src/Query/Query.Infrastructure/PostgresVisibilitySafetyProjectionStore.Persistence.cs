@@ -413,38 +413,69 @@ public sealed partial class PostgresVisibilitySafetyProjectionStore
             reader.GetFieldValue<DateTimeOffset>(6),
             reader.GetString(7).TrimEnd());
 
-    private static Task EnsureActiveTargetExistsAsync(
+    private static async Task EnsureActiveTargetExistsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid baseProjectionId,
         QueryVisibilitySuppression suppression,
         CancellationToken cancellationToken)
     {
-        _ = connection;
-        _ = transaction;
-        _ = baseProjectionId;
-        cancellationToken.ThrowIfCancellationRequested();
-        return suppression.TargetKind switch
+        if (suppression.TargetKind is
+            QueryVisibilitySuppressionTargetKind.Listing or
+            QueryVisibilitySuppressionTargetKind.Media or
+            QueryVisibilitySuppressionTargetKind.Route)
         {
-            QueryVisibilitySuppressionTargetKind.Listing => Task.CompletedTask,
-            QueryVisibilitySuppressionTargetKind.Media => Task.CompletedTask,
-            QueryVisibilitySuppressionTargetKind.Route => Task.CompletedTask,
-            QueryVisibilitySuppressionTargetKind.Contact => throw Failure(
-                "QUERY_VISIBILITY_CONTACT_IDENTITY_UNSUPPORTED",
-                422,
-                "Contact suppression cannot be materialized because the current publication contract has no stable public contact ID.",
-                "Keep the catalog blocked and add one Catalog-owned stable contact identity through publication and Query documents."),
-            QueryVisibilitySuppressionTargetKind.ExternalReference => throw Failure(
+            return;
+        }
+
+        if (suppression.TargetKind == QueryVisibilitySuppressionTargetKind.ExternalReference)
+        {
+            throw Failure(
                 "QUERY_VISIBILITY_EXTERNAL_REFERENCE_UNSUPPORTED",
                 422,
                 "External-reference suppression cannot be materialized because the current publication contract exposes no stable external-reference identity.",
-                "Keep the catalog blocked and add the Catalog-owned external-reference identity to the publication contract."),
-            _ => throw Failure(
+                "Keep the catalog blocked and add the Catalog-owned external-reference identity to the publication contract.");
+        }
+
+        if (suppression.TargetKind != QueryVisibilitySuppressionTargetKind.Contact)
+        {
+            throw Failure(
                 "QUERY_VISIBILITY_TARGET_KIND_UNSUPPORTED",
                 422,
                 $"Visibility target kind '{suppression.TargetKind}' is unsupported.",
-                "Republish a supported Catalog visibility target."),
-        };
+                "Republish a supported Catalog visibility target.");
+        }
+
+        if (!Guid.TryParse(suppression.TargetKey, out var contactId) || contactId == Guid.Empty)
+        {
+            throw Failure(
+                "QUERY_VISIBILITY_CONTACT_IDENTITY_INVALID",
+                422,
+                "Contact suppression target is not a non-empty UUID.",
+                "Republish the Catalog suppression with the exact producer-owned contact ID.");
+        }
+
+        const string sql = """
+            SELECT EXISTS
+            (
+                SELECT 1
+                FROM documents.listing_contact
+                WHERE base_projection_id = @base_projection_id
+                  AND contact_id = @contact_id
+            );
+            """;
+        await using var command = CreateCommand(connection, transaction, sql);
+        command.Parameters.Add(new NpgsqlParameter<Guid>("base_projection_id", baseProjectionId));
+        command.Parameters.Add(new NpgsqlParameter<Guid>("contact_id", contactId));
+        var exists = await command.ExecuteScalarAsync(cancellationToken);
+        if (exists is not true)
+        {
+            throw Failure(
+                "QUERY_VISIBILITY_CONTACT_TARGET_MISSING",
+                422,
+                $"Contact '{contactId}' is absent from base projection '{baseProjectionId}'.",
+                "Keep the catalog blocked and replay the suppression only after the exact Catalog publication is projected.");
+        }
     }
 
     private static async Task UpsertSuppressionStateAsync(

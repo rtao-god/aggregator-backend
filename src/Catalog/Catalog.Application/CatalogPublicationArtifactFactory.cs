@@ -95,7 +95,9 @@ internal static class CatalogPublicationArtifactFactory
             content.Contacts
                 .OrderBy(contact => contact.Kind)
                 .ThenBy(contact => contact.Target.AbsoluteUri, StringComparer.Ordinal)
+                .ThenBy(contact => contact.Id)
                 .Select(contact => new PublicContact(
+                    contact.Id,
                     (ContactKindContract)contact.Kind,
                     contact.Target.AbsoluteUri,
                     contact.Label,

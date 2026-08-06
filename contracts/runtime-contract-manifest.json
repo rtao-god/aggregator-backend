@@ -51,6 +51,15 @@
       ]
     },
     {
+      "name": "catalog-publication-artifact",
+      "file": "src/Catalog/Catalog.Contracts/CatalogPublicationArtifact.cs",
+      "required": [
+        "public const string Identity = \"aggregator-catalog-publication\";",
+        "public const int Revision = 3;",
+        "public sealed record PublicContact(\n    Guid ContactId,"
+      ]
+    },
+    {
       "name": "query-public-search",
       "file": "src/Query/Query.Contracts/PublicQueryContracts.cs",
       "required": [
@@ -60,7 +69,8 @@
         "DateTimeOffset HardExpiryAtUtc,",
         "public sealed record PublicListingSearchResponse(",
         "IReadOnlyList<PublicSponsoredListingSummary> Sponsored,",
-        "IReadOnlyList<PublicListingSummary> Organic,"
+        "IReadOnlyList<PublicListingSummary> Organic,",
+        "public sealed record PublicContactValue(Guid ContactId, string Kind, string Target, string? Label);"
       ]
     },
     {

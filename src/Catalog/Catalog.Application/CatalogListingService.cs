@@ -71,11 +71,16 @@ public sealed class CatalogListingService(
         }
 
         var subject = CatalogContractMapper.ToDomain(request.Subject);
-        var content = CatalogContractMapper.ToDomain(subject.Kind, request.Content, configuration);
-        var canonicalContent = CatalogCanonicalJson.SerializeListingContent(request.Content);
+        var revisionId = idSource.CreateId();
+        var content = CatalogContractMapper.ToDomain(
+            subject.Kind,
+            request.Content,
+            configuration,
+            idSource.CreateId);
+        var canonicalContent = CatalogCanonicalJson.SerializeListingContent(content);
         var contentDigest = CatalogCanonicalJson.ComputeSha256(canonicalContent);
         var revision = listing.AddDraftRevision(
-            idSource.CreateId(),
+            revisionId,
             request.ExpectedVersion,
             configuration.RevisionId,
             subject,

@@ -601,6 +601,7 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
     {
         const string sql = """
             SELECT listing_id,
+                   contact_id,
                    ordinal,
                    kind,
                    target,
@@ -616,9 +617,10 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         while (await reader.ReadAsync(cancellationToken))
         {
             Add(values, reader.GetGuid(0), new QueryContactDocument(
-                MapContactKind(reader.GetString(2)),
-                reader.GetString(3),
-                reader.IsDBNull(4) ? null : reader.GetString(4)));
+                reader.GetGuid(1),
+                MapContactKind(reader.GetString(3)),
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
         }
 
         return ToReadOnly(values);

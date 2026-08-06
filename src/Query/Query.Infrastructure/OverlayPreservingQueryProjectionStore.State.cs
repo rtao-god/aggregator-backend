@@ -112,7 +112,7 @@ public sealed partial class OverlayPreservingQueryProjectionStore
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid promotionOverlayId,
-        IReadOnlySet<Guid> newListingIds,
+        HashSet<Guid> newListingIds,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(newListingIds);

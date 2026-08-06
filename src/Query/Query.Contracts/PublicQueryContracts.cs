@@ -67,7 +67,7 @@ public sealed record PublicAttributeValue(
     string? TextValue,
     IReadOnlyList<string>? TextCollectionValue);
 
-public sealed record PublicContactValue(string Kind, string Target, string? Label);
+public sealed record PublicContactValue(Guid ContactId, string Kind, string Target, string? Label);
 
 public sealed record PublicMediaValue(
     Guid MediaId,

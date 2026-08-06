@@ -44,7 +44,7 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
         }
 
         PublicReadPageSnapshot? firstSnapshot = null;
-        SafetySnapshot? safety = null;
+        QueryVisibilitySafetyFilter? safety = null;
         var documents = new List<QueryListingDocument>(maximumDocuments);
         var rawCursor = afterListingId;
         while (documents.Count < maximumDocuments)
@@ -230,7 +230,7 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
                 ["suppressionId"] = suppression.SuppressionId,
             });
 
-    private async Task<SafetySnapshot> LoadSafetyAsync(
+    private async Task<QueryVisibilitySafetyFilter> LoadSafetyAsync(
         PublicReadRevision revision,
         DateTimeOffset readAtUtc,
         CancellationToken cancellationToken)
@@ -271,7 +271,6 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
 
         const string itemSql = """
             SELECT suppression_id,
-                   catalog_key,
                    target_kind,
                    listing_id,
                    target_key,
@@ -295,17 +294,17 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
             persistedItemCount++;
             var item = QueryVisibilitySuppression.Create(
                 itemReader.GetGuid(0),
-                itemReader.GetString(1),
-                ParseTargetKind(itemReader.GetString(2)),
-                itemReader.IsDBNull(3) ? null : itemReader.GetGuid(3),
+                revision.CatalogKey,
+                ParseTargetKind(itemReader.GetString(1)),
+                itemReader.IsDBNull(2) ? null : itemReader.GetGuid(2),
+                itemReader.GetString(3),
                 itemReader.GetString(4),
-                itemReader.GetString(5),
-                ParseResponseMode(itemReader.GetString(6)),
+                ParseResponseMode(itemReader.GetString(5)),
                 QueryVisibilitySuppressionState.Active,
-                itemReader.GetFieldValue<DateTimeOffset>(7),
-                itemReader.IsDBNull(8) ? null : itemReader.GetFieldValue<DateTimeOffset>(8),
-                itemReader.GetInt64(9),
-                itemReader.GetFieldValue<DateTimeOffset>(10));
+                itemReader.GetFieldValue<DateTimeOffset>(6),
+                itemReader.IsDBNull(7) ? null : itemReader.GetFieldValue<DateTimeOffset>(7),
+                itemReader.GetInt64(8),
+                itemReader.GetFieldValue<DateTimeOffset>(9));
             if (item.IsEffectiveAt(readAtUtc))
             {
                 effectiveItems.Add(item);
@@ -320,7 +319,7 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
                 "Restore or rebuild the exact safety overlay.");
         }
 
-        return new SafetySnapshot(effectiveItems);
+        return QueryVisibilitySafetyFilter.Create(effectiveItems);
     }
 
     private static async Task EnsureCatalogNotBlockedAsync(
@@ -417,6 +416,7 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
         {
             "listing" => QueryVisibilitySuppressionTargetKind.Listing,
             "media" => QueryVisibilitySuppressionTargetKind.Media,
+            "contact" => QueryVisibilitySuppressionTargetKind.Contact,
             "route" => QueryVisibilitySuppressionTargetKind.Route,
             _ => throw StoreFailure(
                 "QUERY_SAFETY_TARGET_KIND_UNSUPPORTED",
@@ -451,59 +451,4 @@ public sealed class SafetyAwarePublicQueryStore : IPublicQueryStore
             message,
             requiredAction);
 
-    private sealed class SafetySnapshot
-    {
-        private readonly IReadOnlyList<QueryVisibilitySuppression> _items;
-        private readonly HashSet<Guid> _suppressedMediaIds;
-
-        public SafetySnapshot(IReadOnlyList<QueryVisibilitySuppression> items)
-        {
-            _items = items ?? throw new ArgumentNullException(nameof(items));
-            _suppressedMediaIds = items
-                .Where(item => item.TargetKind == QueryVisibilitySuppressionTargetKind.Media)
-                .Select(item => Guid.Parse(item.TargetKey))
-                .ToHashSet();
-        }
-
-        public bool IsListingVisible(QueryListingDocument document) =>
-            FindListingSuppression(document.ListingId) is null &&
-            !document.Localizations.Any(localization =>
-                FindRouteSuppression(localization.RoutePath) is not null);
-
-        public QueryVisibilitySuppression? FindListingSuppression(Guid listingId) =>
-            _items.FirstOrDefault(item =>
-                item.TargetKind == QueryVisibilitySuppressionTargetKind.Listing &&
-                item.ListingId == listingId);
-
-        public QueryVisibilitySuppression? FindRouteSuppression(string routePath) =>
-            _items.FirstOrDefault(item =>
-                item.TargetKind == QueryVisibilitySuppressionTargetKind.Route &&
-                string.Equals(item.TargetKey, routePath, StringComparison.Ordinal));
-
-        public QueryListingDocument FilterChildren(QueryListingDocument document)
-        {
-            var filteredMedia = document.Media
-                .Where(item => !_suppressedMediaIds.Contains(item.MediaId))
-                .ToArray();
-            if (filteredMedia.Length == document.Media.Count)
-            {
-                return document;
-            }
-
-            return QueryListingDocument.Create(
-                document.ListingId,
-                document.ListingRevisionId,
-                document.SubjectId,
-                document.SubjectRevisionId,
-                document.ListingKind,
-                document.Localizations,
-                document.CategoryKeys,
-                document.Attributes,
-                document.Geography,
-                document.Contacts,
-                filteredMedia,
-                document.SourceContentDigest,
-                document.PublishedAtUtc);
-        }
-    }
 }

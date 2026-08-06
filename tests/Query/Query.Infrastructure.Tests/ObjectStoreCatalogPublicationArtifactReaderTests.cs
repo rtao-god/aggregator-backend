@@ -91,7 +91,7 @@ public sealed class ObjectStoreCatalogPublicationArtifactReaderTests
     private static string ValidArtifactJson() => $$"""
         {
           "contractIdentity":"aggregator-catalog-publication",
-          "contractRevision":2,
+          "contractRevision":3,
           "publicationId":"{{Guid.Parse("0198a400-0000-7000-8000-000000000001")}}",
           "catalogKey":"berlin-recording-services",
           "defaultLocale":"de-DE",

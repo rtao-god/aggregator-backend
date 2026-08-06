@@ -42,7 +42,7 @@ pwsh ./tools/repo.ps1 test-all
 
 `docs/architecture/project-topology.json` is the only project-topology owner. `AggregatorBackend.slnx` contains exactly its approved project set; `AggregatorBackend.Runtime.slnx` contains exactly its approved production subset. `.tools/complete-backend.py --check` rejects missing, unknown, forbidden, or duplicate projects, broken `ProjectReference` edges, obsolete contour references, and stale generated solution/inventory files before restore.
 
-Automatic CI is read-only and stops on inventory and architecture failures before the full solution restore/build/test. `preflight` additionally validates the runtime-contract manifest and canonical Compose graph. The workflow still needs the same contract/Compose commands wired after GitHub workflow-write permission is available. Full semantic formatting is explicit:
+Automatic CI is read-only and stops on repository inventory, runtime-contract, Compose-topology, and architecture failures before the full solution restore/build/test. `preflight` runs the same owner checks locally. Full semantic formatting is explicit:
 
 ```powershell
 pwsh ./tools/repo.ps1 format-check

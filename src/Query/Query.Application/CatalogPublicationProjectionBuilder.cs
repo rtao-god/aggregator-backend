@@ -158,6 +158,7 @@ public static class CatalogPublicationProjectionBuilder
             attributes,
             geography,
             source.Contacts.Select(item => new QueryContactDocument(
+                item.ContactId,
                 MapContactKind(item.Kind),
                 item.Target,
                 item.Label)),
