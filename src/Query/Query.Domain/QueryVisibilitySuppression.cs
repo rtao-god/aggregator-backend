@@ -219,7 +219,7 @@ public sealed record QueryVisibilitySuppression
             switch (targetKind)
             {
                 case QueryVisibilitySuppressionTargetKind.Route:
-                    if (!normalizedTarget.StartsWith('/', StringComparison.Ordinal) ||
+                    if (!normalizedTarget.StartsWith("/", StringComparison.Ordinal) ||
                         normalizedTarget.Contains("..", StringComparison.Ordinal) ||
                         normalizedTarget.Contains('?') ||
                         normalizedTarget.Contains('#'))

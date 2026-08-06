@@ -88,7 +88,7 @@ public sealed record PublicVisibilitySuppressionTarget
 
             if (kind == PublicVisibilitySuppressionTargetKind.Route)
             {
-                if (!normalizedTarget.StartsWith('/', StringComparison.Ordinal) ||
+                if (!normalizedTarget.StartsWith("/", StringComparison.Ordinal) ||
                     normalizedTarget.Contains("..", StringComparison.Ordinal) ||
                     normalizedTarget.Contains('?') ||
                     normalizedTarget.Contains('#'))
