@@ -135,11 +135,6 @@ services:
     build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj, APP_DLL: Catalog.Migrations.dll}}
     environment: {CATALOG_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=catalog_db;Username=catalog_migrator;Password=${CATALOG_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
     depends_on: {postgres: {condition: service_healthy}}
-  catalog-media-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj, APP_DLL: Catalog.Media.Migrations.dll}}
-    environment: {CATALOG_MEDIA_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=catalog_db;Username=catalog_migrator;Password=${CATALOG_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {catalog-migrations: {condition: service_completed_successfully}}
   query-migrations:
     <<: *job
     build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Query/Query.Migrations/Query.Migrations.csproj, APP_DLL: Query.Migrations.dll}}
@@ -164,7 +159,7 @@ services:
   catalog-grants:
     <<: *grant
     environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: catalog_db, PGUSER: catalog_migrator, PGPASSWORD: '${CATALOG_MIGRATOR_PASSWORD:?CATALOG_MIGRATOR_PASSWORD is required}', APP_ROLE: catalog_app}
-    depends_on: {catalog-media-migrations: {condition: service_completed_successfully}}
+    depends_on: {catalog-migrations: {condition: service_completed_successfully}}
   query-grants:
     <<: *grant
     environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: query_db, PGUSER: query_migrator, PGPASSWORD: '${QUERY_MIGRATOR_PASSWORD:?QUERY_MIGRATOR_PASSWORD is required}', APP_ROLE: query_app}
@@ -186,7 +181,7 @@ services:
     <<: *api
     build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Catalog/Catalog.Api/Catalog.Api.csproj, APP_DLL: Catalog.Api.dll}}
     environment:
-      <<: *api-env
+      <<: [*api-env, *media-store]
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
@@ -210,14 +205,6 @@ services:
       CatalogWorker__LeaseDurationSeconds: "120"
       CatalogWorker__EmptyDelayMilliseconds: "2000"
     depends_on: {catalog-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
-  catalog-media-api:
-    <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj, APP_DLL: Catalog.Media.Api.dll}}
-    environment:
-      <<: [*api-env, *media-store]
-      ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
-    depends_on: {catalog-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}}
-    healthcheck: *api-health
   catalog-media-worker:
     <<: *worker
     cpus: "2.0"
@@ -364,7 +351,6 @@ services:
     healthcheck: {test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/health/live'], interval: 10s, timeout: 5s, retries: 6, start_period: 10s}
     depends_on:
       catalog-api: {condition: service_healthy}
-      catalog-media-api: {condition: service_healthy}
       query-api: {condition: service_healthy}
       ingestion-api: {condition: service_healthy}
       analytics-api: {condition: service_healthy}
