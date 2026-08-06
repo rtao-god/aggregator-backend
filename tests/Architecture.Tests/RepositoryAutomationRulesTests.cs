@@ -43,6 +43,8 @@ public sealed class RepositoryAutomationRulesTests
         var requiredOrder = new[]
         {
             "python3 .tools/complete-backend.py --check",
+            "python3 tools/verify-contracts.py",
+            "docker compose --env-file .env.example --file compose.yaml config --quiet",
             "dotnet test tests/Architecture.Tests/Architecture.Tests.csproj",
             "dotnet restore AggregatorBackend.Runtime.slnx",
             "dotnet build AggregatorBackend.Runtime.slnx",
