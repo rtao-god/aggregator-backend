@@ -42,7 +42,7 @@ CREATE TABLE products.promotion_product_revision
     CONSTRAINT ck_promotion_product_revision_id CHECK (id <> '00000000-0000-0000-0000-000000000000'),
     CONSTRAINT ck_promotion_product_revision_number CHECK (revision_number > 0),
     CONSTRAINT ck_promotion_product_revision_names CHECK (
-        jsonb_typeof(display_names_json) = 'object' AND jsonb_object_length(display_names_json) > 0),
+        jsonb_typeof(display_names_json) = 'object' AND display_names_json <> '{}'::jsonb),
     CONSTRAINT ck_promotion_product_revision_features CHECK (
         jsonb_typeof(presentation_features_json) = 'array' AND jsonb_array_length(presentation_features_json) > 0),
     CONSTRAINT ck_promotion_product_contact_shape CHECK (
