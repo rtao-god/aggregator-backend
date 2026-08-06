@@ -2,8 +2,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Infrastructure;
+using Aggregator.CatalogMedia.Application;
+using Aggregator.CatalogMedia.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Platform.ObjectStorage;
 using Platform.Observability;
 using Platform.ProblemDetails;
 using Platform.Security;
@@ -29,6 +32,8 @@ public partial class Program
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.PropertyNameCaseInsensitive = false;
+                options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
                 options.JsonSerializerOptions.Converters.Add(
                     new JsonStringEnumConverter(
                         JsonNamingPolicy.CamelCase,
@@ -40,12 +45,17 @@ public partial class Program
         builder.Services.AddOwnerProblemDetails();
         builder.Services.AddCatalogApplication();
         builder.Services.AddCatalogInfrastructure(builder.Configuration);
+        builder.Services.AddCatalogMediaApplication();
+        AddCatalogMediaObjectStore(builder);
+        builder.Services.AddCatalogMediaInfrastructure(builder.Configuration);
         builder.Services.AddCatalogIngestionInfrastructure(builder.Configuration);
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<CatalogIngestionDraftService>();
         builder.Services.AddScoped<ICatalogIngestionDraftCommandHandler, VerifiedCatalogIngestionDraftService>();
         builder.Services.AddPlatformObservability(builder.Configuration, "catalog-command-api");
         builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.AddFixedWindowLimiter(
                 CatalogRateLimitPolicies.Command,
                 limiter =>
@@ -54,7 +64,26 @@ public partial class Program
                     limiter.QueueLimit = 0;
                     limiter.Window = TimeSpan.FromMinutes(1);
                     limiter.AutoReplenishment = true;
-                }));
+                });
+            options.AddFixedWindowLimiter(
+                CatalogMediaRateLimitPolicies.Commands,
+                limiter =>
+                {
+                    limiter.PermitLimit = 60;
+                    limiter.QueueLimit = 0;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.AutoReplenishment = true;
+                });
+            options.AddFixedWindowLimiter(
+                CatalogMediaRateLimitPolicies.Reads,
+                limiter =>
+                {
+                    limiter.PermitLimit = 180;
+                    limiter.QueueLimit = 0;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.AutoReplenishment = true;
+                });
+        });
 
         var authorization = builder.Services.AddPlatformJwtAuthentication(
             builder.Configuration,
@@ -86,11 +115,21 @@ public partial class Program
                 CatalogAuthorizationPolicies.TestContracts)
             .AddRequiredScopePolicy(
                 CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand,
-                CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand);
+                CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand)
+            .AddRequiredScopePolicy(
+                CatalogMediaAuthorizationPolicies.Manage,
+                CatalogMediaAuthorizationPolicies.Manage)
+            .AddRequiredScopePolicy(
+                CatalogMediaAuthorizationPolicies.Read,
+                CatalogMediaAuthorizationPolicies.Read)
+            .AddRequiredScopePolicy(
+                CatalogMediaAuthorizationPolicies.RevokeRights,
+                CatalogMediaAuthorizationPolicies.RevokeRights);
 
         var application = builder.Build();
         application.UseOwnerProblemDetails();
         application.UseStatusCodePages(CatalogAuthorizationStatusCodeWriter.WriteAsync);
+        application.UseMiddleware<CatalogMediaFailureMiddleware>();
         application.UseMiddleware<CatalogIngestionFailureMiddleware>();
         application.UseMiddleware<CatalogFailureMiddleware>();
         application.UseRateLimiter();
@@ -111,4 +150,30 @@ public partial class Program
 
         return application;
     }
+
+    private static void AddCatalogMediaObjectStore(WebApplicationBuilder builder)
+    {
+        var options = new S3ObjectStoreOptions
+        {
+            ServiceUrl = new Uri(Require(builder.Configuration, "CatalogMedia:ObjectStorage:ServiceUrl"), UriKind.Absolute),
+            Region = builder.Configuration["CatalogMedia:ObjectStorage:Region"] ?? "us-east-1",
+            Bucket = Require(builder.Configuration, "CatalogMedia:ObjectStorage:Bucket"),
+            AccessKey = Require(builder.Configuration, "CatalogMedia:ObjectStorage:AccessKey"),
+            SecretKey = Require(builder.Configuration, "CatalogMedia:ObjectStorage:SecretKey"),
+            ForcePathStyle = bool.TryParse(
+                builder.Configuration["CatalogMedia:ObjectStorage:ForcePathStyle"],
+                out var forcePathStyle)
+                ? forcePathStyle
+                : true,
+        };
+        options.Validate();
+        builder.Services.AddSingleton<IObjectStore>(_ => new S3ObjectStore(options));
+    }
+
+    private static string Require(
+        Microsoft.Extensions.Configuration.ConfigurationManager configuration,
+        string path) =>
+        configuration[path] is { Length: > 0 } value
+            ? value.Trim()
+            : throw new InvalidOperationException($"Configuration value '{path}' is required.");
 }
