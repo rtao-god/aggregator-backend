@@ -113,8 +113,24 @@ jobs:
           --no-restore -warnaserror /m:2 /nr:false
 
       - name: Tests
+        id: tests
         timeout-minutes: 8
-        run: >-
-          dotnet test AggregatorBackend.slnx
-          --no-build --no-restore -warnaserror
-          --logger "console;verbosity=normal" /m:1 /nr:false
+        shell: bash
+        env:
+          TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/aggregator-backend-test-diagnostics
+        run: |
+          mkdir -p "$TEST_DIAGNOSTICS_DIR"
+          set -o pipefail
+          dotnet test AggregatorBackend.slnx \
+            --no-build --no-restore -warnaserror \
+            --logger "console;verbosity=normal" /m:1 /nr:false \
+            2>&1 | tee "$TEST_DIAGNOSTICS_DIR/console.log"
+
+      - name: Upload test diagnostics
+        if: failure() && steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aggregator-backend-test-diagnostics/console.log
+          if-no-files-found: error
+          retention-days: 7
