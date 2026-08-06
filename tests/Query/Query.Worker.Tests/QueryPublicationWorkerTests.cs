@@ -49,13 +49,14 @@ public sealed class QueryPublicationWorkerTests
     }
 
     [Fact]
-    public void ActiveCompositionRegistersOnlyTheCurrentPublicationAndPromotionWorkers()
+    public void ActiveCompositionRegistersCurrentPublicationPromotionAndVisibilityWorkers()
     {
         var services = new ServiceCollection();
 
         services.AddQueryWorker(
             CreatePublicationOptions(),
-            CreatePromotionOptions());
+            CreatePromotionOptions(),
+            CreateVisibilityOptions());
 
         var hostedWorkerTypes = services
             .Where(descriptor => descriptor.ServiceType == typeof(IHostedService))
@@ -63,7 +64,11 @@ public sealed class QueryPublicationWorkerTests
             .Where(type => type is not null)
             .ToArray();
         Assert.Equal(
-            [typeof(CatalogPublicationProjectionWorker), typeof(PromotionOverlayProjectionWorker)],
+            [
+                typeof(CatalogPublicationProjectionWorker),
+                typeof(PromotionOverlayProjectionWorker),
+                typeof(VisibilitySafetyProjectionWorker),
+            ],
             hostedWorkerTypes);
         Assert.Equal(PromotionIntegrationEventTypes.PlacementChanged, CreatePromotionOptions().RoutingKey);
     }
@@ -167,6 +172,19 @@ public sealed class QueryPublicationWorkerTests
             DeadLetterQueue = "query.promotion-placement-projection.dead-letter",
             RoutingKey = PromotionIntegrationEventTypes.PlacementChanged,
             PrefetchCount = 8,
+            DeliveryLimit = 8,
+            RetryDelay = TimeSpan.FromMilliseconds(500),
+        };
+
+    private static QueryVisibilityWorkerOptions CreateVisibilityOptions() =>
+        new()
+        {
+            BrokerUri = new Uri("amqp://guest:guest@localhost:5672/"),
+            Exchange = "aggregator.events",
+            Queue = "query.catalog-visibility-safety",
+            DeadLetterExchange = "aggregator.dead-letter",
+            DeadLetterQueue = "query.catalog-visibility-safety.dead-letter",
+            PrefetchCount = 4,
             DeliveryLimit = 8,
             RetryDelay = TimeSpan.FromMilliseconds(500),
         };
