@@ -11,7 +11,6 @@ Directory.CreateDirectory(output);
 var apiAssemblies = new[]
 {
     new ApiAssembly("catalog-command", "Catalog.Api", "aggregator-catalog-command"),
-    new ApiAssembly("catalog-media", "Catalog.Media.Api", "aggregator-catalog-media"),
     new ApiAssembly("catalog-query", "Query.Api", null),
     new ApiAssembly("ingestion", "Ingestion.Api", "aggregator-ingestion"),
     new ApiAssembly("analytics", "Analytics.Api", "aggregator-analytics"),
