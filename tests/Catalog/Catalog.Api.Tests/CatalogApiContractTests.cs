@@ -60,6 +60,42 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
     }
 
     [Fact]
+    public async Task CatalogOwnedMediaCommandWithoutActorMappingFailsAtMediaBoundary()
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/catalog-command/media/assets")
+        {
+            Content = JsonContent.Create(new { }, options: JsonOptions),
+        };
+        request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
+        request.Headers.Add(
+            CatalogApiFactory.ScopesHeader,
+            CatalogMediaAuthorizationPolicies.Manage);
+        request.Headers.Add("Idempotency-Key", "catalog-media-api-contract-0001");
+
+        using var response = await client.SendAsync(request);
+        var document = await ReadJsonAsync(response);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("Catalog.Media.Access", document.RootElement.GetProperty("owner").GetString());
+        Assert.Equal(
+            "CATALOG_MEDIA_ACTOR_MAPPING_REQUIRED",
+            document.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ObsoleteMediaApiRouteIsNotReachable()
+    {
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/api/catalog" + "-media/assets/0192f5f0-0000-7000-8000-000000000001");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task RouteAndBodyCatalogMismatchReturnsTypedContractFailure()
     {
         using var client = factory.CreateClient();
