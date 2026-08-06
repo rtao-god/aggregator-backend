@@ -41,6 +41,14 @@ jobs:
         timeout-minutes: 1
         run: python3 .tools/complete-backend.py --check
 
+      - name: Runtime contract manifest
+        timeout-minutes: 1
+        run: python3 tools/verify-contracts.py
+
+      - name: Compose topology
+        timeout-minutes: 1
+        run: docker compose --env-file .env.example --file compose.yaml config --quiet
+
       - name: Restore architecture gate
         timeout-minutes: 2
         run: dotnet restore tests/Architecture.Tests/Architecture.Tests.csproj
