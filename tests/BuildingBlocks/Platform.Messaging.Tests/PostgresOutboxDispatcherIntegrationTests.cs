@@ -83,15 +83,19 @@ public sealed class PostgresOutboxDispatcherIntegrationTests
             maximumDeliveryAttempts: 3,
             dispatcherIdentity);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var exception = await Assert.ThrowsAsync<OutboxLeaseLostException>(() =>
             dispatcher.DispatchOnceAsync(CancellationToken.None));
 
+        Assert.Equal(message.MessageId, exception.MessageId);
+        Assert.Equal(dispatcherIdentity, exception.DispatcherIdentity);
+        Assert.NotEqual(Guid.Empty, exception.LeaseToken);
         Assert.Contains("lost its exact lease", exception.Message, StringComparison.Ordinal);
         var state = await scope.ReadStateAsync(message.MessageId);
         Assert.Equal(replacementLeaseToken, state.LeaseToken);
         Assert.Equal(dispatcherIdentity, state.LeaseOwner);
         Assert.False(state.IsDispatched);
         Assert.False(state.IsDeadLettered);
+        Assert.Null(state.LastError);
     }
 
     private static PostgresOutboxDispatcher CreateDispatcher(
