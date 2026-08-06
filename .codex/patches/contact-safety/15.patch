@@ -1,0 +1,21 @@
+diff --git a/src/Catalog/Catalog.Infrastructure/EfCatalogRepository.Listings.cs b/src/Catalog/Catalog.Infrastructure/EfCatalogRepository.Listings.cs
+index d5dbaace8983edd0b05eef4c3e40a4b1c9fbe3e0..619b21cf3afc5b475f03cc8dedccbb89907b4ed6 100644
+--- a/src/Catalog/Catalog.Infrastructure/EfCatalogRepository.Listings.cs
++++ b/src/Catalog/Catalog.Infrastructure/EfCatalogRepository.Listings.cs
+@@ -104,6 +104,7 @@ public sealed partial class EfCatalogRepository
+                 geography.DistrictKey,
+                 geography.AssertionId),
+             contacts.Select(row => ContactValue.Create(
++                row.Id,
+                 RequireEnum<ContactKind>(row.Kind, "contact kind"),
+                 RequireAbsoluteUri(row.Target, "contact target"),
+                 row.Label,
+@@ -291,7 +292,7 @@ public sealed partial class EfCatalogRepository
+         {
+             _dbContext.Contacts.Add(new CatalogContactRow
+             {
+-                Id = Guid.CreateVersion7(),
++                Id = contact.Id,
+                 ListingRevisionId = revision.Id,
+                 Kind = (int)contact.Kind,
+                 Target = contact.Target.AbsoluteUri,

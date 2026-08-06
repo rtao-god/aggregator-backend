@@ -1,0 +1,13 @@
+diff --git a/tests/Query/Query.Infrastructure.Tests/ObjectStoreCatalogPublicationArtifactReaderTests.cs b/tests/Query/Query.Infrastructure.Tests/ObjectStoreCatalogPublicationArtifactReaderTests.cs
+index 50d2366dba7bf3ddb75f9013660ee7b1432370d2..58bd17da460f0e3919c6c87d903d071d9c681d5f 100644
+--- a/tests/Query/Query.Infrastructure.Tests/ObjectStoreCatalogPublicationArtifactReaderTests.cs
++++ b/tests/Query/Query.Infrastructure.Tests/ObjectStoreCatalogPublicationArtifactReaderTests.cs
+@@ -91,7 +91,7 @@ public sealed class ObjectStoreCatalogPublicationArtifactReaderTests
+     private static string ValidArtifactJson() => $$"""
+         {
+           "contractIdentity":"aggregator-catalog-publication",
+-          "contractRevision":2,
++          "contractRevision":3,
+           "publicationId":"{{Guid.Parse("0198a400-0000-7000-8000-000000000001")}}",
+           "catalogKey":"berlin-recording-services",
+           "defaultLocale":"de-DE",

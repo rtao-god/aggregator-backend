@@ -1,0 +1,32 @@
+diff --git a/docs/decisions/implementation-status.md b/docs/decisions/implementation-status.md
+index 29485b710caa956232303adb75efc4492fe25cf0..fb65c32e66627b5a49ec6198d58b26b2839f620d 100644
+--- a/docs/decisions/implementation-status.md
++++ b/docs/decisions/implementation-status.md
+@@ -14,7 +14,7 @@ This document records implemented production owners and exact remaining work. An
+ - [x] OpenTelemetry and OIDC authorization bootstrap.
+ - [x] Explicit project-topology manifest, generated canonical solutions, forbidden-contour guards, and read-only CI foundation.
+ - [x] One canonical `compose.yaml`, `.env.example`, Caddy edge, SeaweedFS adapter, separate migration/grant jobs, container limits, healthchecks, and deployment topology guards.
+-- [ ] Add runtime-contract and Compose-config steps to `.github/workflows/ci.yml`; the current GitHub connector cannot modify workflow files and returns `404` for that path.
++- [x] Runtime-contract and Compose-config checks run before restore/build/test in `.github/workflows/ci.yml`.
+ 
+ ## Catalog owner progress
+ 
+@@ -23,6 +23,7 @@ This document records implemented production owners and exact remaining work. An
+ - [x] Catalog application use cases, idempotent commands, deterministic publication composition, and owner-level tests.
+ - [x] Normalized EF Core/PostgreSQL persistence, one-shot migration project, authenticated command API, S3 publication adapter, listing claims, and listing-scoped access persistence.
+ - [x] One canonical Catalog worker composition root using the shared durable outbox dispatcher.
++- [x] Revisioned public-visibility suppression commands, durable Catalog outbox events, and stable media/contact target identities through publication artifacts.
+ - [ ] Merge media lifecycle into the canonical Catalog owner, bind listing revisions to exact approved media revisions/variants, and prove suppression/rollback behavior against PostgreSQL and object storage.
+ 
+ ## Query owner progress
+@@ -31,7 +32,9 @@ This document records implemented production owners and exact remaining work. An
+ - [x] Catalog publication event/artifact projection builder with exact identity and digest validation.
+ - [x] Canonical Promotion placement consumer, immutable Query-owned overlay materialization, hard-expiry enforcement, and atomic public-read revision switch.
+ - [x] PostgreSQL projection/read stores, Query migrations, one worker composition root, and public API returning sponsored and organic rows from one revision snapshot.
+-- [ ] Complete visibility-safety overlay lifecycle and real PostgreSQL/RabbitMQ/object-storage migration/integration/E2E proof.
++- [x] Block-first visibility-safety inbox, immutable overlay materialization, atomic `PublicReadRevision` switch, and listing/route/media/contact filtering.
++- [x] Catalog publication recomposition preserves the exact current Promotion and safety overlays under a per-catalog mutation lease and blocks incompatible Promotion membership.
++- [ ] Complete real PostgreSQL/RabbitMQ/object-storage migration, concurrency, failure-injection, and E2E proof for visibility safety.
+ 
+ ## Ingestion owner progress
+ 

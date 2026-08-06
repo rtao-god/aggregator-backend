@@ -1,0 +1,55 @@
+diff --git a/src/Query/Query.Domain/QueryDocuments.cs b/src/Query/Query.Domain/QueryDocuments.cs
+index c07aa183884ab4fb264d95e98811fa120cb4856f..b11df5ee2e8e301effe31730be7d8b5c4ffb1af4 100644
+--- a/src/Query/Query.Domain/QueryDocuments.cs
++++ b/src/Query/Query.Domain/QueryDocuments.cs
+@@ -72,6 +72,7 @@ public sealed record QueryGeographyDocument(
+     string? DistrictKey);
+ 
+ public sealed record QueryContactDocument(
++    Guid ContactId,
+     QueryContactKind Kind,
+     string Target,
+     string? Label);
+@@ -220,6 +221,33 @@ public sealed class QueryListingDocument
+             throw new QueryDomainException("QUERY_ATTRIBUTE_DUPLICATE", $"Listing '{listingId}' contains a duplicated projected attribute.");
+         }
+ 
++        var contactArray = contacts
++            .OrderBy(item => item.Kind)
++            .ThenBy(item => item.Target, StringComparer.Ordinal)
++            .ThenBy(item => item.ContactId)
++            .ToArray();
++        foreach (var contact in contactArray)
++        {
++            QueryContractRules.RequireId(contact.ContactId, nameof(contacts));
++            QueryContractRules.RequireText(contact.Target, nameof(contacts), 2048);
++        }
++
++        if (contactArray.Select(item => item.ContactId).Distinct().Count() != contactArray.Length)
++        {
++            throw new QueryDomainException(
++                "QUERY_CONTACT_IDENTITY_DUPLICATE",
++                $"Listing '{listingId}' contains a duplicated projected contact identity.");
++        }
++
++        if (contactArray
++            .GroupBy(item => new { item.Kind, item.Target })
++            .Any(group => group.Count() > 1))
++        {
++            throw new QueryDomainException(
++                "QUERY_CONTACT_TARGET_DUPLICATE",
++                $"Listing '{listingId}' contains a duplicated projected contact target.");
++        }
++
+         return new QueryListingDocument(
+             listingId,
+             listingRevisionId,
+@@ -230,7 +258,7 @@ public sealed class QueryListingDocument
+             Array.AsReadOnly(categories),
+             Array.AsReadOnly(attributeArray),
+             geography,
+-            Array.AsReadOnly(contacts.ToArray()),
++            Array.AsReadOnly(contactArray),
+             Array.AsReadOnly(media.ToArray()),
+             QueryContractRules.RequireDigest(sourceContentDigest, nameof(sourceContentDigest)),
+             QueryContractRules.RequireUtc(publishedAtUtc, nameof(publishedAtUtc)));

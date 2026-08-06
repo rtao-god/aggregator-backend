@@ -1,0 +1,21 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2b9ffa233d6c25253e06f51ba660e3b8e38f66bb..72b5ad4e8a774dc98678713088c8e57af114b1c4 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -25,16 +25,6 @@ jobs:
+     steps:
+       - uses: actions/checkout@v5
+ 
+-      - name: Source snapshot
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: source-snapshot-${{ github.sha }}
+-          path: |
+-            .
+-            !.git
+-          include-hidden-files: true
+-          retention-days: 1
+-
+       - uses: actions/setup-dotnet@v5
+         with:
+           dotnet-version: 10.0.302

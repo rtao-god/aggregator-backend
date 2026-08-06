@@ -1,0 +1,30 @@
+diff --git a/contracts/runtime-contract-manifest.json b/contracts/runtime-contract-manifest.json
+index db40965657a9dccd6d8b229e14520c3498b9d61a..1b63ecdaf4c996be2c9ca59fde7ab9dd32412ce1 100644
+--- a/contracts/runtime-contract-manifest.json
++++ b/contracts/runtime-contract-manifest.json
+@@ -50,6 +50,15 @@
+         "string PresentationLabelKey,"
+       ]
+     },
++    {
++      "name": "catalog-publication-artifact",
++      "file": "src/Catalog/Catalog.Contracts/CatalogPublicationArtifact.cs",
++      "required": [
++        "public const string Identity = \"aggregator-catalog-publication\";",
++        "public const int Revision = 3;",
++        "public sealed record PublicContact(\n    Guid ContactId,"
++      ]
++    },
+     {
+       "name": "query-public-search",
+       "file": "src/Query/Query.Contracts/PublicQueryContracts.cs",
+@@ -60,7 +69,8 @@
+         "DateTimeOffset HardExpiryAtUtc,",
+         "public sealed record PublicListingSearchResponse(",
+         "IReadOnlyList<PublicSponsoredListingSummary> Sponsored,",
+-        "IReadOnlyList<PublicListingSummary> Organic,"
++        "IReadOnlyList<PublicListingSummary> Organic,",
++        "public sealed record PublicContactValue(Guid ContactId, string Kind, string Target, string? Label);"
+       ]
+     },
+     {

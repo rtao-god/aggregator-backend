@@ -1,0 +1,25 @@
+diff --git a/tests/Catalog/Catalog.Domain.Tests/CatalogContactIdentityTests.cs b/tests/Catalog/Catalog.Domain.Tests/CatalogContactIdentityTests.cs
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bff532e4af241b239ee310ce6b6601a33a242ad
+--- /dev/null
++++ b/tests/Catalog/Catalog.Domain.Tests/CatalogContactIdentityTests.cs
+@@ -0,0 +1,19 @@
++using Aggregator.Catalog.Domain;
++
++namespace Catalog.Domain.Tests;
++
++public sealed class CatalogContactIdentityTests
++{
++    [Fact]
++    public void ContactIdentityMustBeExplicitAndNonEmpty()
++    {
++        var exception = Assert.Throws<ArgumentException>(() => ContactValue.Create(
++            Guid.Empty,
++            ContactKind.Website,
++            new Uri("https://example.test"),
++            label: null,
++            assertionId: Guid.Parse("0198fb10-0000-7000-8000-000000000001")));
++
++        Assert.Equal("id", exception.ParamName);
++    }
++}

@@ -1,0 +1,44 @@
+diff --git a/src/Query/Query.Migrations/Migrations/V007__public_contact_identity.sql b/src/Query/Query.Migrations/Migrations/V007__public_contact_identity.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d230ac6b66a1122da2574392aafa3e3c0ded5df
+--- /dev/null
++++ b/src/Query/Query.Migrations/Migrations/V007__public_contact_identity.sql
+@@ -0,0 +1,38 @@
++DO $migration$
++BEGIN
++    IF EXISTS (SELECT 1 FROM documents.listing_contact) THEN
++        RAISE EXCEPTION USING
++            ERRCODE = 'P0001',
++            MESSAGE = 'Query contact identity migration requires an explicit projection rebuild.',
++            DETAIL = 'Existing Query contact rows were materialized from Catalog publication contract revision 2 and have no producer-owned contact ID.',
++            HINT = 'Clear the rebuildable Query projection through its owner operation, apply this migration, then rebuild from a Catalog publication artifact using contract revision 3.';
++    END IF;
++END
++$migration$;
++
++ALTER TABLE documents.listing_contact
++    ADD COLUMN contact_id uuid NOT NULL,
++    ADD CONSTRAINT listing_contact_id_nonempty
++        CHECK (contact_id <> '00000000-0000-0000-0000-000000000000'::uuid);
++
++ALTER TABLE documents.listing_contact
++    DROP CONSTRAINT listing_contact_pkey,
++    ADD CONSTRAINT listing_contact_pkey
++        PRIMARY KEY (base_projection_id, listing_id, contact_id),
++    ADD CONSTRAINT listing_contact_ordinal_unique
++        UNIQUE (base_projection_id, listing_id, ordinal),
++    ADD CONSTRAINT listing_contact_identity_unique
++        UNIQUE (base_projection_id, contact_id);
++
++ALTER TABLE projection.visibility_safety_overlay_item
++    DROP CONSTRAINT visibility_safety_overlay_item_target_kind_check,
++    DROP CONSTRAINT visibility_safety_overlay_item_check1,
++    ADD CONSTRAINT visibility_safety_overlay_item_target_kind_check
++        CHECK (target_kind IN ('listing', 'media', 'contact', 'route')),
++    ADD CONSTRAINT visibility_safety_overlay_item_target_response_shape_check
++        CHECK
++        (
++            (target_kind IN ('media', 'contact') AND response_mode = 'omit_child_element')
++            OR
++            (target_kind IN ('listing', 'route') AND response_mode <> 'omit_child_element')
++        );

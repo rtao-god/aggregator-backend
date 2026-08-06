@@ -1,0 +1,17 @@
+diff --git a/src/Query/Query.Application/PublicQueryService.cs b/src/Query/Query.Application/PublicQueryService.cs
+index ba0f0586aa41bacb8df791e9d34a8dc505179108..0a28c421a612b1a32e53f6aabc41f7975feeac6c 100644
+--- a/src/Query/Query.Application/PublicQueryService.cs
++++ b/src/Query/Query.Application/PublicQueryService.cs
+@@ -173,7 +173,11 @@ public sealed class PublicQueryService
+                 document.Geography.Longitude,
+                 document.Geography.DistrictKey),
+             document.Contacts
+-                .Select(item => new PublicContactValue(MapContactKind(item.Kind), item.Target, item.Label))
++                .Select(item => new PublicContactValue(
++                    item.ContactId,
++                    MapContactKind(item.Kind),
++                    item.Target,
++                    item.Label))
+                 .ToArray(),
+             document.Media
+                 .Select(item => new PublicMediaValue(

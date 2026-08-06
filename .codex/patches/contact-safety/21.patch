@@ -1,0 +1,21 @@
+diff --git a/src/Query/Query.Infrastructure/NpgsqlQueryProjectionStore.cs b/src/Query/Query.Infrastructure/NpgsqlQueryProjectionStore.cs
+index 76dd245f203f2ce6cba6136dc08faad04b22924a..d7f1e09a42b0bc71a3096b8032031fc2c53bdd23 100644
+--- a/src/Query/Query.Infrastructure/NpgsqlQueryProjectionStore.cs
++++ b/src/Query/Query.Infrastructure/NpgsqlQueryProjectionStore.cs
+@@ -630,13 +630,14 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
+     {
+         const string sql = """
+             INSERT INTO documents.listing_contact
+-                (base_projection_id, listing_id, ordinal, kind, target, label)
++                (base_projection_id, listing_id, contact_id, ordinal, kind, target, label)
+             VALUES
+-                (@base_projection_id, @listing_id, @ordinal, @kind, @target, @label);
++                (@base_projection_id, @listing_id, @contact_id, @ordinal, @kind, @target, @label);
+             """;
+         await using var command = CreateCommand(connection, transaction, sql);
+         command.Parameters.Add(new NpgsqlParameter<Guid>("base_projection_id", baseProjectionId));
+         command.Parameters.Add(new NpgsqlParameter<Guid>("listing_id", listingId));
++        command.Parameters.Add(new NpgsqlParameter<Guid>("contact_id", contact.ContactId));
+         command.Parameters.Add(new NpgsqlParameter<int>("ordinal", ordinal));
+         command.Parameters.Add(new NpgsqlParameter<string>("kind", MapContactKind(contact.Kind)));
+         command.Parameters.Add(new NpgsqlParameter<string>("target", contact.Target));

@@ -1,0 +1,15 @@
+diff --git a/src/Catalog/Catalog.Application/CatalogVisibilitySuppressionContractMapper.cs b/src/Catalog/Catalog.Application/CatalogVisibilitySuppressionContractMapper.cs
+index 4cd49dbbd18da51bb71de1109b902cf27a4e6c2f..946870cefac90a061459198f0283c1836e02e4d1 100644
+--- a/src/Catalog/Catalog.Application/CatalogVisibilitySuppressionContractMapper.cs
++++ b/src/Catalog/Catalog.Application/CatalogVisibilitySuppressionContractMapper.cs
+@@ -87,9 +87,7 @@ internal static class CatalogVisibilitySuppressionContractMapper
+             PublicVisibilitySuppressionTargetKindContract.Route =>
+                 PublicVisibilitySuppressionTargetKind.Route,
+             PublicVisibilitySuppressionTargetKindContract.Contact =>
+-                throw new CatalogContractException(
+-                    "catalog.visibility_contact_identity_unsupported",
+-                    "Contact suppression requires a stable Catalog-owned public contact ID, which the current publication contract does not expose."),
++                PublicVisibilitySuppressionTargetKind.Contact,
+             PublicVisibilitySuppressionTargetKindContract.ExternalReference =>
+                 throw new CatalogContractException(
+                     "catalog.visibility_external_reference_identity_unsupported",
