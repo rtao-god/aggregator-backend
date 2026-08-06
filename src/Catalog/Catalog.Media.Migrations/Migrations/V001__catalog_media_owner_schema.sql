@@ -1,5 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS media;
 CREATE SCHEMA IF NOT EXISTS media_messaging;
+CREATE SCHEMA IF NOT EXISTS operations;
 
 CREATE TABLE media.asset
 (
