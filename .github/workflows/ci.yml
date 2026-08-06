@@ -25,6 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Package source snapshot
+        run: tar --exclude=.git -czf "$RUNNER_TEMP/aggregator-backend-source.tar.gz" .
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-snapshot-${{ github.sha }}
+          path: ${{ runner.temp }}/aggregator-backend-source.tar.gz
+          retention-days: 1
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.302
