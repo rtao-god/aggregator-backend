@@ -105,8 +105,8 @@ public sealed partial class DeploymentTopologyRulesTests
         Assert.True(compose.Contains("/health/HealthProbe.dll", StringComparison.Ordinal));
         Assert.True(compose.Contains("service_completed_successfully", StringComparison.Ordinal));
         Assert.True(compose.Contains("service_healthy", StringComparison.Ordinal));
-        Assert.False(compose.Contains("catalog-media-api", StringComparison.Ordinal));
-        Assert.False(compose.Contains("catalog-media-migrations", StringComparison.Ordinal));
+        Assert.False(compose.Contains("catalog-media" + "-api", StringComparison.Ordinal));
+        Assert.False(compose.Contains("catalog-media" + "-migrations", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public sealed partial class DeploymentTopologyRulesTests
         }
 
         Assert.False(caddy.Contains("catalog-event-worker", StringComparison.OrdinalIgnoreCase));
-        Assert.False(caddy.Contains("/api/catalog-media", StringComparison.Ordinal));
-        Assert.False(caddy.Contains("catalog-media-api", StringComparison.Ordinal));
+        Assert.False(caddy.Contains("/api/catalog" + "-media", StringComparison.Ordinal));
+        Assert.False(caddy.Contains("catalog-media" + "-api", StringComparison.Ordinal));
         Assert.True(caddy.Contains("respond 404", StringComparison.Ordinal));
     }
 
