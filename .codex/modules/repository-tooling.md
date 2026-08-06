@@ -26,6 +26,7 @@
 - Obsolete owner contours, generators, endpoints, namespaces, and deployment references are rejected repository-wide.
 - No second complete solution exists.
 - CI is read-only, has one automatic workflow, and runs topology/architecture proof before full restore.
+- A failing broad solution test preserves complete console output as a short-lived GitHub Actions artifact while retaining the original test exit code.
 - Local owner-level build/test commands are preferred during focused work; broad build/test is a stage-boundary proof.
 - Compose startup never implies image rebuild.
 - `.codex/ci`, `.codex/probes`, `.codex/tmp`, and repair scripts are transient and never tracked.
