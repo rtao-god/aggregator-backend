@@ -7,7 +7,6 @@
     <ProjectReference Include="../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <ProjectReference Include="../../src/Catalog/Catalog.Api/Catalog.Api.csproj" />
     <ProjectReference Include="../../src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
-    <ProjectReference Include="../../src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj" />
     <ProjectReference Include="../../src/Query/Query.Contracts/Query.Contracts.csproj" />
     <ProjectReference Include="../../src/Query/Query.Api/Query.Api.csproj" />
     <ProjectReference Include="../../src/Ingestion/Ingestion.Contracts/Ingestion.Contracts.csproj" />
