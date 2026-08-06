@@ -17,6 +17,51 @@ public interface IIntegrationEventPublisher
     public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken);
 }
 
+/// <summary>Reports that an outbox transition no longer owns the exact leased message.</summary>
+public sealed class OutboxLeaseLostException : InvalidOperationException
+{
+    /// <summary>Creates an exact lost-lease diagnostic without mutating the replacement lease.</summary>
+    public OutboxLeaseLostException(
+        Guid messageId,
+        Guid leaseToken,
+        string dispatcherIdentity,
+        Exception? innerException = null)
+        : base(CreateMessage(messageId, leaseToken, dispatcherIdentity), innerException)
+    {
+        MessageId = messageId;
+        LeaseToken = leaseToken;
+        DispatcherIdentity = dispatcherIdentity;
+    }
+
+    /// <summary>The outbox message whose transition lost ownership.</summary>
+    public Guid MessageId { get; }
+
+    /// <summary>The exact lease token that no longer owns the message.</summary>
+    public Guid LeaseToken { get; }
+
+    /// <summary>The dispatcher that attempted the rejected transition.</summary>
+    public string DispatcherIdentity { get; }
+
+    private static string CreateMessage(
+        Guid messageId,
+        Guid leaseToken,
+        string dispatcherIdentity)
+    {
+        if (messageId == Guid.Empty)
+        {
+            throw new ArgumentException("A non-empty outbox message ID is required.", nameof(messageId));
+        }
+
+        if (leaseToken == Guid.Empty)
+        {
+            throw new ArgumentException("A non-empty outbox lease token is required.", nameof(leaseToken));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(dispatcherIdentity);
+        return $"Outbox dispatcher '{dispatcherIdentity}' lost its exact lease '{leaseToken}' for message '{messageId}'; no completion or failure transition was written.";
+    }
+}
+
 /// <summary>Owner-specific settings for leasing and dispatching a PostgreSQL outbox.</summary>
 public sealed record OutboxDispatcherOptions
 {
