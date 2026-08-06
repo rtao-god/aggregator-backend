@@ -10,21 +10,30 @@ public sealed class ProducerOutboxStorageMigrationIntegrationTests
     [Theory]
     [InlineData(
         "src/Catalog/Catalog.Migrations/Migrations",
-        "catalog")]
+        "catalog",
+        null)]
     [InlineData(
         "src/Catalog/Catalog.Media.Migrations/Migrations",
-        "media_messaging")]
+        "media_messaging",
+        "src/Catalog/Catalog.Migrations/Migrations")]
     [InlineData(
         "src/Promotion/Promotion.Migrations/Migrations",
-        "messaging")]
+        "messaging",
+        null)]
     public async Task FreshProducerMigrationsPreserveExactOutboxPayloadText(
         string migrationDirectory,
-        string schema)
+        string schema,
+        string? prerequisiteMigrationDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
 
         await using var database = await TemporaryDatabase.CreateAsync();
+
+        if (prerequisiteMigrationDirectory is not null)
+        {
+            await database.ApplyAllAsync(prerequisiteMigrationDirectory);
+        }
 
         await database.ApplyAllAsync(migrationDirectory);
 
@@ -47,7 +56,7 @@ public sealed class ProducerOutboxStorageMigrationIntegrationTests
         var messageId = Guid.CreateVersion7();
         await database.ExecuteAsync(
             $"""
-            INSERT INTO {schema}.outbox_message
+            INSERT INTO "{schema}".outbox_message
             (
                 message_id,
                 routing_key,
@@ -75,8 +84,24 @@ public sealed class ProducerOutboxStorageMigrationIntegrationTests
         Assert.Equal(
             payload,
             await database.ScalarAsync<string>(
-                $"SELECT payload_json FROM {schema}.outbox_message WHERE message_id = @message_id;",
+                $"SELECT payload_json FROM \"{schema}\".outbox_message WHERE message_id = @message_id;",
                 new NpgsqlParameter<Guid>("message_id", messageId)));
+
+        await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync(
+            $"""
+            UPDATE "{schema}".outbox_message
+            SET leased_by = 'incomplete-lease'
+            WHERE message_id = @message_id;
+            """,
+            new NpgsqlParameter<Guid>("message_id", messageId)));
+        await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync(
+            $"""
+            UPDATE "{schema}".outbox_message
+            SET dead_lettered_at_utc = '2026-08-06T10:01:00Z',
+                dead_letter_reason = NULL
+            WHERE message_id = @message_id;
+            """,
+            new NpgsqlParameter<Guid>("message_id", messageId)));
     }
 
     private sealed class TemporaryDatabase : IAsyncDisposable
