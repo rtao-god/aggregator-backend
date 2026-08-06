@@ -21,6 +21,9 @@ public sealed class ProducerOutboxStorageMigrationIntegrationTests
         string migrationDirectory,
         string schema)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(migrationDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(schema);
+
         await using var database = await TemporaryDatabase.CreateAsync();
 
         await database.ApplyAllAsync(migrationDirectory);
