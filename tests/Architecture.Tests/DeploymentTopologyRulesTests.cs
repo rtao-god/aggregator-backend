@@ -6,6 +6,22 @@ namespace Architecture.Tests;
 
 public sealed partial class DeploymentTopologyRulesTests
 {
+    private static readonly string[] CanonicalDockerfiles =
+    [
+        "deploy/Dockerfile.catalog-media-worker",
+        "deploy/Dockerfile.dotnet-service",
+    ];
+
+    private static readonly string[] OwnedApiRoutes =
+    [
+        "/api/catalog-media*",
+        "/api/catalog-query*",
+        "/api/catalog*",
+        "/api/ingestion*",
+        "/api/analytics*",
+        "/api/promotion*",
+    ];
+
     [Fact]
     public void RepositoryHasOneCanonicalComposeAndTwoImageOwners()
     {
@@ -17,7 +33,8 @@ public sealed partial class DeploymentTopologyRulesTests
             .Select(repository.Relative)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "compose.yaml" }, composeFiles);
+        Assert.Single(composeFiles);
+        Assert.Equal("compose.yaml", composeFiles[0]);
 
         var dockerfiles = Directory
             .EnumerateFiles(repository.Root, "Dockerfile*", SearchOption.AllDirectories)
@@ -25,13 +42,7 @@ public sealed partial class DeploymentTopologyRulesTests
             .Select(repository.Relative)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(
-            new[]
-            {
-                "deploy/Dockerfile.catalog-media-worker",
-                "deploy/Dockerfile.dotnet-service",
-            },
-            dockerfiles);
+        Assert.Equal(CanonicalDockerfiles, dockerfiles);
 
         Assert.True(File.Exists(Path.Combine(repository.Root, ".env.example")));
         Assert.False(File.Exists(Path.Combine(repository.Root, "deploy", ".env.example")));
@@ -85,7 +96,7 @@ public sealed partial class DeploymentTopologyRulesTests
         Assert.True(compose.Contains("postgres-data:/var/lib/postgresql", StringComparison.Ordinal));
         Assert.True(compose.Contains("internal: true", StringComparison.Ordinal));
         Assert.True(compose.Contains("127.0.0.1:${BACKEND_HTTP_PORT:-8080}:8080", StringComparison.Ordinal));
-        Assert.Equal(1, Regex.Matches(compose, @"(?m)^\s+ports:").Count);
+        Assert.Equal(1, PortsPattern().Count(compose));
         Assert.True(compose.Contains("read_only: true", StringComparison.Ordinal));
         Assert.True(compose.Contains("cap_drop: [ALL]", StringComparison.Ordinal));
         Assert.True(compose.Contains("no-new-privileges:true", StringComparison.Ordinal));
@@ -115,15 +126,7 @@ public sealed partial class DeploymentTopologyRulesTests
     {
         var repository = RepositoryModel.Load();
         var caddy = File.ReadAllText(Path.Combine(repository.Root, "deploy", "Caddyfile"));
-        foreach (var route in new[]
-                 {
-                     "/api/catalog-media*",
-                     "/api/catalog-query*",
-                     "/api/catalog*",
-                     "/api/ingestion*",
-                     "/api/analytics*",
-                     "/api/promotion*",
-                 })
+        foreach (var route in OwnedApiRoutes)
         {
             Assert.True(caddy.Contains(route, StringComparison.Ordinal));
         }
@@ -135,6 +138,9 @@ public sealed partial class DeploymentTopologyRulesTests
     private static bool HasBuildOutputSegment(string path) =>
         path.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Any(segment => segment is "bin" or "obj" or "artifacts");
+
+    [GeneratedRegex(@"(?m)^\s+ports:", RegexOptions.CultureInvariant)]
+    private static partial Regex PortsPattern();
 
     [GeneratedRegex(@"PROJECT_PATH:\s+(?<path>[^,}\s]+)", RegexOptions.CultureInvariant)]
     private static partial Regex ProjectPathPattern();
