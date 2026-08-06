@@ -8,13 +8,13 @@
 
 ```text
 PostgreSQL / RabbitMQ / SeaweedFS / ClamAV
-→ context migration executables
+→ five bounded-context migration executables
 → context grant jobs
 → APIs and workers
 → Caddy loopback edge
 ```
 
-Migrations and grants are one-shot processes. Runtime hosts do not apply DDL or repair schemas. Catalog media migrations share `catalog_db` but remain a separate stream until the media owner is merged into canonical Catalog.
+Migrations and grants are one-shot processes. Runtime hosts do not apply DDL or repair schemas. Catalog media tables, publication gates, and media outbox state belong to the single `Catalog.Migrations` stream. Media HTTP commands run inside `catalog-command-api`; `catalog-media-worker` remains a separate resource-heavy Catalog worker and has no independent API, database, or migration owner.
 
 ## Data and network boundaries
 
@@ -36,11 +36,11 @@ Migrations and grants are one-shot processes. Runtime hosts do not apply DDL or 
 
 ## Structural proof
 
-Repository preflight and architecture proof run:
+Repository preflight and CI run:
 
 1. project topology validation;
 2. runtime-contract manifest verification;
 3. `docker compose ... config --quiet` against `.env.example`;
-4. architecture tests that require one Compose file, two Dockerfile owners, exact approved deployable coverage, local-only exposure, and removal of legacy deployment files.
+4. architecture tests that require one Compose file, two Dockerfile owners, exact approved deployable coverage, local-only exposure, and removal of obsolete deployment contours.
 
-The current GitHub workflow already runs project inventory and architecture proof. Wiring contract-manifest and Compose-config commands into `.github/workflows/ci.yml` remains an exact repository-permission blocker; local `preflight` runs them now. This proof validates configuration and dependency shape. Container build, clean startup, migration execution, runtime health, and E2E behavior remain separate required gates.
+This proof validates configuration and dependency shape. Container build, clean startup, migration execution, runtime health, and E2E behavior remain separate required gates.
