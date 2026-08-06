@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Domain;
 using Platform.ObjectStorage;
 
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 public sealed class ObjectStoreCatalogMediaStore(IObjectStore objectStore) : ICatalogMediaObjectStore
 {
@@ -133,5 +133,5 @@ public sealed class ObjectStoreCatalogMediaStore(IObjectStore objectStore) : ICa
     }
 
     private static CatalogMediaApplicationException Failure(string code, string message, string action) =>
-        new("CatalogMedia.ObjectStorage", code, 422, message, action);
+        new("Catalog.Media.ObjectStorage", code, 422, message, action);
 }

@@ -86,6 +86,45 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
     }
 
     [Fact]
+    public async Task UnsupportedMediaContractReturnsCanonicalCatalogMediaOwner()
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/catalog-command/media/assets")
+        {
+            Content = JsonContent.Create(
+                new
+                {
+                    contractIdentity = "unsupported",
+                    contractRevision = 1,
+                    catalogKey = "catalog",
+                    contentType = "image/jpeg",
+                    contentDigest = new string('a', 64),
+                    size = 1,
+                    rightsBasis = "ownerProvided",
+                    rightsReference = "owner upload",
+                },
+                options: JsonOptions),
+        };
+        request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
+        request.Headers.Add(CatalogApiFactory.ActorHeader, ActorId.ToString("D"));
+        request.Headers.Add(
+            CatalogApiFactory.ScopesHeader,
+            CatalogMediaAuthorizationPolicies.Manage);
+        request.Headers.Add("Idempotency-Key", "catalog-media-api-contract-0002");
+
+        using var response = await client.SendAsync(request);
+        var document = await ReadJsonAsync(response);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal("Catalog.Media.Contracts", document.RootElement.GetProperty("owner").GetString());
+        Assert.Equal(
+            "CATALOG_MEDIA_CONTRACT_UNSUPPORTED",
+            document.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task ObsoleteMediaApiRouteIsNotReachable()
     {
         using var client = factory.CreateClient();

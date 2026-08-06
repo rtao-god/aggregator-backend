@@ -1,5 +1,5 @@
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Contracts;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;

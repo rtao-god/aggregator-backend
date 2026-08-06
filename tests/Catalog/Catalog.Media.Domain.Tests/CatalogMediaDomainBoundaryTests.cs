@@ -1,4 +1,4 @@
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Domain;
 
 namespace Catalog.Media.Domain.Tests;
 

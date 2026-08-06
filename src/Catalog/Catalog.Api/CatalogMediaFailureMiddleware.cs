@@ -1,5 +1,5 @@
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Domain;
 using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;
@@ -21,7 +21,7 @@ internal sealed class CatalogMediaFailureMiddleware(RequestDelegate next)
         {
             throw new OwnerException(
                 new OwnerError(
-                    NormalizeOwner(exception.Owner),
+                    exception.Owner,
                     exception.Code,
                     "Catalog media owner rejected the request",
                     exception.StatusCode,
@@ -43,9 +43,4 @@ internal sealed class CatalogMediaFailureMiddleware(RequestDelegate next)
                 exception);
         }
     }
-
-    private static string NormalizeOwner(string owner) =>
-        owner.StartsWith("CatalogMedia", StringComparison.Ordinal)
-            ? $"Catalog.Media{owner["CatalogMedia".Length..]}"
-            : owner;
 }

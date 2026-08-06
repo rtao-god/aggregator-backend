@@ -1,7 +1,7 @@
 
 using System.Collections.ObjectModel;
 
-namespace Aggregator.CatalogMedia.Domain;
+namespace Aggregator.Catalog.Media.Domain;
 
 public enum CatalogMediaState
 {

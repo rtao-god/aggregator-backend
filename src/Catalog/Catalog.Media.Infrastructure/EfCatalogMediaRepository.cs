@@ -1,12 +1,12 @@
 using System.Data;
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 public sealed class EfCatalogMediaRepository(CatalogMediaDbContext dbContext) : ICatalogMediaRepository
 {
@@ -631,7 +631,7 @@ public sealed class EfCatalogMediaRepository(CatalogMediaDbContext dbContext) : 
         int status = 500,
         Exception? innerException = null) =>
         new(
-            "CatalogMedia.Persistence",
+            "Catalog.Media.Persistence",
             code,
             status,
             message,

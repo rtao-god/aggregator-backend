@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Domain;
 
-namespace Aggregator.CatalogMedia.Worker;
+namespace Aggregator.Catalog.Media.Worker;
 
 public sealed class ImageMagickCatalogMediaVariantProcessor : ICatalogMediaVariantProcessor
 {
@@ -125,6 +125,6 @@ public sealed class ImageMagickCatalogMediaVariantProcessor : ICatalogMediaVaria
     }
 
     private static CatalogMediaApplicationException Failure(string code, string message) =>
-        new("CatalogMedia.Variants", code, 422, message,
+        new("Catalog.Media.Variants", code, 422, message,
             "Correct the source image or restore the ImageMagick runtime before retrying.");
 }

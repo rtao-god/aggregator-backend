@@ -1,10 +1,10 @@
-using Aggregator.CatalogMedia.Application;
+using Aggregator.Catalog.Media.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.ObjectStorage;
 
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 public static class CatalogMediaInfrastructureServiceCollectionExtensions
 {

@@ -16,6 +16,8 @@ Catalog is the canonical owner of product configuration, listing identities and 
 - `Catalog.Media.Worker`: resource-heavy scanning and variant generation inside the Catalog owner boundary; it uses Catalog app credentials and the Catalog media object prefix.
 - `Catalog.Migrations`: the only Catalog database migration owner, including media tables, publication media gates, media work leases, and both Catalog outbox schemas.
 
+Catalog-owned media code uses CLR namespaces under `Aggregator.Catalog.Media.*` and diagnostic owners under `Catalog.Media.*`. Former standalone CLR and diagnostic identities without the Catalog module separator are prohibited active paths; transport middleware surfaces the canonical producer owner directly and does not normalize a legacy owner name.
+
 ## Active flows
 
 ```text
@@ -79,6 +81,6 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
 - Catalog media domain/application/infrastructure tests cover immutable state transitions, exact command replay, storage verification, work leases, and publication eligibility.
 - Catalog migration integration tests cover clean creation, partial legacy media rejection, exact outbox text storage, media ownership transfer, FK publication gating, and PostgreSQL constraints.
-- Catalog API contract tests cover anonymous liveness, authentication, actor mapping, route/body identity mismatch, enum wire rejection, and the Catalog-owned media endpoints.
+- Catalog API contract tests cover anonymous liveness, authentication, actor mapping, canonical media owner errors, route/body identity mismatch, enum wire rejection, and the Catalog-owned media endpoints.
 - Catalog worker tests cover strict required configuration and bounded transport settings.
-- Architecture tests block forbidden project references, obsolete media API/migration projects and services, and business ownership in BuildingBlocks.
+- Architecture tests block forbidden project references, obsolete media API/migration projects and services, obsolete Catalog Media CLR/diagnostic identities, and business ownership in BuildingBlocks.

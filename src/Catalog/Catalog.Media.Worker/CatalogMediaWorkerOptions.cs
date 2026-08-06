@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Platform.Messaging;
 
-namespace Aggregator.CatalogMedia.Worker;
+namespace Aggregator.Catalog.Media.Worker;
 
 public sealed record CatalogMediaWorkerOptions
 {

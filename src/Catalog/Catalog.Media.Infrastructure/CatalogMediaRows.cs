@@ -1,4 +1,4 @@
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 internal sealed class CatalogMediaAssetRow
 {

@@ -1,8 +1,8 @@
-using Aggregator.CatalogMedia.Application;
+using Aggregator.Catalog.Media.Application;
 using Microsoft.Extensions.Hosting;
 using Platform.Messaging;
 
-namespace Aggregator.CatalogMedia.Worker;
+namespace Aggregator.Catalog.Media.Worker;
 
 public sealed class CatalogMediaOwnerWorker(
     CatalogMediaProcessingService processing,

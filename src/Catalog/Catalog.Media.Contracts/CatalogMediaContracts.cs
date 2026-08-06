@@ -1,5 +1,5 @@
 
-namespace Aggregator.CatalogMedia.Contracts;
+namespace Aggregator.Catalog.Media.Contracts;
 
 public static class CatalogMediaContractIdentity
 {

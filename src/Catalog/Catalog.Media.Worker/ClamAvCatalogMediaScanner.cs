@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Text;
-using Aggregator.CatalogMedia.Application;
+using Aggregator.Catalog.Media.Application;
 
-namespace Aggregator.CatalogMedia.Worker;
+namespace Aggregator.Catalog.Media.Worker;
 
 public sealed class ClamAvCatalogMediaScanner(CatalogMediaWorkerOptions options) : ICatalogMediaScanner
 {
@@ -44,7 +44,7 @@ public sealed class ClamAvCatalogMediaScanner(CatalogMediaWorkerOptions options)
             return new CatalogMediaScanResult(false, threat);
         }
         throw new CatalogMediaApplicationException(
-            "CatalogMedia.Scanner",
+            "Catalog.Media.Scanner",
             "CATALOG_MEDIA_SCANNER_RESPONSE_INVALID",
             503,
             $"ClamAV returned an unsupported response: '{message}'.",

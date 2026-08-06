@@ -1,6 +1,6 @@
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Infrastructure;
-using Aggregator.CatalogMedia.Worker;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Infrastructure;
+using Aggregator.Catalog.Media.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Platform.Messaging;

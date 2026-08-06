@@ -1,4 +1,4 @@
-using Aggregator.CatalogMedia.Application;
+using Aggregator.Catalog.Media.Application;
 using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;

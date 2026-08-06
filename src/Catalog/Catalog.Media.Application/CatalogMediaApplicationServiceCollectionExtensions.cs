@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Aggregator.CatalogMedia.Application;
+namespace Aggregator.Catalog.Media.Application;
 
 public static class CatalogMediaApplicationServiceCollectionExtensions
 {

@@ -3,10 +3,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Aggregator.CatalogMedia.Contracts;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Contracts;
+using Aggregator.Catalog.Media.Domain;
 
-namespace Aggregator.CatalogMedia.Application;
+namespace Aggregator.Catalog.Media.Application;
 
 public interface ICatalogMediaClock
 {
@@ -23,7 +23,7 @@ public sealed record CatalogMediaActor(Guid Id)
     public static CatalogMediaActor Create(Guid id)
     {
         if (id == Guid.Empty) throw new CatalogMediaApplicationException(
-            "CatalogMedia.Access", "CATALOG_MEDIA_ACTOR_REQUIRED", 403,
+            "Catalog.Media.Access", "CATALOG_MEDIA_ACTOR_REQUIRED", 403,
             "Catalog media actor identity is required.",
             "Authenticate through an identity mapped to one internal actor.");
         return new CatalogMediaActor(id);
@@ -41,7 +41,7 @@ public sealed record CatalogMediaCommandContext(
         var value = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("D") : correlationId.Trim();
         if (value.Length > 128 || value.Any(char.IsControl))
             throw new CatalogMediaApplicationException(
-                "CatalogMedia.Commands", "CATALOG_MEDIA_CORRELATION_INVALID", 400,
+                "Catalog.Media.Commands", "CATALOG_MEDIA_CORRELATION_INVALID", 400,
                 "Catalog media correlation identity is invalid.",
                 "Use a printable correlation identity of at most 128 characters.");
         return new CatalogMediaCommandContext(actor, value, null);
@@ -56,7 +56,7 @@ public sealed record CatalogMediaCommandIdentity(string Scope, string Key, strin
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         if (scope.Length > 180 || key.Length > 200 || key.Any(char.IsControl))
             throw new CatalogMediaApplicationException(
-                "CatalogMedia.Commands", "CATALOG_MEDIA_IDEMPOTENCY_INVALID", 400,
+                "Catalog.Media.Commands", "CATALOG_MEDIA_IDEMPOTENCY_INVALID", 400,
                 "Catalog media idempotency identity is invalid.",
                 "Submit one stable printable Idempotency-Key.");
         CatalogMediaCanonicalJson.RequireDigest(requestDigest, nameof(requestDigest));
@@ -191,7 +191,7 @@ public sealed class CatalogMediaCommandService(
         ArgumentNullException.ThrowIfNull(context);
         if (!string.Equals(request.ContractIdentity, CatalogMediaContractIdentity.CommandApi, StringComparison.Ordinal) ||
             request.ContractRevision != CatalogMediaContractIdentity.CommandApiRevision)
-            throw Failure("CatalogMedia.Contracts", "CATALOG_MEDIA_CONTRACT_UNSUPPORTED", 422,
+            throw Failure("Catalog.Media.Contracts", "CATALOG_MEDIA_CONTRACT_UNSUPPORTED", 422,
                 "Catalog media contract identity or revision is unsupported.",
                 "Use the generated current Catalog media client.");
         var digest = CatalogMediaCanonicalJson.ComputeDigest(request);
@@ -231,7 +231,7 @@ public sealed class CatalogMediaCommandService(
         {
             var expiresAtUtc = replay.Asset.UploadAuthorizationExpiresAtUtc
                 ?? throw Failure(
-                    "CatalogMedia.Commands",
+                    "Catalog.Media.Commands",
                     "CATALOG_MEDIA_UPLOAD_REPLAY_CORRUPT",
                     500,
                     "Persisted upload authorization result has no expiry.",
@@ -240,7 +240,7 @@ public sealed class CatalogMediaCommandService(
             if (remaining < TimeSpan.FromSeconds(1))
             {
                 throw Failure(
-                    "CatalogMedia.Commands",
+                    "Catalog.Media.Commands",
                     "CATALOG_MEDIA_UPLOAD_AUTHORIZATION_EXPIRED_REPLAY",
                     409,
                     "The replayed upload authorization has expired.",
@@ -329,10 +329,10 @@ public sealed class CatalogMediaCommandService(
 
     private async Task<CatalogMediaAsset> RequireAsync(Guid assetId, CancellationToken cancellationToken)
     {
-        if (assetId == Guid.Empty) throw Failure("CatalogMedia.Assets", "CATALOG_MEDIA_ID_REQUIRED", 400,
+        if (assetId == Guid.Empty) throw Failure("Catalog.Media.Assets", "CATALOG_MEDIA_ID_REQUIRED", 400,
             "Catalog media asset ID is required.", "Use the exact media asset ID returned by registration.");
         return await repository.GetAsync(assetId, cancellationToken)
-            ?? throw Failure("CatalogMedia.Assets", "CATALOG_MEDIA_NOT_FOUND", 404,
+            ?? throw Failure("Catalog.Media.Assets", "CATALOG_MEDIA_NOT_FOUND", 404,
                 $"Catalog media asset '{assetId}' was not found.",
                 "Reload the exact media asset before submitting another command.");
     }
@@ -361,7 +361,7 @@ public sealed class CatalogMediaProcessingService(
         if (systemActorId == Guid.Empty)
         {
             throw new CatalogMediaApplicationException(
-                "CatalogMedia.Processing",
+                "Catalog.Media.Processing",
                 "CATALOG_MEDIA_SYSTEM_ACTOR_REQUIRED",
                 500,
                 "Catalog media processing requires a registered system actor.",
@@ -378,7 +378,7 @@ public sealed class CatalogMediaProcessingService(
             if (asset.State != CatalogMediaState.Scanning)
             {
                 throw new CatalogMediaApplicationException(
-                    "CatalogMedia.Processing",
+                    "Catalog.Media.Processing",
                     "CATALOG_MEDIA_LEASE_STATE_INVALID",
                     500,
                     "A media processing lease must own an asset already transitioned to scanning.",
@@ -456,7 +456,7 @@ public static class CatalogMediaMapper
         CatalogMediaRightsBasisContract.Licensed => CatalogMediaRightsBasis.Licensed,
         CatalogMediaRightsBasisContract.PublicDomain => CatalogMediaRightsBasis.PublicDomain,
         _ => throw new CatalogMediaApplicationException(
-            "CatalogMedia.Contracts", "CATALOG_MEDIA_RIGHTS_BASIS_UNSUPPORTED", 400,
+            "Catalog.Media.Contracts", "CATALOG_MEDIA_RIGHTS_BASIS_UNSUPPORTED", 400,
             "Catalog media rights basis is unsupported.", "Use a declared string enum token."),
     };
 
@@ -515,7 +515,7 @@ public static class CatalogMediaCanonicalJson
     {
         var value = JsonSerializer.Deserialize<T>(document, Options);
         return value ?? throw new CatalogMediaApplicationException(
-            "CatalogMedia.Contracts",
+            "Catalog.Media.Contracts",
             "CATALOG_MEDIA_DOCUMENT_EMPTY",
             500,
             "Catalog media document deserialized to no value.",

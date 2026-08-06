@@ -1,7 +1,7 @@
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Domain;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Domain;
 
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 internal sealed record CatalogMediaPersistenceVariant(
     Guid Id,
@@ -114,5 +114,5 @@ internal static class CatalogMediaPersistenceJson
                 item.ContentDigest, item.Size, item.Width, item.Height, item.CreatedAtUtc)).ToArray());
 
     private static CatalogMediaApplicationException Failure(string code, string message, string action) =>
-        new("CatalogMedia.Persistence", code, 500, message, action);
+        new("Catalog.Media.Persistence", code, 500, message, action);
 }

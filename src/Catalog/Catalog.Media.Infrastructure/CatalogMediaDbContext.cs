@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 
-namespace Aggregator.CatalogMedia.Infrastructure;
+namespace Aggregator.Catalog.Media.Infrastructure;
 
 public sealed class CatalogMediaDbContext(DbContextOptions<CatalogMediaDbContext> options) : DbContext(options)
 {

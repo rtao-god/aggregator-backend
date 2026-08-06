@@ -1,4 +1,4 @@
-using Aggregator.CatalogMedia.Application;
+using Aggregator.Catalog.Media.Application;
 
 namespace Catalog.Media.Application.Tests;
 

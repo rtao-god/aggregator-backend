@@ -1,5 +1,5 @@
-using Aggregator.CatalogMedia.Application;
-using Aggregator.CatalogMedia.Infrastructure;
+using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
