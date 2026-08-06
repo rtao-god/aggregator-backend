@@ -561,8 +561,8 @@
     "src/Catalog/Catalog.Event.Worker",
     "tests/Acceptance/Acceptance.Runner",
     "src/Query/Query.PromotionWorker",
-    "src/Catalog/Catalog.Media.Api/",
-    "src/Catalog/Catalog.Media.Migrations/"
+    "src/Catalog/Catalog.Media.Api",
+    "src/Catalog/Catalog.Media.Migrations"
   ],
   "forbiddenReferenceTokens": [
     "src/Promotion/Promotion.Overlay.",
