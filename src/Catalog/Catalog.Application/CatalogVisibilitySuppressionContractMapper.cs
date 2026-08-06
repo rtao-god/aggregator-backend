@@ -76,81 +76,96 @@ internal static class CatalogVisibilitySuppressionContractMapper
     }
 
     private static PublicVisibilitySuppressionTargetKind ToDomain(
-        PublicVisibilitySuppressionTargetKindContract value) => value switch
+        PublicVisibilitySuppressionTargetKindContract value)
     {
-        PublicVisibilitySuppressionTargetKindContract.Listing =>
-            PublicVisibilitySuppressionTargetKind.Listing,
-        PublicVisibilitySuppressionTargetKindContract.Media =>
-            PublicVisibilitySuppressionTargetKind.Media,
-        PublicVisibilitySuppressionTargetKindContract.Contact =>
-            PublicVisibilitySuppressionTargetKind.Contact,
-        PublicVisibilitySuppressionTargetKindContract.Route =>
-            PublicVisibilitySuppressionTargetKind.Route,
-        PublicVisibilitySuppressionTargetKindContract.ExternalReference =>
-            PublicVisibilitySuppressionTargetKind.ExternalReference,
-        _ => throw new CatalogContractException(
-            "catalog.visibility_target_kind_unsupported",
-            $"Visibility suppression target kind '{value}' is unsupported."),
-    };
+        return value switch
+        {
+            PublicVisibilitySuppressionTargetKindContract.Listing =>
+                PublicVisibilitySuppressionTargetKind.Listing,
+            PublicVisibilitySuppressionTargetKindContract.Media =>
+                PublicVisibilitySuppressionTargetKind.Media,
+            PublicVisibilitySuppressionTargetKindContract.Contact =>
+                PublicVisibilitySuppressionTargetKind.Contact,
+            PublicVisibilitySuppressionTargetKindContract.Route =>
+                PublicVisibilitySuppressionTargetKind.Route,
+            PublicVisibilitySuppressionTargetKindContract.ExternalReference =>
+                PublicVisibilitySuppressionTargetKind.ExternalReference,
+            _ => throw new CatalogContractException(
+                "catalog.visibility_target_kind_unsupported",
+                $"Visibility suppression target kind '{value}' is unsupported."),
+        };
+    }
 
     public static PublicVisibilitySuppressionResponseMode ToDomain(
-        PublicVisibilitySuppressionResponseModeContract value) => value switch
+        PublicVisibilitySuppressionResponseModeContract value)
     {
-        PublicVisibilitySuppressionResponseModeContract.HideAsNotFound =>
-            PublicVisibilitySuppressionResponseMode.HideAsNotFound,
-        PublicVisibilitySuppressionResponseModeContract.Gone =>
-            PublicVisibilitySuppressionResponseMode.Gone,
-        PublicVisibilitySuppressionResponseModeContract.TemporarilyUnavailable =>
-            PublicVisibilitySuppressionResponseMode.TemporarilyUnavailable,
-        PublicVisibilitySuppressionResponseModeContract.OmitChildElement =>
-            PublicVisibilitySuppressionResponseMode.OmitChildElement,
-        _ => throw new CatalogContractException(
-            "catalog.visibility_response_mode_unsupported",
-            $"Visibility suppression response mode '{value}' is unsupported."),
-    };
+        return value switch
+        {
+            PublicVisibilitySuppressionResponseModeContract.HideAsNotFound =>
+                PublicVisibilitySuppressionResponseMode.HideAsNotFound,
+            PublicVisibilitySuppressionResponseModeContract.Gone =>
+                PublicVisibilitySuppressionResponseMode.Gone,
+            PublicVisibilitySuppressionResponseModeContract.TemporarilyUnavailable =>
+                PublicVisibilitySuppressionResponseMode.TemporarilyUnavailable,
+            PublicVisibilitySuppressionResponseModeContract.OmitChildElement =>
+                PublicVisibilitySuppressionResponseMode.OmitChildElement,
+            _ => throw new CatalogContractException(
+                "catalog.visibility_response_mode_unsupported",
+                $"Visibility suppression response mode '{value}' is unsupported."),
+        };
+    }
 
     private static PublicVisibilitySuppressionTargetKindContract ToContract(
-        PublicVisibilitySuppressionTargetKind value) => value switch
+        PublicVisibilitySuppressionTargetKind value)
     {
-        PublicVisibilitySuppressionTargetKind.Listing =>
-            PublicVisibilitySuppressionTargetKindContract.Listing,
-        PublicVisibilitySuppressionTargetKind.Media =>
-            PublicVisibilitySuppressionTargetKindContract.Media,
-        PublicVisibilitySuppressionTargetKind.Contact =>
-            PublicVisibilitySuppressionTargetKindContract.Contact,
-        PublicVisibilitySuppressionTargetKind.Route =>
-            PublicVisibilitySuppressionTargetKindContract.Route,
-        PublicVisibilitySuppressionTargetKind.ExternalReference =>
-            PublicVisibilitySuppressionTargetKindContract.ExternalReference,
-        _ => throw new CatalogInvariantException(
-            $"Visibility suppression target kind '{value}' cannot be serialized."),
-    };
+        return value switch
+        {
+            PublicVisibilitySuppressionTargetKind.Listing =>
+                PublicVisibilitySuppressionTargetKindContract.Listing,
+            PublicVisibilitySuppressionTargetKind.Media =>
+                PublicVisibilitySuppressionTargetKindContract.Media,
+            PublicVisibilitySuppressionTargetKind.Contact =>
+                PublicVisibilitySuppressionTargetKindContract.Contact,
+            PublicVisibilitySuppressionTargetKind.Route =>
+                PublicVisibilitySuppressionTargetKindContract.Route,
+            PublicVisibilitySuppressionTargetKind.ExternalReference =>
+                PublicVisibilitySuppressionTargetKindContract.ExternalReference,
+            _ => throw new CatalogInvariantException(
+                $"Visibility suppression target kind '{value}' cannot be serialized."),
+        };
+    }
 
     private static PublicVisibilitySuppressionResponseModeContract ToContract(
-        PublicVisibilitySuppressionResponseMode value) => value switch
+        PublicVisibilitySuppressionResponseMode value)
     {
-        PublicVisibilitySuppressionResponseMode.HideAsNotFound =>
-            PublicVisibilitySuppressionResponseModeContract.HideAsNotFound,
-        PublicVisibilitySuppressionResponseMode.Gone =>
-            PublicVisibilitySuppressionResponseModeContract.Gone,
-        PublicVisibilitySuppressionResponseMode.TemporarilyUnavailable =>
-            PublicVisibilitySuppressionResponseModeContract.TemporarilyUnavailable,
-        PublicVisibilitySuppressionResponseMode.OmitChildElement =>
-            PublicVisibilitySuppressionResponseModeContract.OmitChildElement,
-        _ => throw new CatalogInvariantException(
-            $"Visibility suppression response mode '{value}' cannot be serialized."),
-    };
+        return value switch
+        {
+            PublicVisibilitySuppressionResponseMode.HideAsNotFound =>
+                PublicVisibilitySuppressionResponseModeContract.HideAsNotFound,
+            PublicVisibilitySuppressionResponseMode.Gone =>
+                PublicVisibilitySuppressionResponseModeContract.Gone,
+            PublicVisibilitySuppressionResponseMode.TemporarilyUnavailable =>
+                PublicVisibilitySuppressionResponseModeContract.TemporarilyUnavailable,
+            PublicVisibilitySuppressionResponseMode.OmitChildElement =>
+                PublicVisibilitySuppressionResponseModeContract.OmitChildElement,
+            _ => throw new CatalogInvariantException(
+                $"Visibility suppression response mode '{value}' cannot be serialized."),
+        };
+    }
 
     private static PublicVisibilitySuppressionStateContract ToContract(
-        PublicVisibilitySuppressionState value) => value switch
+        PublicVisibilitySuppressionState value)
     {
-        PublicVisibilitySuppressionState.Requested =>
-            PublicVisibilitySuppressionStateContract.Requested,
-        PublicVisibilitySuppressionState.Active =>
-            PublicVisibilitySuppressionStateContract.Active,
-        PublicVisibilitySuppressionState.Resolved =>
-            PublicVisibilitySuppressionStateContract.Resolved,
-        _ => throw new CatalogInvariantException(
-            $"Visibility suppression state '{value}' cannot be serialized."),
-    };
+        return value switch
+        {
+            PublicVisibilitySuppressionState.Requested =>
+                PublicVisibilitySuppressionStateContract.Requested,
+            PublicVisibilitySuppressionState.Active =>
+                PublicVisibilitySuppressionStateContract.Active,
+            PublicVisibilitySuppressionState.Resolved =>
+                PublicVisibilitySuppressionStateContract.Resolved,
+            _ => throw new CatalogInvariantException(
+                $"Visibility suppression state '{value}' cannot be serialized."),
+        };
+    }
 }
