@@ -1,3 +1,6 @@
+using System.Data.Common;
+using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -45,42 +48,20 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
             "query-publication-projection-worker",
             stoppingToken);
         _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
-        await _channel.ExchangeDeclareAsync(
-            _options.Exchange,
-            ExchangeType.Topic,
-            durable: true,
-            autoDelete: false,
-            arguments: null,
-            noWait: false,
-            stoppingToken);
-        await _channel.QueueDeclareAsync(
-            _options.Queue,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null,
-            noWait: false,
-            stoppingToken);
-        await _channel.QueueBindAsync(
-            _options.Queue,
-            _options.Exchange,
-            _options.RoutingKey,
-            arguments: null,
-            noWait: false,
-            stoppingToken);
+        await DeclareTopologyAsync(_channel, stoppingToken);
         await _channel.BasicQosAsync(
             prefetchSize: 0,
             prefetchCount: _options.PrefetchCount,
             global: false,
-            stoppingToken);
+            cancellationToken: stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += OnMessageAsync;
         _ = await _channel.BasicConsumeAsync(
-            _options.Queue,
+            queue: _options.Queue,
             autoAck: false,
-            consumer,
-            stoppingToken);
+            consumer: consumer,
+            cancellationToken: stoppingToken);
         if (_logger.IsEnabled(LogLevel.Information))
         {
             _logger.LogInformation(
@@ -110,23 +91,41 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
 
     private async Task OnMessageAsync(object sender, BasicDeliverEventArgs eventArgs)
     {
+        ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(eventArgs);
         var channel = _channel
-            ?? throw new InvalidOperationException("Query worker channel is not available.");
+            ?? throw new InvalidOperationException("Query worker channel is unavailable.");
+        var cancellationToken = eventArgs.CancellationToken;
         try
         {
+            if (!string.Equals(
+                    eventArgs.BasicProperties.Type,
+                    CatalogIntegrationEventContracts.PublicationActivated,
+                    StringComparison.Ordinal))
+            {
+                throw new JsonException(
+                    $"Catalog publication message contract '{eventArgs.BasicProperties.Type}' is unsupported.");
+            }
+
+            var payloadDigest = ReadRequiredHeader(
+                eventArgs.BasicProperties.Headers,
+                "payload-digest");
+            VerifyPayloadIntegrity(eventArgs.Body.Span, payloadDigest);
             var activation = JsonSerializer.Deserialize<CatalogPublicationActivated>(
                 eventArgs.Body.Span,
                 SerializerOptions)
                 ?? throw new JsonException("Catalog publication activation payload is empty.");
-            var payloadDigest = ReadRequiredHeader(eventArgs.BasicProperties.Headers, "payload-digest");
+            ValidateMessageIdentity(activation.EventId, eventArgs.BasicProperties.MessageId);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<QueryProjectionService>();
             var result = await service.ApplyPublicationAsync(
                 activation,
                 payloadDigest,
-                CancellationToken.None);
-            await channel.BasicAckAsync(eventArgs.DeliveryTag, multiple: false, CancellationToken.None);
+                cancellationToken);
+            await channel.BasicAckAsync(
+                deliveryTag: eventArgs.DeliveryTag,
+                multiple: false,
+                cancellationToken: cancellationToken);
             if (_logger.IsEnabled(LogLevel.Information))
             {
                 _logger.LogInformation(
@@ -136,30 +135,148 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
                     result.Replayed);
             }
         }
-        catch (Exception exception) when (exception is QueryProjectionException or JsonException or ArgumentException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (IsRetryableProjectionFailure(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "Requeueing transient Catalog publication message {MessageId}",
+                eventArgs.BasicProperties.MessageId);
+            await Task.Delay(_options.RetryDelay, cancellationToken);
+            await channel.BasicRejectAsync(
+                deliveryTag: eventArgs.DeliveryTag,
+                requeue: true,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is QueryProjectionException or JsonException or ArgumentException)
         {
             _logger.LogError(
                 exception,
-                "Rejected invalid Catalog publication activation message {MessageId}",
+                "Dead-lettering invalid Catalog publication message {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
-                eventArgs.DeliveryTag,
+                deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
                 requeue: false,
-                CancellationToken.None);
+                cancellationToken: cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _logger.LogError(
                 exception,
-                "Query publication projection failed for message {MessageId}; message will be retried",
+                "Dead-lettering non-transient Catalog publication message {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
-                eventArgs.DeliveryTag,
+                deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
-                requeue: true,
-                CancellationToken.None);
+                requeue: false,
+                cancellationToken: cancellationToken);
         }
+    }
+
+    private async Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken)
+    {
+        await channel.ExchangeDeclareAsync(
+            exchange: _options.Exchange,
+            type: ExchangeType.Topic,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            noWait: false,
+            cancellationToken: cancellationToken);
+        await channel.ExchangeDeclareAsync(
+            exchange: _options.DeadLetterExchange,
+            type: ExchangeType.Topic,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            noWait: false,
+            cancellationToken: cancellationToken);
+        var deadLetterQueueArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["x-queue-type"] = "quorum",
+        };
+        await channel.QueueDeclareAsync(
+            queue: _options.DeadLetterQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: deadLetterQueueArguments,
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            queue: _options.DeadLetterQueue,
+            exchange: _options.DeadLetterExchange,
+            routingKey: _options.RoutingKey,
+            arguments: null,
+            cancellationToken: cancellationToken);
+        var queueArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["x-queue-type"] = "quorum",
+            ["x-delivery-limit"] = _options.DeliveryLimit,
+            ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
+            ["x-dead-letter-routing-key"] = _options.RoutingKey,
+        };
+        await channel.QueueDeclareAsync(
+            queue: _options.Queue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: queueArguments,
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            queue: _options.Queue,
+            exchange: _options.Exchange,
+            routingKey: _options.RoutingKey,
+            arguments: null,
+            cancellationToken: cancellationToken);
+    }
+
+    internal static void VerifyPayloadIntegrity(
+        ReadOnlySpan<byte> payload,
+        string expectedDigest)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDigest) ||
+            expectedDigest.Length != 64 ||
+            expectedDigest.Any(character =>
+                character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+        {
+            throw new JsonException("Catalog publication payload digest header is invalid.");
+        }
+
+        var actualDigest = Convert
+            .ToHexString(SHA256.HashData(payload))
+            .ToLowerInvariant();
+        if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
+        {
+            throw new JsonException(
+                "Catalog publication payload digest does not match the received message body.");
+        }
+    }
+
+    internal static void ValidateMessageIdentity(Guid eventId, string? messageId)
+    {
+        if (eventId == Guid.Empty ||
+            !Guid.TryParse(messageId, out var parsedMessageId) ||
+            parsedMessageId != eventId)
+        {
+            throw new JsonException(
+                "Catalog publication message ID must match the producer-owned event identity.");
+        }
+    }
+
+    internal static bool IsRetryableProjectionFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is QueryProjectionException { StatusCode: 503 } ||
+               exception is DbException { IsTransient: true } ||
+               exception is TimeoutException ||
+               exception is IOException ||
+               exception.InnerException is not null &&
+               IsRetryableProjectionFailure(exception.InnerException);
     }
 
     private static string ReadRequiredHeader(
@@ -176,7 +293,8 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
             byte[] bytes => Encoding.UTF8.GetString(bytes),
             ReadOnlyMemory<byte> memory => Encoding.UTF8.GetString(memory.Span),
             string text => text,
-            _ => throw new JsonException($"RabbitMQ header '{name}' has an unsupported value type."),
+            _ => throw new JsonException(
+                $"RabbitMQ header '{name}' has an unsupported value type."),
         };
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -194,7 +312,9 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         };
         options.Converters.Add(
-            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+            new JsonStringEnumConverter(
+                JsonNamingPolicy.CamelCase,
+                allowIntegerValues: false));
         return options;
     }
 }

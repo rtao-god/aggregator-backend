@@ -10,24 +10,50 @@ public sealed record QueryWorkerOptions
 
     public string Queue { get; init; } = "query.catalog-publication-projection";
 
+    public string DeadLetterExchange { get; init; } = "aggregator.dead-letter";
+
+    public string DeadLetterQueue { get; init; } =
+        "query.catalog-publication-projection.dead-letter";
+
     public string RoutingKey { get; init; } = "catalog.publication.activated";
 
     public ushort PrefetchCount { get; init; } = 8;
+
+    public int DeliveryLimit { get; init; } = 8;
+
+    public TimeSpan RetryDelay { get; init; } = TimeSpan.FromMilliseconds(500);
 
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(BrokerUri);
         if (BrokerUri.Scheme is not ("amqp" or "amqps"))
         {
-            throw new InvalidOperationException("Query worker broker URI must use amqp or amqps.");
+            throw new InvalidOperationException(
+                "Query worker broker URI must use amqp or amqps.");
         }
 
         RequireText(Exchange, nameof(Exchange));
         RequireText(Queue, nameof(Queue));
+        RequireText(DeadLetterExchange, nameof(DeadLetterExchange));
+        RequireText(DeadLetterQueue, nameof(DeadLetterQueue));
         RequireText(RoutingKey, nameof(RoutingKey));
-        if (PrefetchCount is < 1 or > 256)
+        if (PrefetchCount is < 1 or > 64)
         {
-            throw new InvalidOperationException("Query worker prefetch count must be between 1 and 256.");
+            throw new InvalidOperationException(
+                "Query worker prefetch count must be between one and 64.");
+        }
+
+        if (DeliveryLimit is < 2 or > 100)
+        {
+            throw new InvalidOperationException(
+                "Query worker delivery limit must be between two and 100.");
+        }
+
+        if (RetryDelay < TimeSpan.FromMilliseconds(100) ||
+            RetryDelay > TimeSpan.FromMinutes(1))
+        {
+            throw new InvalidOperationException(
+                "Query worker retry delay must be between 100 milliseconds and one minute.");
         }
     }
 
@@ -35,7 +61,8 @@ public sealed record QueryWorkerOptions
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new InvalidOperationException($"Query worker {name} is required.");
+            throw new InvalidOperationException(
+                $"Query worker {name} is required.");
         }
     }
 }
