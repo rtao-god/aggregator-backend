@@ -84,12 +84,16 @@ internal static class CatalogVisibilitySuppressionContractMapper
                 PublicVisibilitySuppressionTargetKind.Listing,
             PublicVisibilitySuppressionTargetKindContract.Media =>
                 PublicVisibilitySuppressionTargetKind.Media,
-            PublicVisibilitySuppressionTargetKindContract.Contact =>
-                PublicVisibilitySuppressionTargetKind.Contact,
             PublicVisibilitySuppressionTargetKindContract.Route =>
                 PublicVisibilitySuppressionTargetKind.Route,
+            PublicVisibilitySuppressionTargetKindContract.Contact =>
+                throw new CatalogContractException(
+                    "catalog.visibility_contact_identity_unsupported",
+                    "Contact suppression requires a stable Catalog-owned public contact ID, which the current publication contract does not expose."),
             PublicVisibilitySuppressionTargetKindContract.ExternalReference =>
-                PublicVisibilitySuppressionTargetKind.ExternalReference,
+                throw new CatalogContractException(
+                    "catalog.visibility_external_reference_identity_unsupported",
+                    "External-reference suppression requires a stable Catalog-owned public external-reference ID, which the current publication contract does not expose."),
             _ => throw new CatalogContractException(
                 "catalog.visibility_target_kind_unsupported",
                 $"Visibility suppression target kind '{value}' is unsupported."),

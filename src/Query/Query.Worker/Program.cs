@@ -1,3 +1,4 @@
+using Aggregator.Catalog.Contracts;
 using Aggregator.Promotion.Contracts;
 using Aggregator.Query.Application;
 using Aggregator.Query.Infrastructure;
@@ -24,7 +25,7 @@ var workerOptions = new QueryWorkerOptions
     Queue = builder.Configuration[$"{QueryWorkerOptions.SectionName}:Queue"]
         ?? "query.catalog-publication-projection",
     RoutingKey = builder.Configuration[$"{QueryWorkerOptions.SectionName}:RoutingKey"]
-        ?? "catalog.publication.activated",
+        ?? CatalogIntegrationEventTypes.PublicationActivated,
     PrefetchCount = ParseUShort(
         builder.Configuration[$"{QueryWorkerOptions.SectionName}:PrefetchCount"],
         8,
@@ -68,6 +69,43 @@ var promotionWorkerOptions = new QueryPromotionWorkerOptions
         $"{QueryPromotionWorkerOptions.SectionName}:RetryDelayMilliseconds")),
 };
 promotionWorkerOptions.Validate();
+var visibilityBrokerUriValue = builder.Configuration[
+    $"{QueryVisibilityWorkerOptions.SectionName}:BrokerUri"];
+var visibilityWorkerOptions = new QueryVisibilityWorkerOptions
+{
+    BrokerUri = visibilityBrokerUriValue is null
+        ? workerOptions.BrokerUri
+        : new Uri(
+            RequireConfiguration(
+                visibilityBrokerUriValue,
+                $"{QueryVisibilityWorkerOptions.SectionName}:BrokerUri"),
+            UriKind.Absolute),
+    Exchange = builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:Exchange"]
+        ?? workerOptions.Exchange,
+    Queue = builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:Queue"]
+        ?? "query.catalog-visibility-safety",
+    DeadLetterExchange = builder.Configuration[
+        $"{QueryVisibilityWorkerOptions.SectionName}:DeadLetterExchange"]
+        ?? "aggregator.dead-letter",
+    DeadLetterQueue = builder.Configuration[
+        $"{QueryVisibilityWorkerOptions.SectionName}:DeadLetterQueue"]
+        ?? "query.catalog-visibility-safety.dead-letter",
+    RoutingKey = builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:RoutingKey"]
+        ?? CatalogIntegrationEventTypes.PublicVisibilitySuppressionChanged,
+    PrefetchCount = ParseUShort(
+        builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:PrefetchCount"],
+        4,
+        $"{QueryVisibilityWorkerOptions.SectionName}:PrefetchCount"),
+    DeliveryLimit = ParseInt(
+        builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:DeliveryLimit"],
+        8,
+        $"{QueryVisibilityWorkerOptions.SectionName}:DeliveryLimit"),
+    RetryDelay = TimeSpan.FromMilliseconds(ParseInt(
+        builder.Configuration[$"{QueryVisibilityWorkerOptions.SectionName}:RetryDelayMilliseconds"],
+        500,
+        $"{QueryVisibilityWorkerOptions.SectionName}:RetryDelayMilliseconds")),
+};
+visibilityWorkerOptions.Validate();
 var objectStoreOptions = new S3ObjectStoreOptions
 {
     ServiceUrl = new Uri(
@@ -99,7 +137,8 @@ builder.Services
         ConnectionString = queryConnectionString,
     })
     .AddQueryPromotionOverlayProjection()
-    .AddQueryWorker(workerOptions, promotionWorkerOptions);
+    .AddQueryVisibilitySafetyProjection()
+    .AddQueryWorker(workerOptions, promotionWorkerOptions, visibilityWorkerOptions);
 builder.Services.AddPlatformObservability(builder.Configuration, "query-projection-worker");
 builder.Services.AddSingleton<IObjectStore>(_ => new S3ObjectStore(objectStoreOptions));
 builder.Services.AddSingleton<IQueryClock, SystemQueryClock>();

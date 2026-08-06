@@ -25,7 +25,8 @@ public static class QueryInfrastructureServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IQueryClock, SystemQueryClock>();
-        services.AddSingleton<IPublicQueryStore, NpgsqlPublicQueryStore>();
+        services.AddSingleton<NpgsqlPublicQueryStore>();
+        services.AddSingleton<IPublicQueryStore, SafetyAwarePublicQueryStore>();
         services.AddSingleton<PublicQueryService>();
         return services;
     }
@@ -44,6 +45,15 @@ public static class QueryInfrastructureServiceCollectionExtensions
         services.AddSingleton<ICatalogPublicationArtifactReader, ObjectStoreCatalogPublicationArtifactReader>();
         services.AddSingleton<IQueryProjectionStore, NpgsqlQueryProjectionStore>();
         services.AddSingleton<QueryProjectionService>();
+        return services;
+    }
+
+    public static IServiceCollection AddQueryVisibilitySafetyProjection(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddScoped<
+            IVisibilitySafetyProjectionStore,
+            PostgresVisibilitySafetyProjectionStore>();
         return services;
     }
 }

@@ -8,6 +8,7 @@ public static class QueryApplicationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddScoped<PromotionOverlayProjectionService>();
+        services.AddScoped<VisibilitySafetyProjectionService>();
         services.AddScoped<QueryProjectionService>();
         return services;
     }
