@@ -10,31 +10,21 @@ public sealed class ProducerOutboxStorageMigrationIntegrationTests
     [Theory]
     [InlineData(
         "src/Catalog/Catalog.Migrations/Migrations",
-        "catalog",
-        null)]
+        "catalog")]
     [InlineData(
-        "src/Catalog/Catalog.Media.Migrations/Migrations",
-        "media_messaging",
-        "src/Catalog/Catalog.Migrations/Migrations")]
+        "src/Catalog/Catalog.Migrations/Migrations",
+        "media_messaging")]
     [InlineData(
         "src/Promotion/Promotion.Migrations/Migrations",
-        "messaging",
-        null)]
+        "messaging")]
     public async Task FreshProducerMigrationsPreserveExactOutboxPayloadText(
         string migrationDirectory,
-        string schema,
-        string? prerequisiteMigrationDirectory)
+        string schema)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(migrationDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(schema);
 
         await using var database = await TemporaryDatabase.CreateAsync();
-
-        if (prerequisiteMigrationDirectory is not null)
-        {
-            await database.ApplyAllAsync(prerequisiteMigrationDirectory);
-        }
-
         await database.ApplyAllAsync(migrationDirectory);
 
         Assert.Equal(
