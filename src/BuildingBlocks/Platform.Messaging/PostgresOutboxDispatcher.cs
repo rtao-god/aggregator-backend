@@ -33,11 +33,6 @@ public sealed class PostgresOutboxDispatcher
             {
                 _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
                 await _publisher.PublishAsync(message, cancellationToken);
-                await MarkDispatchedAsync(
-                    message.MessageId,
-                    leaseToken,
-                    _timeProvider.GetUtcNow(),
-                    cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -49,6 +44,12 @@ public sealed class PostgresOutboxDispatcher
                     cancellationToken);
                 throw;
             }
+
+            await MarkDispatchedAsync(
+                message.MessageId,
+                leaseToken,
+                _timeProvider.GetUtcNow(),
+                cancellationToken);
         }
 
         return messages.Count;
@@ -184,8 +185,10 @@ public sealed class PostgresOutboxDispatcher
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
         if (affected != 1)
         {
-            throw new InvalidOperationException(
-                $"Outbox transition for message '{messageId}' was rejected because the lease no longer belongs to this dispatcher.");
+            throw new OutboxLeaseLostException(
+                messageId,
+                leaseToken,
+                _options.DispatcherIdentity);
         }
     }
 
@@ -235,8 +238,10 @@ public sealed class PostgresOutboxDispatcher
         var affected = await command.ExecuteNonQueryAsync(cancellationToken);
         if (affected != 1)
         {
-            throw new InvalidOperationException(
-                $"Outbox failure transition for message '{messageId}' was rejected because the lease no longer belongs to this dispatcher.",
+            throw new OutboxLeaseLostException(
+                messageId,
+                leaseToken,
+                _options.DispatcherIdentity,
                 exception);
         }
     }
