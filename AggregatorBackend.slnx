@@ -22,12 +22,10 @@
     <Project Path="src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <Project Path="src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
     <Project Path="src/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
-    <Project Path="src/Catalog/Catalog.Media.Api/Catalog.Media.Api.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Application/Catalog.Media.Application.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Domain/Catalog.Media.Domain.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Infrastructure/Catalog.Media.Infrastructure.csproj" />
-    <Project Path="src/Catalog/Catalog.Media.Migrations/Catalog.Media.Migrations.csproj" />
     <Project Path="src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj" />
     <Project Path="src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj" />
     <Project Path="src/Catalog/Catalog.Worker/Catalog.Worker.csproj" />
@@ -81,7 +79,6 @@
     <Project Path="tests/Catalog/Catalog.Api.Tests/Catalog.Api.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Application.Tests/Catalog.Application.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Domain.Tests/Catalog.Domain.Tests.csproj" />
-    <Project Path="tests/Catalog/Catalog.Infrastructure.Tests/Catalog.Infrastructure.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Ingestion.Tests/Catalog.Ingestion.Tests.csproj" />
     <Project Path="tests/Catalog/Catalog.Media.Application.Tests/Catalog.Media.Application.Tests.csproj" />
