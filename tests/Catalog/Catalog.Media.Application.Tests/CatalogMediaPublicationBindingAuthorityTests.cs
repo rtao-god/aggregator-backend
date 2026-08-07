@@ -144,13 +144,19 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
             Task.FromResult<CatalogMediaAsset?>(assetId == asset.Id ? asset : null);
 
         public Task<CatalogMediaCommandResult?> ReadCommandResultAsync(
-            CatalogMediaCommandIdentity command,
+            CatalogMediaCommandIdentity commandIdentity,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<CatalogMediaSaveResult> SaveAsync(
-            CatalogMediaAsset aggregate,
-            long expectedStoredRevision,
-            CatalogMediaCommandIdentity command,
+        public Task<CatalogMediaCommandResult> AddAsync(
+            CatalogMediaAsset value,
+            CatalogMediaCommandIdentity commandIdentity,
+            CatalogMediaCommandContext context,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<CatalogMediaCommandResult> SaveAsync(
+            CatalogMediaAsset value,
+            long expectedStoredAggregateRevision,
+            CatalogMediaCommandIdentity commandIdentity,
             CatalogMediaCommandContext context,
             CatalogMediaOutboxMessage? outbox,
             CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -164,14 +170,14 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
 
         public Task CompleteProcessingAsync(
             CatalogMediaProcessingLease lease,
-            CatalogMediaAsset aggregate,
+            CatalogMediaAsset value,
             CatalogMediaOutboxMessage outbox,
             DateTimeOffset completedAtUtc,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
-        public Task<bool> RecordProcessingFailureAsync(
+        public Task<int> RecordProcessingFailureAsync(
             CatalogMediaProcessingLease lease,
-            string error,
+            string failure,
             bool terminal,
             int maximumAttempts,
             DateTimeOffset failedAtUtc,
