@@ -3,6 +3,7 @@ using System.Text;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
+using Aggregator.Catalog.Media.Contracts;
 
 namespace Catalog.Application.Tests;
 
@@ -27,7 +28,11 @@ public sealed class CatalogEndToEndTests
         var timeProvider = new FixedTimeProvider(Timestamp);
         var actor = CatalogActor.Create(ActorId);
         var configurationService = new CatalogConfigurationService(repository, timeProvider);
-        var listingService = new CatalogListingService(repository, idSource, timeProvider);
+        var listingService = new CatalogListingService(
+            repository,
+            new UnexpectedMediaBindingAuthority(),
+            idSource,
+            timeProvider);
         var publicationService = new CatalogPublicationService(repository, artifactStore, idSource, timeProvider);
 
         var imported = await configurationService.ImportAsync(
@@ -118,7 +123,7 @@ public sealed class CatalogEndToEndTests
         Assert.Equal(2, artifactStore.Artifacts.Count);
         var firstArtifactJson = Encoding.UTF8.GetString(
             artifactStore.Artifacts[firstPublication.ArtifactKey]);
-        Assert.Contains("\"contractRevision\":3", firstArtifactJson, StringComparison.Ordinal);
+        Assert.Contains("\"contractRevision\":4", firstArtifactJson, StringComparison.Ordinal);
         Assert.Contains(
             $"\"contactId\":\"{identifiers[2]:D}\"",
             firstArtifactJson,
@@ -302,6 +307,17 @@ public sealed class CatalogEndToEndTests
             Assert.True(Artifacts.TryAdd(objectKey, content.ToArray()));
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class UnexpectedMediaBindingAuthority : ICatalogMediaPublicationBindingAuthority
+    {
+        public Task<CatalogMediaPublicationBindingContract> RequirePublishableBindingAsync(
+            string catalogKey,
+            Guid mediaId,
+            long expectedMediaAggregateRevision,
+            Guid variantId,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The media authority must not be called for a revision without media references.");
     }
 
     private sealed class InMemoryCatalogRepository : ICatalogRepository
