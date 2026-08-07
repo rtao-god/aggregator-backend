@@ -19,5 +19,6 @@
     <ProjectReference Include="../../../src/Catalog/Catalog.Application/Catalog.Application.csproj" />
     <ProjectReference Include="../../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <ProjectReference Include="../../../src/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
+    <ProjectReference Include="../../../src/Catalog/Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
   </ItemGroup>
 </Project>
