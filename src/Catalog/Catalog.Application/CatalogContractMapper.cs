@@ -1,5 +1,6 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
+using Aggregator.Catalog.Media.Application;
 
 namespace Aggregator.Catalog.Application;
 
@@ -56,10 +57,12 @@ internal static class CatalogContractMapper
         SubjectKind subjectKind,
         ListingRevisionContentContract contract,
         ProductConfiguration configuration,
+        IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding> mediaBindings,
         Func<Guid> contactIdFactory)
     {
         ArgumentNullException.ThrowIfNull(contract);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(mediaBindings);
         ArgumentNullException.ThrowIfNull(contactIdFactory);
         ArgumentNullException.ThrowIfNull(contract.Names);
         ArgumentNullException.ThrowIfNull(contract.Descriptions);
@@ -90,7 +93,9 @@ internal static class CatalogContractMapper
             .ThenBy(value => value.AssertionId)
             .Select(value => ToDomain(value, contactIdFactory()))
             .ToArray();
-        var media = contract.Media.Select(ToDomain).ToArray();
+        var media = contract.Media
+            .Select(value => ToDomain(value, mediaBindings))
+            .ToArray();
 
         return ListingRevisionContent.Create(
             subjectKind,
@@ -383,16 +388,37 @@ internal static class CatalogContractMapper
             contract.AssertionId);
     }
 
-    private static MediaReference ToDomain(MediaReferenceContract contract)
+    private static MediaReference ToDomain(
+        MediaReferenceContract contract,
+        IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding> mediaBindings)
     {
         ArgumentNullException.ThrowIfNull(contract);
+        if (!mediaBindings.TryGetValue(contract.VariantId, out var binding))
+        {
+            throw InvalidShape(
+                "catalog.media_binding_missing",
+                $"Media variant '{contract.VariantId}' has no Catalog Media owner binding.");
+        }
+
+        if (binding.MediaId != contract.MediaId ||
+            binding.MediaAggregateRevision != contract.ExpectedMediaAggregateRevision ||
+            binding.VariantId != contract.VariantId)
+        {
+            throw InvalidShape(
+                "catalog.media_binding_identity_mismatch",
+                $"Resolved Catalog Media binding for variant '{contract.VariantId}' does not match the request identity.");
+        }
+
         return MediaReference.Create(
-            contract.MediaId,
-            RequireAbsoluteUri(contract.ObjectUri, nameof(contract.ObjectUri)),
-            contract.ContentType,
-            contract.ContentDigest,
-            ToDomain(contract.RightsBasis),
-            contract.RightsReference,
+            binding.MediaId,
+            binding.MediaAggregateRevision,
+            binding.VariantId,
+            binding.ObjectUri,
+            binding.ContentType,
+            binding.ContentDigest,
+            ToDomain(binding.RightsBasis),
+            contract.DisplayOrder,
+            contract.Caption,
             contract.AssertionId);
     }
 
@@ -504,13 +530,13 @@ internal static class CatalogContractMapper
         _ => throw UnsupportedContractEnum(nameof(ContactKindContract), value),
     };
 
-    private static MediaRightsBasis ToDomain(MediaRightsBasisContract value) => value switch
+    private static MediaRightsBasis ToDomain(
+        CatalogMediaPublicationRightsBasis value) => value switch
     {
-        MediaRightsBasisContract.OwnerProvided => MediaRightsBasis.OwnerProvided,
-        MediaRightsBasisContract.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
-        MediaRightsBasisContract.OriginalEditorialWork => MediaRightsBasis.OriginalEditorialWork,
-        MediaRightsBasisContract.PublicDomain => MediaRightsBasis.PublicDomain,
-        _ => throw UnsupportedContractEnum(nameof(MediaRightsBasisContract), value),
+        CatalogMediaPublicationRightsBasis.OwnerProvided => MediaRightsBasis.OwnerProvided,
+        CatalogMediaPublicationRightsBasis.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
+        CatalogMediaPublicationRightsBasis.PublicDomain => MediaRightsBasis.PublicDomain,
+        _ => throw UnsupportedContractEnum(nameof(CatalogMediaPublicationRightsBasis), value),
     };
 
     private static SubjectReferenceContract ToContract(SubjectReference subject) =>
