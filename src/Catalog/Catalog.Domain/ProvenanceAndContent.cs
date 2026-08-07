@@ -217,7 +217,6 @@ public sealed record TypedValue
             {
                 throw new CatalogInvariantException($"Attribute '{definition.Key}' is below its configured minimum.");
             }
-
             if (definition.Maximum is not null && value > definition.Maximum)
             {
                 throw new CatalogInvariantException($"Attribute '{definition.Key}' exceeds its configured maximum.");
@@ -540,10 +539,7 @@ public sealed record MediaReference
             throw new ArgumentException("Media ID is required.", nameof(mediaId));
         }
 
-        if (mediaAggregateRevision <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(mediaAggregateRevision));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(mediaAggregateRevision);
 
         if (variantId == Guid.Empty)
         {
