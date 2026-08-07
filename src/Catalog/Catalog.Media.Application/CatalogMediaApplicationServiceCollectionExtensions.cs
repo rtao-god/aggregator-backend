@@ -1,3 +1,4 @@
+using Aggregator.Catalog.Media.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Aggregator.Catalog.Media.Application;
