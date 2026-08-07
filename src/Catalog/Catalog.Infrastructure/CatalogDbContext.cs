@@ -139,10 +139,12 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         {
             entity.ToTable("media");
             entity.HasKey(row => new { row.ListingRevisionId, row.MediaId });
-            entity.Property(row => row.ObjectUri).HasMaxLength(2048);
-            entity.Property(row => row.ContentType).HasMaxLength(256);
+            entity.Property(row => row.ObjectUri).HasMaxLength(256);
+            entity.Property(row => row.ContentType).HasMaxLength(128);
             entity.Property(row => row.ContentDigest).HasMaxLength(64);
-            entity.Property(row => row.RightsReference).HasMaxLength(2048);
+            entity.Property(row => row.Caption).HasMaxLength(500);
+            entity.HasIndex(row => new { row.ListingRevisionId, row.VariantId }).IsUnique();
+            entity.HasIndex(row => new { row.ListingRevisionId, row.DisplayOrder }).IsUnique();
         });
 
         modelBuilder.Entity<CatalogEditorialDecisionRow>(entity =>
