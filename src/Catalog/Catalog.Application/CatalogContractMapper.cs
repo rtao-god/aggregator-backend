@@ -1,6 +1,6 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
-using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Contracts;
 
 namespace Aggregator.Catalog.Application;
 
@@ -57,7 +57,7 @@ internal static class CatalogContractMapper
         SubjectKind subjectKind,
         ListingRevisionContentContract contract,
         ProductConfiguration configuration,
-        IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding> mediaBindings,
+        IReadOnlyDictionary<Guid, CatalogMediaPublicationBindingContract> mediaBindings,
         Func<Guid> contactIdFactory)
     {
         ArgumentNullException.ThrowIfNull(contract);
@@ -390,7 +390,7 @@ internal static class CatalogContractMapper
 
     private static MediaReference ToDomain(
         MediaReferenceContract contract,
-        IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding> mediaBindings)
+        IReadOnlyDictionary<Guid, CatalogMediaPublicationBindingContract> mediaBindings)
     {
         ArgumentNullException.ThrowIfNull(contract);
         if (!mediaBindings.TryGetValue(contract.VariantId, out var binding))
@@ -413,7 +413,7 @@ internal static class CatalogContractMapper
             binding.MediaId,
             binding.MediaAggregateRevision,
             binding.VariantId,
-            binding.ObjectUri,
+            RequireAbsoluteUri(binding.ObjectUri, nameof(binding.ObjectUri)),
             binding.ContentType,
             binding.ContentDigest,
             ToDomain(binding.RightsBasis),
@@ -531,12 +531,12 @@ internal static class CatalogContractMapper
     };
 
     private static MediaRightsBasis ToDomain(
-        CatalogMediaPublicationRightsBasis value) => value switch
+        CatalogMediaPublicationRightsBasisContract value) => value switch
     {
-        CatalogMediaPublicationRightsBasis.OwnerProvided => MediaRightsBasis.OwnerProvided,
-        CatalogMediaPublicationRightsBasis.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
-        CatalogMediaPublicationRightsBasis.PublicDomain => MediaRightsBasis.PublicDomain,
-        _ => throw UnsupportedContractEnum(nameof(CatalogMediaPublicationRightsBasis), value),
+        CatalogMediaPublicationRightsBasisContract.OwnerProvided => MediaRightsBasis.OwnerProvided,
+        CatalogMediaPublicationRightsBasisContract.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
+        CatalogMediaPublicationRightsBasisContract.PublicDomain => MediaRightsBasis.PublicDomain,
+        _ => throw UnsupportedContractEnum(nameof(CatalogMediaPublicationRightsBasisContract), value),
     };
 
     private static SubjectReferenceContract ToContract(SubjectReference subject) =>
