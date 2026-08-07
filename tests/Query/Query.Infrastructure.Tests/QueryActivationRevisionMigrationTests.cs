@@ -57,7 +57,10 @@ public sealed class QueryActivationRevisionMigrationTests
             QueryPostgresTestDatabase.UtcParameter("timestamp", Timestamp)));
 
         Assert.Equal("P7202", exception.SqlState);
-        Assert.Contains("expected activation revision 1", exception.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "expected activation revision 1",
+            exception.Detail ?? string.Empty,
+            StringComparison.Ordinal);
         Assert.Equal(
             0L,
             await database.ScalarAsync<long>(
@@ -92,7 +95,10 @@ public sealed class QueryActivationRevisionMigrationTests
             QueryPostgresTestDatabase.UtcParameter("timestamp", Timestamp.AddMinutes(1))));
 
         Assert.Equal("P7202", exception.SqlState);
-        Assert.Contains("expected activation revision 2", exception.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "expected activation revision 2",
+            exception.Detail ?? string.Empty,
+            StringComparison.Ordinal);
         Assert.Equal(
             1L,
             await database.ScalarAsync<long>(
@@ -150,7 +156,10 @@ public sealed class QueryActivationRevisionMigrationTests
                 "V008__catalog_activation_revision_contiguity.sql"));
 
         Assert.Equal("P7201", exception.SqlState);
-        Assert.Contains("activation revision 1 is absent", exception.Detail, StringComparison.Ordinal);
+        Assert.Contains(
+            "activation revision 1 is absent",
+            exception.Detail ?? string.Empty,
+            StringComparison.Ordinal);
     }
 
     private static async Task ApplyPreContiguityMigrationsAsync(
