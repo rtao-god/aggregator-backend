@@ -14,7 +14,9 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
     {
         var asset = CreateAcceptedAsset();
         var authority = new CatalogMediaPublicationBindingAuthority(new StubRepository(asset));
-        var variant = Assert.Single(asset.Variants);
+        var variant = Assert.Single(
+            asset.Variants,
+            item => item.Kind == CatalogMediaVariantKind.Original);
 
         var binding = await authority.RequirePublishableBindingAsync(
             asset.CatalogKey,
@@ -39,7 +41,9 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
     {
         var asset = CreateAcceptedAsset();
         var authority = new CatalogMediaPublicationBindingAuthority(new StubRepository(asset));
-        var variant = Assert.Single(asset.Variants);
+        var variant = Assert.Single(
+            asset.Variants,
+            item => item.Kind == CatalogMediaVariantKind.Original);
 
         var exception = await Assert.ThrowsAsync<CatalogMediaApplicationException>(() =>
             authority.RequirePublishableBindingAsync(
@@ -50,7 +54,7 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
                 CancellationToken.None));
 
         Assert.Equal("CATALOG_MEDIA_BINDING_REVISION_CONFLICT", exception.Code);
-        Assert.Equal(409, exception.HttpStatusCode);
+        Assert.Equal(409, exception.StatusCode);
     }
 
     [Fact]
@@ -58,7 +62,9 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
     {
         var asset = CreateAcceptedAsset();
         var authority = new CatalogMediaPublicationBindingAuthority(new StubRepository(asset));
-        var variant = Assert.Single(asset.Variants);
+        var variant = Assert.Single(
+            asset.Variants,
+            item => item.Kind == CatalogMediaVariantKind.Original);
 
         var exception = await Assert.ThrowsAsync<CatalogMediaApplicationException>(() =>
             authority.RequirePublishableBindingAsync(
@@ -69,7 +75,7 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
                 CancellationToken.None));
 
         Assert.Equal("CATALOG_MEDIA_BINDING_CATALOG_MISMATCH", exception.Code);
-        Assert.Equal(409, exception.HttpStatusCode);
+        Assert.Equal(409, exception.StatusCode);
     }
 
     [Fact]
@@ -87,23 +93,23 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
                 CancellationToken.None));
 
         Assert.Equal("CATALOG_MEDIA_BINDING_VARIANT_NOT_FOUND", exception.Code);
-        Assert.Equal(404, exception.HttpStatusCode);
+        Assert.Equal(404, exception.StatusCode);
     }
 
     private static CatalogMediaAsset CreateAcceptedAsset()
     {
         var assetId = Guid.Parse("01990000-0000-7000-8000-000000000001");
-        var actorId = Guid.Parse("01990000-0000-7000-8000-000000000002");
+        const string quarantineObjectKey =
+            "catalog-media/quarantine/berlin-recording-services/asset-001";
         var asset = CatalogMediaAsset.Register(
             assetId,
             "berlin-recording-services",
-            "catalog-media/quarantine/asset-001",
+            quarantineObjectKey,
             "image/webp",
             new string('a', 64),
             2048,
             CatalogMediaRightsBasis.OwnerProvided,
             "catalog/private-rights/evidence-001",
-            actorId,
             Timestamp);
         asset.AuthorizeUpload(
             asset.AggregateRevision,
@@ -111,12 +117,12 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
             Timestamp.AddMinutes(16));
         asset.ConfirmUploaded(
             asset.AggregateRevision,
-            "catalog-media/quarantine/asset-001",
+            quarantineObjectKey,
             "image/webp",
             new string('a', 64),
             2048,
             Timestamp.AddMinutes(2));
-        asset.StartScanning(
+        asset.StartScan(
             asset.AggregateRevision,
             Timestamp.AddMinutes(3));
         asset.Accept(
@@ -125,13 +131,24 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
                 CatalogMediaVariant.Create(
                     Guid.Parse("01990000-0000-7000-8000-000000000003"),
                     asset.Id,
-                    CatalogMediaVariantKind.OriginalNormalized,
+                    CatalogMediaVariantKind.Original,
                     "catalog-media/published/asset-001/original.webp",
                     "image/webp",
                     new string('b', 64),
                     1800,
                     1200,
                     800,
+                    Timestamp.AddMinutes(4)),
+                CatalogMediaVariant.Create(
+                    Guid.Parse("01990000-0000-7000-8000-000000000004"),
+                    asset.Id,
+                    CatalogMediaVariantKind.Thumbnail,
+                    "catalog-media/published/asset-001/thumbnail.webp",
+                    "image/webp",
+                    new string('c', 64),
+                    512,
+                    320,
+                    213,
                     Timestamp.AddMinutes(4)),
             ],
             Timestamp.AddMinutes(4));
