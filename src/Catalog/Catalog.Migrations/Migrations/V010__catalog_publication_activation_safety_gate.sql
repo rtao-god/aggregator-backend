@@ -111,7 +111,7 @@ BEGIN
                       JOIN catalog.media AS reference
                         ON reference.listing_revision_id = entry.listing_revision_id
                       WHERE entry.publication_id = p_publication_id
-                        AND reference.media_id = suppression.target_key::uuid
+                        AND reference.media_id::text = suppression.target_key
                   )
               )
               OR
@@ -124,7 +124,7 @@ BEGIN
                       JOIN catalog.contact AS contact
                         ON contact.listing_revision_id = entry.listing_revision_id
                       WHERE entry.publication_id = p_publication_id
-                        AND contact.id = suppression.target_key::uuid
+                        AND contact.id::text = suppression.target_key
                   )
               )
           )
