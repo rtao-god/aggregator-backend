@@ -8,7 +8,6 @@
     <ProjectReference Include="../Catalog.Media.Domain/Catalog.Media.Domain.csproj" />
     <ProjectReference Include="../Catalog.Media.Contracts/Catalog.Media.Contracts.csproj" />
     <ProjectReference Include="../Catalog.Media.Application/Catalog.Media.Application.csproj" />
-    <ProjectReference Include="../Catalog.Application/Catalog.Application.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.ObjectStorage/Platform.ObjectStorage.csproj" />
   </ItemGroup>
 </Project>
