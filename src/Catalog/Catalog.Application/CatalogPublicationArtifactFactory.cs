@@ -104,13 +104,19 @@ internal static class CatalogPublicationArtifactFactory
                     contact.AssertionId))
                 .ToArray(),
             content.Media
-                .OrderBy(media => media.MediaId)
+                .OrderBy(media => media.DisplayOrder)
+                .ThenBy(media => media.MediaId)
+                .ThenBy(media => media.VariantId)
                 .Select(media => new PublicMedia(
                     media.MediaId,
+                    media.MediaAggregateRevision,
+                    media.VariantId,
                     media.ObjectUri.AbsoluteUri,
                     media.ContentType,
                     media.ContentDigest,
                     (MediaRightsBasisContract)media.RightsBasis,
+                    media.DisplayOrder,
+                    media.Caption,
                     media.AssertionId))
                 .ToArray(),
             content.Assertions.Values
