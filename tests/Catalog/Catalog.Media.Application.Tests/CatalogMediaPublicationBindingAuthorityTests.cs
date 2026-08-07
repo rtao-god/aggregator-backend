@@ -1,4 +1,5 @@
 using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Contracts;
 using Aggregator.Catalog.Media.Domain;
 
 namespace Catalog.Media.Application.Tests;
@@ -27,10 +28,10 @@ public sealed class CatalogMediaPublicationBindingAuthorityTests
         Assert.Equal(variant.Id, binding.VariantId);
         Assert.Equal(variant.ContentType, binding.ContentType);
         Assert.Equal(variant.ContentDigest, binding.ContentDigest);
-        Assert.Equal(CatalogMediaPublicationRightsBasis.OwnerProvided, binding.RightsBasis);
+        Assert.Equal(CatalogMediaPublicationRightsBasisContract.OwnerProvided, binding.RightsBasis);
         Assert.Equal(
             $"urn:aggregator:catalog-media:{asset.Id:N}:{variant.Id:N}:{variant.ContentDigest}",
-            binding.ObjectUri.AbsoluteUri);
+            binding.ObjectUri);
     }
 
     [Fact]
