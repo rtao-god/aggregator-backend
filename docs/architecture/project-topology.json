@@ -286,6 +286,10 @@
           "unit"
         ],
         [
+          "tests/Catalog/Catalog.Infrastructure.Tests/Catalog.Infrastructure.Tests.csproj",
+          "infrastructure-contract"
+        ],
+        [
           "tests/Catalog/Catalog.Ingestion.Api.Tests/Catalog.Ingestion.Api.Tests.csproj",
           "api-contract"
         ],
