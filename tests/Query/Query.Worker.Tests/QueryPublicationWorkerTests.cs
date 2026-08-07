@@ -145,10 +145,18 @@ public sealed class QueryPublicationWorkerTests
             422,
             "Listing is absent.",
             "End the placement.");
+        var activationGap = new QueryProjectionException(
+            "Query.Projection",
+            "QUERY_ACTIVATION_REVISION_GAP",
+            409,
+            "Catalog activation revision is missing.",
+            "Replay missing activations in order or rebuild Query.");
 
         Assert.True(PromotionOverlayProjectionWorker.IsRetryableProjectionFailure(unavailable));
+        Assert.True(CatalogPublicationProjectionWorker.IsRetryableProjectionFailure(unavailable));
         Assert.True(PromotionOverlayProjectionWorker.IsRetryableProjectionFailure(new TimeoutException()));
         Assert.False(PromotionOverlayProjectionWorker.IsRetryableProjectionFailure(invalid));
+        Assert.False(CatalogPublicationProjectionWorker.IsRetryableProjectionFailure(activationGap));
         Assert.False(PromotionOverlayProjectionWorker.IsRetryableProjectionFailure(new JsonException()));
     }
 
