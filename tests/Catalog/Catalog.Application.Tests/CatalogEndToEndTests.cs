@@ -121,6 +121,9 @@ public sealed class CatalogEndToEndTests
         Assert.Equal(firstPublication.Id, rollback.Id);
         Assert.Equal(firstPublication.Id, repository.CurrentPublicationId);
         Assert.Equal(2, artifactStore.Artifacts.Count);
+        var verification = Assert.Single(artifactStore.Verifications);
+        Assert.Equal(firstPublication.ArtifactKey, verification.ObjectKey);
+        Assert.Equal(firstPublication.ArtifactDigest, verification.Digest);
         var firstArtifactJson = Encoding.UTF8.GetString(
             artifactStore.Artifacts[firstPublication.ArtifactKey]);
         Assert.Contains("\"contractRevision\":4", firstArtifactJson, StringComparison.Ordinal);
@@ -294,6 +297,8 @@ public sealed class CatalogEndToEndTests
     {
         public Dictionary<string, byte[]> Artifacts { get; } = new(StringComparer.Ordinal);
 
+        public List<(string ObjectKey, string Digest)> Verifications { get; } = [];
+
         public Task PutVerifiedAsync(
             string objectKey,
             ReadOnlyMemory<byte> content,
@@ -305,6 +310,24 @@ public sealed class CatalogEndToEndTests
                 sha256Digest,
                 Convert.ToHexString(SHA256.HashData(content.Span)).ToLowerInvariant());
             Assert.True(Artifacts.TryAdd(objectKey, content.ToArray()));
+            return Task.CompletedTask;
+        }
+
+        public Task VerifyAsync(
+            string objectKey,
+            string sha256Digest,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!Artifacts.TryGetValue(objectKey, out var content))
+            {
+                throw new InvalidOperationException($"Artifact '{objectKey}' does not exist.");
+            }
+
+            Assert.Equal(
+                sha256Digest,
+                Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
+            Verifications.Add((objectKey, sha256Digest));
             return Task.CompletedTask;
         }
     }

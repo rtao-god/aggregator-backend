@@ -213,6 +213,11 @@ public sealed class CatalogPublicationService(
                 $"Publication '{target.Id}' belongs to catalog '{target.CatalogKey}', not '{catalogKey}'.");
         }
 
+        await artifactStore.VerifyAsync(
+            target.ArtifactKey,
+            target.ArtifactDigest,
+            cancellationToken);
+
         var activatedAtUtc = timeProvider.GetUtcNow();
         var publicationPointer = CurrentPublicationPointer.Create(
             catalogKey,

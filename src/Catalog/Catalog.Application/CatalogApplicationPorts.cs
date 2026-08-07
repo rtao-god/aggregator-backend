@@ -105,12 +105,18 @@ public interface ICatalogRepository
         CancellationToken cancellationToken);
 }
 
-/// <summary>Stores one immutable publication artifact and proves its exact digest before Catalog activation.</summary>
+/// <summary>Stores immutable publication artifacts and verifies their exact content before activation.</summary>
 public interface ICatalogPublicationArtifactStore
 {
     public Task PutVerifiedAsync(
         string objectKey,
         ReadOnlyMemory<byte> content,
+        string sha256Digest,
+        CancellationToken cancellationToken);
+
+    /// <summary>Reopens one exact stored artifact and verifies its owner contract and SHA-256 digest.</summary>
+    public Task VerifyAsync(
+        string objectKey,
         string sha256Digest,
         CancellationToken cancellationToken);
 }

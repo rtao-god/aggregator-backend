@@ -51,14 +51,7 @@ public sealed class S3CatalogPublicationArtifactStore(
         string sha256Digest,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
-        if (objectKey.StartsWith('/') ||
-            objectKey.Contains("..", StringComparison.Ordinal) ||
-            objectKey.Contains('\\'))
-        {
-            throw new ArgumentException("Object key must be a normalized relative key.", nameof(objectKey));
-        }
-
+        RequireObjectKey(objectKey);
         if (content.Length == 0 || content.Length > _options.MaximumPublicationBytes)
         {
             throw new ArgumentOutOfRangeException(
@@ -114,6 +107,30 @@ public sealed class S3CatalogPublicationArtifactStore(
         await EnsureStoredContentAsync(
             objectKey,
             content.Length,
+            expectedDigestBytes,
+            cancellationToken);
+    }
+
+    public async Task VerifyAsync(
+        string objectKey,
+        string sha256Digest,
+        CancellationToken cancellationToken)
+    {
+        RequireObjectKey(objectKey);
+        var expectedDigestBytes = RequireDigest(sha256Digest);
+        var stored = await TryGetMetadataAsync(objectKey, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Publication artifact '{objectKey}' does not exist in Catalog object storage.");
+        if (stored.ContentLength <= 0 || stored.ContentLength > _options.MaximumPublicationBytes)
+        {
+            throw new InvalidOperationException(
+                $"Stored publication artifact '{objectKey}' length '{stored.ContentLength}' is outside the supported range.");
+        }
+
+        EnsureMetadata(stored, objectKey, stored.ContentLength, sha256Digest);
+        await EnsureStoredContentAsync(
+            objectKey,
+            stored.ContentLength,
             expectedDigestBytes,
             cancellationToken);
     }
@@ -207,6 +224,18 @@ public sealed class S3CatalogPublicationArtifactStore(
         {
             throw new InvalidOperationException(
                 $"Stored publication artifact '{objectKey}' has contract revision '{storedContractRevision}', expected '{expectedContractRevision}'.");
+        }
+    }
+
+    private static void RequireObjectKey(string objectKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
+        if (!string.Equals(objectKey, objectKey.Trim(), StringComparison.Ordinal) ||
+            objectKey[0] == '/' ||
+            objectKey.Contains("..", StringComparison.Ordinal) ||
+            objectKey.Contains('\\'))
+        {
+            throw new ArgumentException("Object key must be a normalized relative key.", nameof(objectKey));
         }
     }
 
