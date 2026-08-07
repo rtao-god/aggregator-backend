@@ -9,6 +9,7 @@ public static class CatalogMediaApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddScoped<CatalogMediaCommandService>();
         services.AddScoped<CatalogMediaProcessingService>();
+        services.AddScoped<ICatalogMediaPublicationBindingAuthority, CatalogMediaPublicationBindingAuthority>();
         return services;
     }
 }
