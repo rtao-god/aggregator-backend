@@ -1,44 +1,12 @@
+using Aggregator.Catalog.Media.Contracts;
 using Aggregator.Catalog.Media.Domain;
 
 namespace Aggregator.Catalog.Media.Application;
 
-public enum CatalogMediaPublicationRightsBasis
-{
-    OwnerProvided = 1,
-    ExplicitLicense = 2,
-    PublicDomain = 3,
-}
-
-/// <summary>
-/// Immutable Catalog Media owner output used when a listing revision binds one exact public variant.
-/// </summary>
-public sealed record CatalogMediaPublicationBinding(
-    Guid MediaId,
-    long MediaAggregateRevision,
-    Guid VariantId,
-    string CatalogKey,
-    Uri ObjectUri,
-    string ContentType,
-    string ContentDigest,
-    CatalogMediaPublicationRightsBasis RightsBasis);
-
-/// <summary>
-/// Resolves one exact Catalog Media asset revision and public variant before Catalog records a listing binding.
-/// </summary>
-public interface ICatalogMediaPublicationBindingAuthority
-{
-    public Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
-        string catalogKey,
-        Guid mediaId,
-        long expectedMediaAggregateRevision,
-        Guid variantId,
-        CancellationToken cancellationToken);
-}
-
 public sealed class CatalogMediaPublicationBindingAuthority(ICatalogMediaRepository repository)
     : ICatalogMediaPublicationBindingAuthority
 {
-    public async Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
+    public async Task<CatalogMediaPublicationBindingContract> RequirePublishableBindingAsync(
         string catalogKey,
         Guid mediaId,
         long expectedMediaAggregateRevision,
@@ -126,23 +94,23 @@ public sealed class CatalogMediaPublicationBindingAuthority(ICatalogMediaReposit
                 "Restore the media aggregate from a verified Catalog database backup.");
         }
 
-        return new CatalogMediaPublicationBinding(
+        return new CatalogMediaPublicationBindingContract(
             asset.Id,
             asset.AggregateRevision,
             variant.Id,
             asset.CatalogKey,
-            CreateObjectUri(asset.Id, variant.Id, variant.ContentDigest),
+            CreateObjectUri(asset.Id, variant.Id, variant.ContentDigest).AbsoluteUri,
             variant.ContentType,
             variant.ContentDigest,
             MapRightsBasis(asset.RightsBasis));
     }
 
-    private static CatalogMediaPublicationRightsBasis MapRightsBasis(
+    private static CatalogMediaPublicationRightsBasisContract MapRightsBasis(
         CatalogMediaRightsBasis rightsBasis) => rightsBasis switch
     {
-        CatalogMediaRightsBasis.OwnerProvided => CatalogMediaPublicationRightsBasis.OwnerProvided,
-        CatalogMediaRightsBasis.Licensed => CatalogMediaPublicationRightsBasis.ExplicitLicense,
-        CatalogMediaRightsBasis.PublicDomain => CatalogMediaPublicationRightsBasis.PublicDomain,
+        CatalogMediaRightsBasis.OwnerProvided => CatalogMediaPublicationRightsBasisContract.OwnerProvided,
+        CatalogMediaRightsBasis.Licensed => CatalogMediaPublicationRightsBasisContract.ExplicitLicense,
+        CatalogMediaRightsBasis.PublicDomain => CatalogMediaPublicationRightsBasisContract.PublicDomain,
         _ => throw Failure(
             "CATALOG_MEDIA_BINDING_RIGHTS_BASIS_INVALID",
             500,
