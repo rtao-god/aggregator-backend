@@ -29,6 +29,12 @@ public sealed class CatalogIngestionApiFactory : WebApplicationFactory<Program>
             ["Catalog__ObjectStorage__BucketName"] = "catalog-test",
             ["Catalog__ObjectStorage__AccessKey"] = "test-access",
             ["Catalog__ObjectStorage__SecretKey"] = "test-secret",
+            ["CatalogMedia__ObjectStorage__ServiceUrl"] = "http://127.0.0.1:1",
+            ["CatalogMedia__ObjectStorage__Region"] = "us-east-1",
+            ["CatalogMedia__ObjectStorage__Bucket"] = "catalog-media-test",
+            ["CatalogMedia__ObjectStorage__AccessKey"] = "test-access",
+            ["CatalogMedia__ObjectStorage__SecretKey"] = "test-secret",
+            ["CatalogMedia__ObjectStorage__ForcePathStyle"] = "true",
             ["Authentication__Authority"] = "https://issuer.test",
             ["Authentication__RequireHttpsMetadata"] = "false",
         };
