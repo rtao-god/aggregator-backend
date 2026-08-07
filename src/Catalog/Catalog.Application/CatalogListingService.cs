@@ -1,12 +1,12 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
-using Aggregator.Catalog.Media.Application;
+using Aggregator.Catalog.Media.Contracts;
 
 namespace Aggregator.Catalog.Application;
 
 public sealed class CatalogListingService(
     ICatalogRepository repository,
-    ICatalogMediaBindingAuthority mediaBindingAuthority,
+    ICatalogMediaPublicationBindingAuthority mediaBindingAuthority,
     ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
@@ -179,12 +179,12 @@ public sealed class CatalogListingService(
     public async Task<ListingResponse> GetAsync(Guid listingId, CancellationToken cancellationToken) =>
         CatalogContractMapper.ToResponse(await RequireListingAsync(listingId, cancellationToken));
 
-    private async Task<IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding>> ResolveMediaBindingsAsync(
+    private async Task<IReadOnlyDictionary<Guid, CatalogMediaPublicationBindingContract>> ResolveMediaBindingsAsync(
         string catalogKey,
         IReadOnlyList<MediaReferenceContract> references,
         CancellationToken cancellationToken)
     {
-        var bindings = new Dictionary<Guid, CatalogMediaPublicationBinding>();
+        var bindings = new Dictionary<Guid, CatalogMediaPublicationBindingContract>();
         foreach (var reference in references
                      .Select(value => value ?? throw new CatalogContractException(
                          "catalog.media_reference_null",
