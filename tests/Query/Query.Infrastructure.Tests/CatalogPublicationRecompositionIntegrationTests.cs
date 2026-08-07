@@ -51,7 +51,7 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
         services.AddSingleton<NpgsqlQueryProjectionStore>();
         services.AddSingleton<IQueryProjectionStore>(provider =>
             provider.GetRequiredService<NpgsqlQueryProjectionStore>());
-        services.AddScoped<IPromotionOverlayProjectionStore, PostgresPromotionOverlayProjectionStore>();
+        services.AddScoped<IPromotionPlacementProjectionStore, PostgresPromotionOverlayProjectionStore>();
         services.AddScoped<IVisibilitySafetyProjectionStore, PostgresVisibilitySafetyProjectionStore>();
         AddProductionProjectionCoordination(services);
         await using var serviceProvider = services.BuildServiceProvider(
@@ -293,7 +293,7 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
                             MissingReason: null,
                             Guid.Parse("01990500-0000-7000-8000-000000000040")),
                     ],
-                    Summaries: [],
+                    Descriptions: [],
                     CategoryKeys: ["recording-studio"],
                     Attributes: [],
                     new PublicGeography(
@@ -304,7 +304,7 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
                         Guid.Parse("01990500-0000-7000-8000-000000000041")),
                     Contacts: [],
                     Media: [],
-                    Assertions: [],
+                    Provenance: [],
                     ContentDigest:
                         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
             ]);
