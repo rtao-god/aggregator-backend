@@ -59,7 +59,8 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
             {
                 ValidateScopes = true,
             });
-        var store = serviceProvider.GetRequiredService<IQueryProjectionStore>();
+        await using var projectionScope = serviceProvider.CreateAsyncScope();
+        var store = projectionScope.ServiceProvider.GetRequiredService<IQueryProjectionStore>();
         var firstActivation = BuildActivation(
             FirstPublicationId,
             FirstEventId,
