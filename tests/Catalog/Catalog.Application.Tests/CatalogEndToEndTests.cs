@@ -487,14 +487,6 @@ public sealed class CatalogEndToEndTests
             return Task.FromResult(_nextPublicationSequence++);
         }
 
-        public Task<long> GetNextPublicationActivationRevisionAsync(
-            CatalogKey catalogKey,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(_nextPublicationActivationRevision++);
-        }
-
         public Task<Guid?> GetCurrentPublicationIdAsync(
             CatalogKey catalogKey,
             CancellationToken cancellationToken)
@@ -516,14 +508,16 @@ public sealed class CatalogEndToEndTests
             CatalogPublication publication,
             Guid? expectedCurrentPublicationId,
             IReadOnlyList<Listing> listings,
-            CatalogOutboxMessage outboxMessage,
+            CatalogPublicationActivationOutboxFactory outboxFactory,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             EnsurePointer(expectedCurrentPublicationId);
+            var outboxMessage = outboxFactory(_nextPublicationActivationRevision);
             Assert.True(_publications.TryAdd(publication.Id, publication));
             CurrentPublicationId = publication.Id;
             OutboxMessages.Add(outboxMessage);
+            _nextPublicationActivationRevision++;
             return Task.CompletedTask;
         }
 
@@ -531,14 +525,16 @@ public sealed class CatalogEndToEndTests
             CatalogPublication targetPublication,
             Guid expectedCurrentPublicationId,
             CurrentPublicationPointer publicationPointer,
-            CatalogOutboxMessage outboxMessage,
+            CatalogPublicationActivationOutboxFactory outboxFactory,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             EnsurePointer(expectedCurrentPublicationId);
             Assert.Equal(targetPublication.Id, publicationPointer.PublicationId);
+            var outboxMessage = outboxFactory(_nextPublicationActivationRevision);
             CurrentPublicationId = targetPublication.Id;
             OutboxMessages.Add(outboxMessage);
+            _nextPublicationActivationRevision++;
             return Task.CompletedTask;
         }
 

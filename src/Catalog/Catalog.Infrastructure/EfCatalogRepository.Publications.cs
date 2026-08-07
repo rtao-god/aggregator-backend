@@ -2,6 +2,7 @@ using System.Data;
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace Aggregator.Catalog.Infrastructure;
@@ -31,33 +32,6 @@ public sealed partial class EfCatalogRepository
             command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey.Value));
             var result = await command.ExecuteScalarAsync(cancellationToken)
                 ?? throw new InvalidOperationException("Publication sequence allocator returned no value.");
-            return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
-        }
-        finally
-        {
-            await _dbContext.Database.CloseConnectionAsync();
-        }
-    }
-
-    public async Task<long> GetNextPublicationActivationRevisionAsync(
-        CatalogKey catalogKey,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(catalogKey);
-        await _dbContext.Database.OpenConnectionAsync(cancellationToken);
-        try
-        {
-            await using var command = _dbContext.Database.GetDbConnection().CreateCommand();
-            command.CommandText = """
-                INSERT INTO catalog.publication_activation_sequence (catalog_key, next_revision)
-                VALUES (@catalog_key, 2)
-                ON CONFLICT (catalog_key)
-                DO UPDATE SET next_revision = catalog.publication_activation_sequence.next_revision + 1
-                RETURNING next_revision - 1;
-                """;
-            command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey.Value));
-            var result = await command.ExecuteScalarAsync(cancellationToken)
-                ?? throw new InvalidOperationException("Publication activation revision allocator returned no value.");
             return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
         }
         finally
@@ -116,21 +90,25 @@ public sealed partial class EfCatalogRepository
         CatalogPublication publication,
         Guid? expectedCurrentPublicationId,
         IReadOnlyList<Listing> listings,
-        CatalogOutboxMessage outboxMessage,
+        CatalogPublicationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(listings);
+        ArgumentNullException.ThrowIfNull(outboxFactory);
         try
         {
             await ExecuteInTransactionAsync(async innerCancellationToken =>
             {
-                ArgumentNullException.ThrowIfNull(publication);
-                ArgumentNullException.ThrowIfNull(listings);
-                ArgumentNullException.ThrowIfNull(outboxMessage);
                 var current = await _dbContext.CurrentPublications
                     .SingleOrDefaultAsync(
                         row => row.CatalogKey == publication.CatalogKey.Value,
                         innerCancellationToken);
                 EnsurePublicationPointer(current?.PublicationId, expectedCurrentPublicationId, publication.CatalogKey);
+                var activationRevision = await AllocatePublicationActivationRevisionAsync(
+                    publication.CatalogKey,
+                    innerCancellationToken);
+                var outboxMessage = outboxFactory(activationRevision);
 
                 _dbContext.Publications.Add(new CatalogPublicationRow
                 {
@@ -200,16 +178,16 @@ public sealed partial class EfCatalogRepository
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
-        CatalogOutboxMessage outboxMessage,
+        CatalogPublicationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(targetPublication);
+        ArgumentNullException.ThrowIfNull(publicationPointer);
+        ArgumentNullException.ThrowIfNull(outboxFactory);
         try
         {
             await ExecuteInTransactionAsync(async innerCancellationToken =>
             {
-                ArgumentNullException.ThrowIfNull(targetPublication);
-                ArgumentNullException.ThrowIfNull(publicationPointer);
-                ArgumentNullException.ThrowIfNull(outboxMessage);
                 var targetExists = await _dbContext.Publications
                     .AsNoTracking()
                     .AnyAsync(
@@ -230,6 +208,10 @@ public sealed partial class EfCatalogRepository
                     current.PublicationId,
                     expectedCurrentPublicationId,
                     targetPublication.CatalogKey);
+                var activationRevision = await AllocatePublicationActivationRevisionAsync(
+                    targetPublication.CatalogKey,
+                    innerCancellationToken);
+                var outboxMessage = outboxFactory(activationRevision);
 
                 current.PublicationId = publicationPointer.PublicationId;
                 current.PublicationSequence = publicationPointer.PublicationSequence;
@@ -251,6 +233,37 @@ public sealed partial class EfCatalogRepository
 
             throw;
         }
+    }
+
+    private async Task<long> AllocatePublicationActivationRevisionAsync(
+        CatalogKey catalogKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(catalogKey);
+        var currentTransaction = _dbContext.Database.CurrentTransaction
+            ?? throw new InvalidOperationException(
+                "Publication activation revision must be allocated inside the pointer and outbox transaction.");
+        var connection = _dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException(
+                "Catalog database connection is not open for publication activation revision allocation.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = currentTransaction.GetDbTransaction();
+        command.CommandText = """
+            INSERT INTO catalog.publication_activation_sequence (catalog_key, next_revision)
+            VALUES (@catalog_key, 2)
+            ON CONFLICT (catalog_key)
+            DO UPDATE SET next_revision = catalog.publication_activation_sequence.next_revision + 1
+            RETURNING next_revision - 1;
+            """;
+        command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey.Value));
+        var result = await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Publication activation revision allocator returned no value.");
+        return Convert.ToInt64(result, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private void AddOutbox(CatalogOutboxMessage message)

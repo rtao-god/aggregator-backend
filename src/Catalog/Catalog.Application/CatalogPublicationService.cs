@@ -137,34 +137,36 @@ public sealed class CatalogPublicationService(
         var expectedCurrentPublicationId = ToInternalExpectation(request.ExpectedCurrent);
         var previousPublicationId = await repository.GetCurrentPublicationIdAsync(catalogKey, cancellationToken);
         EnsurePointerExpectation(previousPublicationId, expectedCurrentPublicationId);
-        var activationRevision = await repository.GetNextPublicationActivationRevisionAsync(
-            catalogKey,
-            cancellationToken);
-        var integrationEvent = new CatalogPublicationActivated(
-            idSource.CreateId(),
-            publication.Id,
-            publication.CatalogKey.Value,
-            publication.ConfigurationRevisionId,
-            publication.Sequence,
-            activationRevision,
-            publication.ArtifactKey,
-            publication.ArtifactDigest,
-            PublicationActivationKindContract.Publication,
-            previousPublicationId,
-            createdAtUtc);
-        var outboxMessage = CatalogOutboxMessageFactory.Create(
-            integrationEvent.EventId,
-            CatalogIntegrationEventTypes.PublicationActivated,
-            CatalogIntegrationEventContracts.PublicationActivated,
-            integrationEvent,
-            createdAtUtc,
-            eventContext);
+        var eventId = idSource.CreateId();
+
+        CatalogOutboxMessage CreateOutbox(long activationRevision)
+        {
+            var integrationEvent = new CatalogPublicationActivated(
+                eventId,
+                publication.Id,
+                publication.CatalogKey.Value,
+                publication.ConfigurationRevisionId,
+                publication.Sequence,
+                activationRevision,
+                publication.ArtifactKey,
+                publication.ArtifactDigest,
+                PublicationActivationKindContract.Publication,
+                previousPublicationId,
+                createdAtUtc);
+            return CatalogOutboxMessageFactory.Create(
+                integrationEvent.EventId,
+                CatalogIntegrationEventTypes.PublicationActivated,
+                CatalogIntegrationEventContracts.PublicationActivated,
+                integrationEvent,
+                createdAtUtc,
+                eventContext);
+        }
 
         await repository.CommitPublicationAsync(
             publication,
             expectedCurrentPublicationId,
             selections.Select(selection => selection.Listing).ToArray(),
-            outboxMessage,
+            CreateOutbox,
             cancellationToken);
         return CatalogContractMapper.ToResponse(publication, isCurrent: true);
     }
@@ -225,34 +227,36 @@ public sealed class CatalogPublicationService(
             target.Sequence,
             activatedAtUtc,
             actor.Id);
-        var activationRevision = await repository.GetNextPublicationActivationRevisionAsync(
-            catalogKey,
-            cancellationToken);
-        var integrationEvent = new CatalogPublicationActivated(
-            idSource.CreateId(),
-            target.Id,
-            target.CatalogKey.Value,
-            target.ConfigurationRevisionId,
-            target.Sequence,
-            activationRevision,
-            target.ArtifactKey,
-            target.ArtifactDigest,
-            PublicationActivationKindContract.Rollback,
-            currentPublicationId,
-            activatedAtUtc);
-        var outboxMessage = CatalogOutboxMessageFactory.Create(
-            integrationEvent.EventId,
-            CatalogIntegrationEventTypes.PublicationActivated,
-            CatalogIntegrationEventContracts.PublicationActivated,
-            integrationEvent,
-            activatedAtUtc,
-            eventContext);
+        var eventId = idSource.CreateId();
+
+        CatalogOutboxMessage CreateOutbox(long activationRevision)
+        {
+            var integrationEvent = new CatalogPublicationActivated(
+                eventId,
+                target.Id,
+                target.CatalogKey.Value,
+                target.ConfigurationRevisionId,
+                target.Sequence,
+                activationRevision,
+                target.ArtifactKey,
+                target.ArtifactDigest,
+                PublicationActivationKindContract.Rollback,
+                currentPublicationId,
+                activatedAtUtc);
+            return CatalogOutboxMessageFactory.Create(
+                integrationEvent.EventId,
+                CatalogIntegrationEventTypes.PublicationActivated,
+                CatalogIntegrationEventContracts.PublicationActivated,
+                integrationEvent,
+                activatedAtUtc,
+                eventContext);
+        }
 
         await repository.ActivateExistingPublicationAsync(
             target,
             request.ExpectedCurrentPublicationId,
             publicationPointer,
-            outboxMessage,
+            CreateOutbox,
             cancellationToken);
         return CatalogContractMapper.ToResponse(target, isCurrent: true);
     }

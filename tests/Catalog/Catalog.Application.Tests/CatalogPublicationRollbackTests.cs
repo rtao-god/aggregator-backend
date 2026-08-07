@@ -44,7 +44,7 @@ public sealed class CatalogPublicationRollbackTests
         Assert.Equal(ArtifactDigest, artifactStore.VerifiedDigest);
         Assert.Equal(CurrentPublicationId, repository.CurrentPublicationId);
         Assert.Equal(0, repository.ActivationAttempts);
-        Assert.Equal(0, repository.ActivationRevisionRequests);
+        Assert.Equal(0, repository.ActivationOutboxFactoryInvocations);
     }
 
     private static CatalogPublication CreateTargetPublication() =>
@@ -109,7 +109,7 @@ public sealed class CatalogPublicationRollbackTests
 
         public int ActivationAttempts { get; private set; }
 
-        public int ActivationRevisionRequests { get; private set; }
+        public int ActivationOutboxFactoryInvocations { get; private set; }
 
         public Task<Guid?> GetCurrentPublicationIdAsync(
             CatalogKey catalogKey,
@@ -129,25 +129,17 @@ public sealed class CatalogPublicationRollbackTests
                 publicationId == targetPublication.Id ? targetPublication : null);
         }
 
-        public Task<long> GetNextPublicationActivationRevisionAsync(
-            CatalogKey catalogKey,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            EnsureCatalog(catalogKey);
-            ActivationRevisionRequests++;
-            return Task.FromResult(1L);
-        }
-
         public Task ActivateExistingPublicationAsync(
             CatalogPublication target,
             Guid expectedCurrentPublicationId,
             CurrentPublicationPointer publicationPointer,
-            CatalogOutboxMessage outboxMessage,
+            CatalogPublicationActivationOutboxFactory outboxFactory,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ActivationAttempts++;
+            _ = outboxFactory(1);
+            ActivationOutboxFactoryInvocations++;
             CurrentPublicationId = target.Id;
             return Task.CompletedTask;
         }
@@ -219,7 +211,7 @@ public sealed class CatalogPublicationRollbackTests
             CatalogPublication publication,
             Guid? expectedCurrentPublicationId,
             IReadOnlyList<Listing> listings,
-            CatalogOutboxMessage outboxMessage,
+            CatalogPublicationActivationOutboxFactory outboxFactory,
             CancellationToken cancellationToken) =>
             Unsupported();
 

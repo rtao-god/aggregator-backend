@@ -63,10 +63,6 @@ public interface ICatalogRepository
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
-    public Task<long> GetNextPublicationActivationRevisionAsync(
-        CatalogKey catalogKey,
-        CancellationToken cancellationToken);
-
     public Task<Guid?> GetCurrentPublicationIdAsync(
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
@@ -79,14 +75,14 @@ public interface ICatalogRepository
         CatalogPublication publication,
         Guid? expectedCurrentPublicationId,
         IReadOnlyList<Listing> listings,
-        CatalogOutboxMessage outboxMessage,
+        CatalogPublicationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken);
 
     public Task ActivateExistingPublicationAsync(
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
-        CatalogOutboxMessage outboxMessage,
+        CatalogPublicationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken);
 
     public Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken);
@@ -124,6 +120,12 @@ public interface ICatalogPublicationArtifactStore
 public sealed record PublicationSelectionState(
     Listing Listing,
     ListingRevision Revision);
+
+/// <summary>
+/// Creates the producer-owned activation event after the repository allocates its exact revision inside the pointer transaction.
+/// </summary>
+public delegate CatalogOutboxMessage CatalogPublicationActivationOutboxFactory(
+    long activationRevision);
 
 /// <summary>Producer-owned event write persisted atomically with the Catalog business transition.</summary>
 public sealed record CatalogOutboxMessage(
