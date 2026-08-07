@@ -573,7 +573,7 @@ internal static class CatalogContractMapper
         ListingAccessScope.ReadDraft => ListingAccessScopeContract.ReadDraft,
         ListingAccessScope.ProposeRevision => ListingAccessScopeContract.ProposeRevision,
         ListingAccessScope.ManageContacts => ListingAccessScopeContract.ManageContacts,
-        ListingAccessScope.ManageMedia => ListingAccessScope.ManageMedia,
+        ListingAccessScope.ManageMedia => ListingAccessScopeContract.ManageMedia,
         _ => throw UnsupportedDomainEnum(nameof(ListingAccessScope), value),
     };
 
