@@ -242,13 +242,15 @@ public sealed record ContactValueContract(
     string? Label,
     Guid AssertionId);
 
+/// <summary>
+/// References one exact Catalog Media asset revision and public variant without accepting media-owned metadata from the caller.
+/// </summary>
 public sealed record MediaReferenceContract(
     Guid MediaId,
-    string ObjectUri,
-    string ContentType,
-    string ContentDigest,
-    MediaRightsBasisContract RightsBasis,
-    string RightsReference,
+    long ExpectedMediaAggregateRevision,
+    Guid VariantId,
+    int DisplayOrder,
+    string? Caption,
     Guid AssertionId);
 
 public sealed record ProvenanceAssertionContract(
