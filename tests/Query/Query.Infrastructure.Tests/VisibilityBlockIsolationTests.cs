@@ -39,31 +39,9 @@ public sealed class VisibilityBlockIsolationTests
         await SeedCurrentReadAsync(database);
         await InsertPendingForeignBlockAsync(database);
         await using var dataSource = NpgsqlDataSource.Create(database.ConnectionString);
-        var store = new PostgresVisibilitySafetyProjectionStore(
-            dataSource,
-            new UuidV7TestIdFactory(),
-            new FixedQueryClock(Timestamp.AddMinutes(1)));
-        var suppression = QueryVisibilitySuppression.Create(
-            AppliedSuppressionId,
-            CatalogKey,
-            QueryVisibilitySuppressionTargetKind.Route,
-            listingId: null,
-            "/legal-removal",
-            "legal-removal",
-            QueryVisibilitySuppressionResponseMode.Gone,
-            QueryVisibilitySuppressionState.Active,
-            Timestamp,
-            expiresAtUtc: null,
-            aggregateRevision: 2,
-            Timestamp);
+        var store = CreateProjectionStore(dataSource);
 
-        var result = await store.ApplyAsync(
-            suppression,
-            new VisibilitySuppressionInboxMessage(
-                AppliedEventId,
-                Digest,
-                Timestamp),
-            CancellationToken.None);
+        var result = await ApplyRouteSuppressionAsync(store);
 
         Assert.Equal(VisibilitySafetyProjectionDisposition.Activated, result.Disposition);
         Assert.Equal(
@@ -95,6 +73,72 @@ public sealed class VisibilityBlockIsolationTests
                 WHERE catalog_key = @catalog_key;
                 """,
                 new NpgsqlParameter<string>("catalog_key", CatalogKey)));
+    }
+
+    [Fact]
+    public async Task RemainingForeignBlockKeepsPublicReadsUnavailable()
+    {
+        await using var database = await QueryPostgresTestDatabase.CreateAsync();
+        await database.ApplyAllQueryMigrationsAsync();
+        await SeedCurrentReadAsync(database);
+        await InsertPendingForeignBlockAsync(database);
+        await using var dataSource = NpgsqlDataSource.Create(database.ConnectionString);
+        _ = await ApplyRouteSuppressionAsync(CreateProjectionStore(dataSource));
+        var publicStore = new SafetyAwarePublicQueryStore(
+            new NpgsqlPublicQueryStore(dataSource),
+            dataSource,
+            new FixedQueryClock(Timestamp.AddMinutes(2)));
+
+        var exception = await Assert.ThrowsAsync<QueryReadException>(() => publicStore.ReadPageAsync(
+            CatalogKey,
+            afterListingId: null,
+            maximumDocuments: 20,
+            categoryKey: null,
+            requestedLocale: "de-DE",
+            readAtUtc: Timestamp.AddMinutes(2),
+            CancellationToken.None));
+
+        Assert.Equal("Query.VisibilitySafety", exception.Owner);
+        Assert.Equal("QUERY_VISIBILITY_UPDATE_PENDING", exception.Code);
+        Assert.Equal(503, exception.StatusCode);
+        Assert.Equal(
+            PendingEventId,
+            Assert.IsType<Guid>(exception.Context["sourceEventId"]));
+        Assert.Equal(
+            "catalog_visibility_suppression_pending",
+            Assert.IsType<string>(exception.Context["reasonCode"]));
+    }
+
+    private static PostgresVisibilitySafetyProjectionStore CreateProjectionStore(
+        NpgsqlDataSource dataSource) =>
+        new(
+            dataSource,
+            new UuidV7TestIdFactory(),
+            new FixedQueryClock(Timestamp.AddMinutes(1)));
+
+    private static Task<VisibilitySafetyProjectionResult> ApplyRouteSuppressionAsync(
+        PostgresVisibilitySafetyProjectionStore store)
+    {
+        var suppression = QueryVisibilitySuppression.Create(
+            AppliedSuppressionId,
+            CatalogKey,
+            QueryVisibilitySuppressionTargetKind.Route,
+            listingId: null,
+            "/legal-removal",
+            "legal-removal",
+            QueryVisibilitySuppressionResponseMode.Gone,
+            QueryVisibilitySuppressionState.Active,
+            Timestamp,
+            expiresAtUtc: null,
+            aggregateRevision: 2,
+            Timestamp);
+        return store.ApplyAsync(
+            suppression,
+            new VisibilitySuppressionInboxMessage(
+                AppliedEventId,
+                Digest,
+                Timestamp),
+            CancellationToken.None);
     }
 
     private static Task SeedCurrentReadAsync(QueryPostgresTestDatabase database) =>
