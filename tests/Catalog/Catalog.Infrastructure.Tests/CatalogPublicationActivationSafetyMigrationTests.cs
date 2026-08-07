@@ -1,3 +1,7 @@
+using Aggregator.Catalog.Application;
+using Aggregator.Catalog.Contracts;
+using Aggregator.Catalog.Domain;
+using Aggregator.Catalog.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -17,8 +21,12 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
         Guid.Parse("0198fe00-0000-7000-8000-000000000005");
     private static readonly Guid ActorId =
         Guid.Parse("0198fe00-0000-7000-8000-000000000006");
+    private static readonly Guid ActivationEventId =
+        Guid.Parse("0198fe00-0000-7000-8000-000000000007");
     private static readonly DateTimeOffset Timestamp =
         new(2026, 8, 7, 16, 0, 0, TimeSpan.Zero);
+    private const string EmptyJsonDigest =
+        "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 
     [Fact]
     public async Task ActiveListingSuppressionBlocksRollbackActivation()
@@ -88,6 +96,141 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
                 WHERE catalog_key = 'berlin-recording-services';
                 """));
     }
+
+    [Fact]
+    public async Task FailedActivationRollsBackPointerOutboxAndActivationRevision()
+    {
+        await using var database = await CatalogPostgresTestDatabase.CreateAsync();
+        await database.ApplyAllCatalogMigrationsAsync();
+        await SeedPublicationsAsync(database);
+        await InsertActiveListingSuppressionAsync(database);
+        var observedActivationRevisions = new List<long>();
+        var target = CreateTargetPublication();
+        var pointer = CurrentPublicationPointer.Create(
+            target.CatalogKey,
+            target.Id,
+            target.Sequence,
+            Timestamp.AddMinutes(1),
+            ActorId);
+
+        CatalogOutboxMessage CreateOutbox(long activationRevision)
+        {
+            observedActivationRevisions.Add(activationRevision);
+            return new CatalogOutboxMessage(
+                ActivationEventId,
+                CatalogIntegrationEventTypes.PublicationActivated,
+                CatalogIntegrationEventContracts.PublicationActivated,
+                "{}",
+                EmptyJsonDigest,
+                Timestamp.AddMinutes(1),
+                "corr.catalog-activation:0001",
+                CausationId: null);
+        }
+
+        await using (var context = database.CreateContext())
+        {
+            var repository = new EfCatalogRepository(context);
+            var exception = await Assert.ThrowsAsync<CatalogPublicationActivationBlockedException>(() =>
+                repository.ActivateExistingPublicationAsync(
+                    target,
+                    CurrentPublicationId,
+                    pointer,
+                    CreateOutbox,
+                    CancellationToken.None));
+
+            Assert.Equal(
+                CatalogPublicationActivationBlockReason.PublicVisibilitySuppression,
+                exception.Reason);
+        }
+
+        Assert.Equal([1L], observedActivationRevisions);
+        Assert.Equal(
+            CurrentPublicationId.ToString("D"),
+            await ReadCurrentPublicationIdAsync(database));
+        Assert.Equal(
+            0L,
+            await database.ScalarAsync<long>(
+                "SELECT count(*) FROM catalog.outbox_message;"));
+        Assert.Equal(
+            0L,
+            await database.ScalarAsync<long>(
+                """
+                SELECT count(*)
+                FROM catalog.publication_activation_sequence
+                WHERE catalog_key = 'berlin-recording-services';
+                """));
+
+        await database.ExecuteAsync(
+            """
+            UPDATE catalog.public_visibility_suppression
+            SET state = 3,
+                revision = 3,
+                transition_reason = 'Replacement publication is ready.',
+                changed_at_utc = @resolved_at_utc
+            WHERE id = '0198fe00-0000-7000-8000-000000000020';
+            """,
+            UtcParameter("resolved_at_utc", Timestamp.AddMinutes(2)));
+
+        await using (var context = database.CreateContext())
+        {
+            var repository = new EfCatalogRepository(context);
+            await repository.ActivateExistingPublicationAsync(
+                target,
+                CurrentPublicationId,
+                CurrentPublicationPointer.Create(
+                    target.CatalogKey,
+                    target.Id,
+                    target.Sequence,
+                    Timestamp.AddMinutes(3),
+                    ActorId),
+                CreateOutbox,
+                CancellationToken.None);
+        }
+
+        Assert.Equal([1L, 1L], observedActivationRevisions);
+        Assert.Equal(
+            TargetPublicationId.ToString("D"),
+            await ReadCurrentPublicationIdAsync(database));
+        Assert.Equal(
+            1L,
+            await database.ScalarAsync<long>(
+                "SELECT count(*) FROM catalog.outbox_message;"));
+        Assert.Equal(
+            2L,
+            await database.ScalarAsync<long>(
+                """
+                SELECT next_revision
+                FROM catalog.publication_activation_sequence
+                WHERE catalog_key = 'berlin-recording-services';
+                """));
+    }
+
+    private static CatalogPublication CreateTargetPublication() =>
+        CatalogPublication.Create(
+            TargetPublicationId,
+            CatalogKey.Create("berlin-recording-services"),
+            ConfigurationRevisionId,
+            sequence: 1,
+            "catalog/berlin-recording-services/publications/target.json",
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            [
+                PublicationEntry.Create(
+                    ListingId,
+                    ListingRevisionId,
+                    Guid.Parse("0198fe00-0000-7000-8000-000000000011"),
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            ],
+            ActorId,
+            Timestamp);
+
+    private static Task<string> ReadCurrentPublicationIdAsync(
+        CatalogPostgresTestDatabase database) =>
+        database.ScalarAsync<string>(
+            """
+            SELECT publication_id::text
+            FROM catalog.current_publication
+            WHERE catalog_key = 'berlin-recording-services';
+            """);
 
     private static async Task SeedPublicationsAsync(CatalogPostgresTestDatabase database)
     {
