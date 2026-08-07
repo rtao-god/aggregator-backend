@@ -184,6 +184,10 @@ internal sealed class CatalogMediaRow
 
     public Guid ListingRevisionId { get; set; }
 
+    public long MediaAggregateRevision { get; set; }
+
+    public Guid VariantId { get; set; }
+
     public required string ObjectUri { get; set; }
 
     public required string ContentType { get; set; }
@@ -192,7 +196,9 @@ internal sealed class CatalogMediaRow
 
     public int RightsBasis { get; set; }
 
-    public required string RightsReference { get; set; }
+    public int DisplayOrder { get; set; }
+
+    public string? Caption { get; set; }
 
     public Guid AssertionId { get; set; }
 }
