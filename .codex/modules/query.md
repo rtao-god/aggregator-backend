@@ -18,13 +18,14 @@ Query is the canonical owner of rebuildable public documents, facets, routes, SE
 
 ```text
 CatalogPublicationActivated
+→ verify exact producer activation revision against durable checkpoint
 → per-catalog projection-mutation lease
 → durable publication-recomposition block and exact prior component capture
 → exact artifact identity and digest validation
 → immutable base projection
 → validate the captured Promotion overlay against new base membership
 → new PublicReadRevision preserving the exact Promotion and safety overlays
-→ atomic current pointer switch, inbox completion, and recomposition unblock
+→ atomic current pointer switch, inbox completion, checkpoint advance, and recomposition unblock
 ```
 
 ```text
@@ -54,9 +55,15 @@ At request start, Query resolves one current `PublicReadRevision` and its exact 
 
 The public store refuses the catalog while any visibility block exists. Listing and route suppressions remove matching organic/sponsored documents and facet membership. Media and contact suppressions omit only the exact producer-owned child identity. Route/detail reads use the Catalog-selected public response mode: not found, gone, or temporarily unavailable. Temporary suppressions use the owner interval `[starts_at_utc, expires_at_utc)`.
 
-Stable media and contact identities are present in Catalog publication artifact contract revision `3`, Query documents, PostgreSQL rows, and public detail contracts. Query validates an active contact target against the exact base projection before switching the safety overlay. External-reference suppression remains fail-closed at the Catalog command boundary because that stable public identity is not yet present end-to-end.
+Stable media and contact identities are present in Catalog publication artifact contract revision `4`, Query documents, PostgreSQL rows, and public detail contracts. Query validates an active contact target against the exact base projection before switching the safety overlay. External-reference suppression remains fail-closed at the Catalog command boundary because that stable public identity is not yet present end-to-end.
 
 Sponsored rows preserve campaign/placement identities, slot position, disclosure label, exact overlay/public-read identities, and hard expiry. They reference existing base documents; they never copy or mutate organic ranking/content. A placement is never returned at or after `HardExpiryAtUtc`, even when expiry-event delivery is delayed.
+
+## Activation ordering invariant
+
+Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its publication pointer and outbox. Query accepts the first Catalog activation only at revision `1`, then requires every subsequent checkpoint transition to be exactly `last + 1`. Stale lower revisions may be recorded as ignored only after a later contiguous checkpoint is already proven. A forward gap cannot switch the public pointer or advance the checkpoint.
+
+`Query.Migrations/V008__catalog_activation_revision_contiguity.sql` enforces this invariant on the durable checkpoint. Its upgrade validation rejects a database whose checkpoint claims revisions absent from the durable inbox; recovery is an explicit replay or rebuild operation, not a silent checkpoint reset.
 
 ## Failure behavior
 
@@ -64,7 +71,8 @@ Sponsored rows preserve campaign/placement identities, slot position, disclosure
 - Catalog publication recomposition preserves the exact prior overlays under one mutation lease; a removed listing referenced by Promotion blocks activation rather than silently dropping the placement.
 - Same event ID with another payload digest is corruption.
 - Same suppression revision with another digest blocks the catalog and requires owner recovery.
-- Out-of-order resolved events remain pending and blocked until the exact active predecessor is applied.
+- Missing Catalog activation revisions block the incoming event and preserve the prior public pointer until replay/rebuild restores the exact sequence.
+- Out-of-order resolved suppression events remain pending and blocked until the exact active predecessor is applied.
 - Stale source revisions, wrong catalog, invalid response mode, or unsupported child identity fail at the projection owner.
 - Cursor/revision mismatch is explicit; Query never silently continues across snapshots.
 - Read endpoints never migrate, rebuild, repair, or call another context synchronously.
@@ -73,6 +81,7 @@ Sponsored rows preserve campaign/placement identities, slot position, disclosure
 
 - Domain/application tests cover immutable components, exact suppression mapping, deterministic safety digests, publication overlay recomposition, replay/conflict, validation, and component preservation.
 - Worker tests cover strict payload integrity, producer event identity, retry classification, and bounded options.
+- Real PostgreSQL tests prove initial activation revision `1`, exact contiguous checkpoint advancement, transaction rollback of a forward gap, and fail-closed migration when historical inbox coverage is incomplete.
 - Migration/schema checks cover event-scoped visibility blocks, immutable overlay items, inbox terminal states, and revision constraints.
 - Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while blocked.
-- Real PostgreSQL/RabbitMQ failure injection, concurrent block events, and base-publication recomposition proof remain mandatory before release completion.
+- Real PostgreSQL/RabbitMQ concurrent block events and base-publication recomposition proof remain mandatory before release completion.
