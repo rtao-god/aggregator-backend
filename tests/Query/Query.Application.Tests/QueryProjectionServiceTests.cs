@@ -18,6 +18,7 @@ public sealed class QueryProjectionServiceTests
         var store = new RecordingProjectionStore();
         var service = new QueryProjectionService(
             reader,
+            new FixedActivationCheckpointReader(lastRevision: null),
             store,
             new FixedClock(timestamp.AddMinutes(1)),
             new FixedIdFactory(
@@ -61,6 +62,7 @@ public sealed class QueryProjectionServiceTests
         var store = new RecordingProjectionStore();
         var service = new QueryProjectionService(
             new StubArtifactReader(artifact),
+            new FixedActivationCheckpointReader(lastRevision: null),
             store,
             new FixedClock(timestamp),
             new FixedIdFactory(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()));
@@ -95,8 +97,10 @@ public sealed class QueryProjectionServiceTests
             Guid.Parse("0198a200-0000-7000-8000-000000000041"),
             timestamp);
         var reader = new StubArtifactReader(artifact);
+        var checkpointReader = new FixedActivationCheckpointReader(lastRevision: null);
         var service = new QueryProjectionService(
             reader,
+            checkpointReader,
             new RecordingProjectionStore(),
             new FixedClock(timestamp),
             new FixedIdFactory(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()));
@@ -119,7 +123,54 @@ public sealed class QueryProjectionServiceTests
             CancellationToken.None));
 
         Assert.Equal("QUERY_EVENT_CONTRACT_INVALID", exception.Code);
+        Assert.Equal(0, checkpointReader.ReadCount);
         Assert.Equal(0, reader.ReadCount);
+    }
+
+    [Fact]
+    public async Task ForwardActivationGapFailsBeforeArtifactReadAndProjectionBuild()
+    {
+        var timestamp = new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var artifact = CreateArtifact(
+            Guid.Parse("0198a200-0000-7000-8000-000000000050"),
+            Guid.Parse("0198a200-0000-7000-8000-000000000051"),
+            timestamp);
+        var reader = new StubArtifactReader(artifact);
+        var checkpointReader = new FixedActivationCheckpointReader(lastRevision: 1);
+        var store = new RecordingProjectionStore();
+        var service = new QueryProjectionService(
+            reader,
+            checkpointReader,
+            store,
+            new FixedClock(timestamp),
+            new FixedIdFactory(Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7(), Guid.CreateVersion7()));
+        var activation = new CatalogPublicationActivated(
+            Guid.CreateVersion7(),
+            artifact.PublicationId,
+            artifact.CatalogKey,
+            artifact.ConfigurationRevisionId,
+            artifact.PublicationSequence,
+            3,
+            "catalog/publications/sealed/revision-gap.json",
+            new string('a', 64),
+            PublicationActivationKindContract.Publication,
+            Guid.CreateVersion7(),
+            timestamp);
+
+        var exception = await Assert.ThrowsAsync<QueryProjectionException>(() => service.ApplyPublicationAsync(
+            activation,
+            new string('b', 64),
+            CancellationToken.None));
+
+        Assert.Equal("Query.Projection", exception.Owner);
+        Assert.Equal("QUERY_ACTIVATION_REVISION_GAP", exception.Code);
+        Assert.Equal(409, exception.StatusCode);
+        Assert.Equal(2L, exception.Context["expectedActivationRevision"]);
+        Assert.Equal(3L, exception.Context["incomingActivationRevision"]);
+        Assert.Equal(1L, exception.Context["lastActivationRevision"]);
+        Assert.Equal(1, checkpointReader.ReadCount);
+        Assert.Equal(0, reader.ReadCount);
+        Assert.Null(store.Activation);
     }
 
     private static CatalogPublicationArtifact CreateArtifact(
@@ -165,6 +216,22 @@ public sealed class QueryProjectionServiceTests
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedDigest);
             ReadCount++;
             return Task.FromResult(artifact);
+        }
+    }
+
+    private sealed class FixedActivationCheckpointReader(long? lastRevision)
+        : IQueryActivationCheckpointReader
+    {
+        public int ReadCount { get; private set; }
+
+        public Task<long?> GetLastActivationRevisionAsync(
+            string catalogKey,
+            CancellationToken cancellationToken)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
+            return Task.FromResult(lastRevision);
         }
     }
 
