@@ -79,6 +79,21 @@ public static class CatalogFailureTranslator
                         ["requiredScope"] = authorization.RequiredScope.ToString(),
                     });
                 return true;
+            case CatalogPublicationActivationBlockedException activation:
+                failure = Create(
+                    "Catalog.Publications",
+                    ToActivationCode(activation.Reason),
+                    "Catalog publication activation blocked",
+                    409,
+                    activation.Message,
+                    activation.RequiredAction,
+                    new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["catalogKey"] = activation.CatalogKey,
+                        ["publicationId"] = activation.PublicationId,
+                        ["blockReason"] = activation.Reason.ToString(),
+                    });
+                return true;
             case CatalogConflictException conflict:
                 failure = Create(
                     "Catalog.Commands",
@@ -124,6 +139,17 @@ public static class CatalogFailureTranslator
                 return false;
         }
     }
+
+    private static string ToActivationCode(CatalogPublicationActivationBlockReason reason) => reason switch
+    {
+        CatalogPublicationActivationBlockReason.PointerIdentityMismatch =>
+            "CATALOG_PUBLICATION_POINTER_IDENTITY_MISMATCH",
+        CatalogPublicationActivationBlockReason.MediaNotPublishable =>
+            "CATALOG_PUBLICATION_MEDIA_NOT_PUBLISHABLE",
+        CatalogPublicationActivationBlockReason.PublicVisibilitySuppression =>
+            "CATALOG_PUBLICATION_VISIBILITY_SUPPRESSED",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Publication activation block reason is unsupported."),
+    };
 
     private static CatalogFailure Create(
         string owner,
