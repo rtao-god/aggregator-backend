@@ -107,16 +107,16 @@ public sealed class CatalogMediaPublicationBindingAuthority(ICatalogMediaReposit
 
     private static CatalogMediaPublicationRightsBasisContract MapRightsBasis(
         CatalogMediaRightsBasis rightsBasis) => rightsBasis switch
-    {
-        CatalogMediaRightsBasis.OwnerProvided => CatalogMediaPublicationRightsBasisContract.OwnerProvided,
-        CatalogMediaRightsBasis.Licensed => CatalogMediaPublicationRightsBasisContract.ExplicitLicense,
-        CatalogMediaRightsBasis.PublicDomain => CatalogMediaPublicationRightsBasisContract.PublicDomain,
-        _ => throw Failure(
-            "CATALOG_MEDIA_BINDING_RIGHTS_BASIS_INVALID",
-            500,
-            $"Catalog media rights basis '{rightsBasis}' cannot be projected into a listing binding.",
-            "Correct the Catalog Media rights-basis owner before retrying."),
-    };
+        {
+            CatalogMediaRightsBasis.OwnerProvided => CatalogMediaPublicationRightsBasisContract.OwnerProvided,
+            CatalogMediaRightsBasis.Licensed => CatalogMediaPublicationRightsBasisContract.ExplicitLicense,
+            CatalogMediaRightsBasis.PublicDomain => CatalogMediaPublicationRightsBasisContract.PublicDomain,
+            _ => throw Failure(
+                "CATALOG_MEDIA_BINDING_RIGHTS_BASIS_INVALID",
+                500,
+                $"Catalog media rights basis '{rightsBasis}' cannot be projected into a listing binding.",
+                "Correct the Catalog Media rights-basis owner before retrying."),
+        };
 
     private static Uri CreateObjectUri(Guid mediaId, Guid variantId, string contentDigest) =>
         new(
