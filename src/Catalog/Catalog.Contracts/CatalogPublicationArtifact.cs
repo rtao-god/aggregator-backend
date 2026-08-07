@@ -3,7 +3,7 @@ namespace Aggregator.Catalog.Contracts;
 public static class CatalogPublicationArtifactContract
 {
     public const string Identity = "aggregator-catalog-publication";
-    public const int Revision = 3;
+    public const int Revision = 4;
 }
 
 public sealed record CatalogPublicationArtifact(
@@ -62,12 +62,17 @@ public sealed record PublicContact(
     string? Label,
     Guid AssertionId);
 
+/// <summary>Exact Catalog Media owner output sealed into one publication listing.</summary>
 public sealed record PublicMedia(
     Guid MediaId,
+    long MediaAggregateRevision,
+    Guid VariantId,
     string ObjectUri,
     string ContentType,
     string ContentDigest,
     MediaRightsBasisContract RightsBasis,
+    int DisplayOrder,
+    string? Caption,
     Guid AssertionId);
 
 public sealed record PublicProvenanceSummary(
