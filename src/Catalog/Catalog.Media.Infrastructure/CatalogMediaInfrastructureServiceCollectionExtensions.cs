@@ -1,4 +1,3 @@
-using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Media.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -21,7 +20,6 @@ public static class CatalogMediaInfrastructureServiceCollectionExtensions
         services.AddScoped<EfCatalogMediaRepository>();
         services.AddScoped<ICatalogMediaRepository>(services =>
             services.GetRequiredService<EfCatalogMediaRepository>());
-        services.AddScoped<ICatalogMediaBindingAuthority, CatalogMediaBindingAuthority>();
         services.AddScoped<ICatalogMediaObjectStore, ObjectStoreCatalogMediaStore>();
         services.AddSingleton<ICatalogMediaClock, SystemCatalogMediaClock>();
         services.AddSingleton<ICatalogMediaIdSource, UuidV7CatalogMediaIdSource>();
