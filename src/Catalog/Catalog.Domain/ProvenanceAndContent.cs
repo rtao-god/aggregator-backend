@@ -481,23 +481,33 @@ public sealed record MediaReference
 {
     private MediaReference(
         Guid mediaId,
+        long mediaAggregateRevision,
+        Guid variantId,
         Uri objectUri,
         string contentType,
         string contentDigest,
         MediaRightsBasis rightsBasis,
-        string rightsReference,
+        int displayOrder,
+        string? caption,
         Guid assertionId)
     {
         MediaId = mediaId;
+        MediaAggregateRevision = mediaAggregateRevision;
+        VariantId = variantId;
         ObjectUri = objectUri;
         ContentType = contentType;
         ContentDigest = contentDigest;
         RightsBasis = rightsBasis;
-        RightsReference = rightsReference;
+        DisplayOrder = displayOrder;
+        Caption = caption;
         AssertionId = assertionId;
     }
 
     public Guid MediaId { get; }
+
+    public long MediaAggregateRevision { get; }
+
+    public Guid VariantId { get; }
 
     public Uri ObjectUri { get; }
 
@@ -507,17 +517,22 @@ public sealed record MediaReference
 
     public MediaRightsBasis RightsBasis { get; }
 
-    public string RightsReference { get; }
+    public int DisplayOrder { get; }
+
+    public string? Caption { get; }
 
     public Guid AssertionId { get; }
 
     public static MediaReference Create(
         Guid mediaId,
+        long mediaAggregateRevision,
+        Guid variantId,
         Uri objectUri,
         string contentType,
         string contentDigest,
         MediaRightsBasis rightsBasis,
-        string rightsReference,
+        int displayOrder,
+        string? caption,
         Guid assertionId)
     {
         if (mediaId == Guid.Empty)
@@ -525,14 +540,41 @@ public sealed record MediaReference
             throw new ArgumentException("Media ID is required.", nameof(mediaId));
         }
 
-        ArgumentNullException.ThrowIfNull(objectUri);
-        if (!objectUri.IsAbsoluteUri)
+        if (mediaAggregateRevision <= 0)
         {
-            throw new ArgumentException("Media object URI must be absolute.", nameof(objectUri));
+            throw new ArgumentOutOfRangeException(nameof(mediaAggregateRevision));
         }
 
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(rightsReference);
+        if (variantId == Guid.Empty)
+        {
+            throw new ArgumentException("Media variant ID is required.", nameof(variantId));
+        }
+
+        ArgumentNullException.ThrowIfNull(objectUri);
+        if (!objectUri.IsAbsoluteUri ||
+            !objectUri.AbsoluteUri.StartsWith("urn:aggregator:catalog-media:", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Media object URI must be an owner-generated Catalog Media URN.", nameof(objectUri));
+        }
+
+        var normalizedContentType = contentType?.Trim().ToLowerInvariant();
+        if (normalizedContentType is not ("image/jpeg" or "image/png" or "image/webp"))
+        {
+            throw new ArgumentException("Media content type is unsupported.", nameof(contentType));
+        }
+
+        if (!Enum.IsDefined(rightsBasis))
+        {
+            throw new ArgumentOutOfRangeException(nameof(rightsBasis));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(displayOrder);
+        var normalizedCaption = string.IsNullOrWhiteSpace(caption) ? null : caption.Trim();
+        if (normalizedCaption is { Length: > 500 } || normalizedCaption?.Any(char.IsControl) == true)
+        {
+            throw new ArgumentException("Media caption is invalid.", nameof(caption));
+        }
+
         if (assertionId == Guid.Empty)
         {
             throw new ArgumentException("Assertion ID is required for media.", nameof(assertionId));
@@ -540,11 +582,14 @@ public sealed record MediaReference
 
         return new MediaReference(
             mediaId,
+            mediaAggregateRevision,
+            variantId,
             objectUri,
-            contentType.Trim().ToLowerInvariant(),
+            normalizedContentType,
             CatalogDigest.RequireSha256(contentDigest, nameof(contentDigest)),
             rightsBasis,
-            rightsReference.Trim(),
+            displayOrder,
+            normalizedCaption,
             assertionId);
     }
 }
@@ -624,7 +669,11 @@ public sealed class ListingRevisionContent
             .ThenBy(contact => contact.Target.AbsoluteUri, StringComparer.Ordinal)
             .ThenBy(contact => contact.Id)
             .ToArray();
-        var mediaList = media.ToArray();
+        var mediaList = media
+            .OrderBy(item => item.DisplayOrder)
+            .ThenBy(item => item.MediaId)
+            .ThenBy(item => item.VariantId)
+            .ToArray();
 
         if (nameMap.Count == 0)
         {
@@ -685,6 +734,21 @@ public sealed class ListingRevisionContent
         foreach (var mediaItem in mediaList)
         {
             RequirePublicAssertion(assertionMap, mediaItem.AssertionId, $"media:{mediaItem.MediaId}");
+        }
+
+        if (mediaList.Select(item => item.MediaId).Distinct().Count() != mediaList.Length)
+        {
+            throw new CatalogInvariantException("A listing revision cannot bind one media asset more than once.");
+        }
+
+        if (mediaList.Select(item => item.VariantId).Distinct().Count() != mediaList.Length)
+        {
+            throw new CatalogInvariantException("A listing revision cannot bind one media variant more than once.");
+        }
+
+        if (mediaList.Select(item => item.DisplayOrder).Distinct().Count() != mediaList.Length)
+        {
+            throw new CatalogInvariantException("A listing revision cannot assign the same display order to multiple media bindings.");
         }
 
         return new ListingRevisionContent(
