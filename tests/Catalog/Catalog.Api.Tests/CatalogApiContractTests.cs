@@ -73,7 +73,7 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
         request.Headers.Add(
             CatalogApiFactory.ScopesHeader,
             CatalogMediaAuthorizationPolicies.Manage);
-        request.Headers.Add("Idempotency-Key", "catalog-media-api-contract-0001");
+        request.Headers.Add("Idempotency-Key", "catalog-api-media-contract-0001");
 
         using var response = await client.SendAsync(request);
         var document = await ReadJsonAsync(response);
@@ -112,7 +112,7 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
         request.Headers.Add(
             CatalogApiFactory.ScopesHeader,
             CatalogMediaAuthorizationPolicies.Manage);
-        request.Headers.Add("Idempotency-Key", "catalog-media-api-contract-0002");
+        request.Headers.Add("Idempotency-Key", "catalog-api-media-contract-0002");
 
         using var response = await client.SendAsync(request);
         var document = await ReadJsonAsync(response);
