@@ -32,11 +32,13 @@ internal sealed class QueryPostgresTestDatabase : IAsyncDisposable
 
         var baseBuilder = new NpgsqlConnectionStringBuilder(configured)
         {
+            IncludeErrorDetail = true,
             Pooling = false,
         };
         var adminBuilder = new NpgsqlConnectionStringBuilder(configured)
         {
             Database = "postgres",
+            IncludeErrorDetail = true,
             Pooling = false,
         };
         var databaseName = $"query_integration_{Guid.NewGuid():N}";
