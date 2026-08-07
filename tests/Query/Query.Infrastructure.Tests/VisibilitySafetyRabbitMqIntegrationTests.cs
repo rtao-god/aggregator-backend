@@ -301,7 +301,7 @@ public sealed class VisibilitySafetyRabbitMqIntegrationTests
             {
                 ["x-queue-type"] = "quorum",
             },
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
         await channel.QueueBindAsync(
             options.DeadLetterQueue,
             options.DeadLetterExchange,
@@ -320,7 +320,7 @@ public sealed class VisibilitySafetyRabbitMqIntegrationTests
                 ["x-dead-letter-exchange"] = options.DeadLetterExchange,
                 ["x-dead-letter-routing-key"] = options.RoutingKey,
             },
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
         await channel.QueueBindAsync(
             options.Queue,
             options.Exchange,
