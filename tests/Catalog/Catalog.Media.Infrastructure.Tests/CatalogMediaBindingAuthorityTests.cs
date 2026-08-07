@@ -1,3 +1,4 @@
+using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Domain;
 using Aggregator.Catalog.Media.Application;
 using Aggregator.Catalog.Media.Domain;
