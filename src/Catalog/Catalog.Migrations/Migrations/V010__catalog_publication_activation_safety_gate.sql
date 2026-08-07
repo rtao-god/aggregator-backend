@@ -19,6 +19,7 @@ BEGIN
     )
     THEN
         RAISE EXCEPTION USING
+            ERRCODE = 'P7101',
             MESSAGE = 'Catalog publication activation target does not match its pointer identity.',
             DETAIL = format(
                 'Catalog %s cannot activate publication %s at sequence %s.',
@@ -68,6 +69,7 @@ BEGIN
     )
     THEN
         RAISE EXCEPTION USING
+            ERRCODE = 'P7102',
             MESSAGE = 'Catalog publication activation references media that is no longer publishable.',
             DETAIL = format(
                 'Publication %s contains a media binding that does not match current accepted rights-active Catalog Media state.',
@@ -131,6 +133,7 @@ BEGIN
     )
     THEN
         RAISE EXCEPTION USING
+            ERRCODE = 'P7103',
             MESSAGE = 'Catalog publication activation is blocked by an active public visibility suppression.',
             DETAIL = format(
                 'Publication %s contains, or cannot prove absence of, an actively suppressed public target.',
