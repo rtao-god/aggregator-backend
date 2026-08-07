@@ -15,7 +15,7 @@ public sealed record CatalogMediaPublicationBinding(
 /// <summary>Validates and resolves one exact publishable Catalog Media asset revision and variant.</summary>
 public interface ICatalogMediaBindingAuthority
 {
-    Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
+    public Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
         CatalogKey catalogKey,
         Guid mediaId,
         long expectedMediaAggregateRevision,
