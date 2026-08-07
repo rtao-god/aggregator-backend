@@ -32,7 +32,7 @@ public sealed class VisibilitySafetyRecoveryTests
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Fact]
-    public async Task PendingBlockSurvivesRestartAndExactReplayDoesNotRematerialize()
+    public async Task PendingBlockSurvivesRestartAndDigestConflictReblocksAfterExactReplay()
     {
         await using var database = await QueryPostgresTestDatabase.CreateAsync();
         await database.ApplyAllQueryMigrationsAsync();
@@ -127,20 +127,6 @@ public sealed class VisibilitySafetyRecoveryTests
             Assert.Equal(MaterializedPublicReadRevisionId, replay.PublicReadRevision.Id);
             Assert.Equal(MaterializedSafetyOverlayId, replay.PublicReadRevision.SafetyOverlayId);
 
-            var conflict = await Assert.ThrowsAsync<QueryProjectionException>(() =>
-                replayStore.ApplyAsync(
-                    suppression,
-                    inbox with
-                    {
-                        PayloadDigest =
-                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                    },
-                    CancellationToken.None));
-
-            Assert.Equal("Query.VisibilitySafety", conflict.Owner);
-            Assert.Equal(409, conflict.StatusCode);
-            Assert.Contains("digest", conflict.Message, StringComparison.OrdinalIgnoreCase);
-
             var publicStore = new SafetyAwarePublicQueryStore(
                 new NpgsqlPublicQueryStore(replayDataSource),
                 replayDataSource,
@@ -156,9 +142,41 @@ public sealed class VisibilitySafetyRecoveryTests
                     CancellationToken.None));
             Assert.Equal(MaterializedPublicReadRevisionId, finalPage.Revision.Id);
             Assert.Equal(MaterializedSafetyOverlayId, finalPage.Revision.SafetyOverlayId);
+
+            var conflict = await Assert.ThrowsAsync<QueryProjectionException>(() =>
+                replayStore.ApplyAsync(
+                    suppression,
+                    inbox with
+                    {
+                        PayloadDigest =
+                            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    },
+                    CancellationToken.None));
+
+            Assert.Equal("Query.VisibilitySafety", conflict.Owner);
+            Assert.Equal("QUERY_VISIBILITY_REVISION_CONFLICT", conflict.Code);
+            Assert.Equal(409, conflict.StatusCode);
+            Assert.Contains("digest", conflict.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(1L, await CountBlockAsync(database));
+
+            var blocked = await Assert.ThrowsAsync<QueryReadException>(() =>
+                publicStore.ReadPageAsync(
+                    CatalogKey,
+                    afterListingId: null,
+                    maximumDocuments: 10,
+                    categoryKey: null,
+                    requestedLocale: "de-DE",
+                    Timestamp.AddMinutes(3),
+                    CancellationToken.None));
+            Assert.Equal("Query.VisibilitySafety", blocked.Owner);
+            Assert.Equal("QUERY_VISIBILITY_UPDATE_PENDING", blocked.Code);
+            Assert.Equal(503, blocked.StatusCode);
+            Assert.Equal(
+                VisibilityEventId,
+                Assert.IsType<Guid>(blocked.Context["sourceEventId"]));
         }
 
-        Assert.Equal(0L, await CountBlockAsync(database));
+        Assert.Equal(1L, await CountBlockAsync(database));
         Assert.Equal("completed", await ReadInboxStateAsync(database));
         Assert.Equal(
             MaterializedPublicReadRevisionId.ToString("D"),
