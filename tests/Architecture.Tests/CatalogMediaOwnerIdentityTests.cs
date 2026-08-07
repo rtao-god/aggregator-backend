@@ -66,4 +66,38 @@ public sealed class CatalogMediaOwnerIdentityTests
         Assert.DoesNotContain("NormalizeOwner", middleware, StringComparison.Ordinal);
         Assert.Contains("exception.Owner", middleware, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void CatalogMediaPublicationBindingHasOneProducerOwnedContract()
+    {
+        var repository = RepositoryModel.Load();
+        var catalogRoot = Path.Combine(repository.Root, "src", "Catalog");
+        var catalogApplicationProject = File.ReadAllText(Path.Combine(
+            catalogRoot,
+            "Catalog.Application",
+            "Catalog.Application.csproj"));
+        var listingService = File.ReadAllText(Path.Combine(
+            catalogRoot,
+            "Catalog.Application",
+            "CatalogListingService.cs"));
+        var mediaAuthority = File.ReadAllText(Path.Combine(
+            catalogRoot,
+            "Catalog.Media.Application",
+            "CatalogMediaPublicationBindingAuthority.cs"));
+
+        Assert.False(File.Exists(Path.Combine(
+            catalogRoot,
+            "Catalog.Application",
+            "CatalogMediaBindingPort.cs")));
+        Assert.False(File.Exists(Path.Combine(
+            catalogRoot,
+            "Catalog.Media.Infrastructure",
+            "CatalogMediaBindingAuthority.cs")));
+        Assert.Contains("../Catalog.Media.Contracts/Catalog.Media.Contracts.csproj", catalogApplicationProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("../Catalog.Media.Application/Catalog.Media.Application.csproj", catalogApplicationProject, StringComparison.Ordinal);
+        Assert.Contains("using Aggregator.Catalog.Media.Contracts;", listingService, StringComparison.Ordinal);
+        Assert.Contains("ICatalogMediaPublicationBindingAuthority", listingService, StringComparison.Ordinal);
+        Assert.Contains("using Aggregator.Catalog.Media.Contracts;", mediaAuthority, StringComparison.Ordinal);
+        Assert.Contains(": ICatalogMediaPublicationBindingAuthority", mediaAuthority, StringComparison.Ordinal);
+    }
 }
