@@ -35,7 +35,13 @@ validated product configuration artifact
 → atomic publication pointer switch + correlated outbox event
 → bounded Catalog worker lease
 → publisher-confirmed RabbitMQ delivery or explicit dead-letter state
-→ exact rollback by publication ID
+```
+
+```text
+exact rollback target publication ID
+→ reopen the exact stored artifact
+→ verify current publication contract metadata and actual SHA-256 bytes
+→ atomic rollback pointer switch + correlated outbox event
 ```
 
 ```text
@@ -82,7 +88,7 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 ## Proof
 
 - Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, suppression target/lifecycle rules, and exact media binding identity.
-- Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, and exact rollback.
+- Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, exact rollback, exact rollback-artifact verification, and pointer isolation when verification fails.
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
 - Catalog media domain/application/infrastructure tests cover immutable state transitions, exact command replay, storage verification, work leases, and producer-owned publication eligibility.
 - Catalog migration integration tests cover clean creation, partial legacy media rejection, exact outbox text storage, media ownership transfer, FK publication gating, and PostgreSQL constraints.
