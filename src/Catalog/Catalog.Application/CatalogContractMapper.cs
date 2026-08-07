@@ -532,12 +532,12 @@ internal static class CatalogContractMapper
 
     private static MediaRightsBasis ToDomain(
         CatalogMediaPublicationRightsBasisContract value) => value switch
-    {
-        CatalogMediaPublicationRightsBasisContract.OwnerProvided => MediaRightsBasis.OwnerProvided,
-        CatalogMediaPublicationRightsBasisContract.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
-        CatalogMediaPublicationRightsBasisContract.PublicDomain => MediaRightsBasis.PublicDomain,
-        _ => throw UnsupportedContractEnum(nameof(CatalogMediaPublicationRightsBasisContract), value),
-    };
+        {
+            CatalogMediaPublicationRightsBasisContract.OwnerProvided => MediaRightsBasis.OwnerProvided,
+            CatalogMediaPublicationRightsBasisContract.ExplicitLicense => MediaRightsBasis.ExplicitLicense,
+            CatalogMediaPublicationRightsBasisContract.PublicDomain => MediaRightsBasis.PublicDomain,
+            _ => throw UnsupportedContractEnum(nameof(CatalogMediaPublicationRightsBasisContract), value),
+        };
 
     private static SubjectReferenceContract ToContract(SubjectReference subject) =>
         new(subject.SubjectId, subject.SubjectRevisionId, ToContract(subject.Kind));
@@ -573,7 +573,7 @@ internal static class CatalogContractMapper
         ListingAccessScope.ReadDraft => ListingAccessScopeContract.ReadDraft,
         ListingAccessScope.ProposeRevision => ListingAccessScopeContract.ProposeRevision,
         ListingAccessScope.ManageContacts => ListingAccessScopeContract.ManageContacts,
-        ListingAccessScope.ManageMedia => ListingAccessScopeContract.ManageMedia,
+        ListingAccessScope.ManageMedia => ListingAccessScope.ManageMedia,
         _ => throw UnsupportedDomainEnum(nameof(ListingAccessScope), value),
     };
 
