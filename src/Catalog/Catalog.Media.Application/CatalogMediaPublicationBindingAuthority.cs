@@ -27,7 +27,7 @@ public sealed record CatalogMediaPublicationBinding(
 /// </summary>
 public interface ICatalogMediaPublicationBindingAuthority
 {
-    Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
+    public Task<CatalogMediaPublicationBinding> RequirePublishableBindingAsync(
         string catalogKey,
         Guid mediaId,
         long expectedMediaAggregateRevision,
