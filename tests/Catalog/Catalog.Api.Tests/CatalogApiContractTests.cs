@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aggregator.Catalog.Api;
 using Aggregator.Catalog.Contracts;
+using Aggregator.Catalog.Media.Contracts;
 
 namespace Catalog.Api.Tests;
 
@@ -67,7 +68,17 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
             HttpMethod.Post,
             "/api/catalog-command/media/assets")
         {
-            Content = JsonContent.Create(new { }, options: JsonOptions),
+            Content = JsonContent.Create(
+                new RegisterCatalogMediaRequest(
+                    CatalogMediaContractIdentity.CommandApi,
+                    CatalogMediaContractIdentity.CommandApiRevision,
+                    "catalog",
+                    "image/jpeg",
+                    new string('a', 64),
+                    1,
+                    CatalogMediaRightsBasisContract.OwnerProvided,
+                    "owner upload"),
+                options: JsonOptions),
         };
         request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
         request.Headers.Add(
