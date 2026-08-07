@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using Aggregator.Catalog.Application;
+using Aggregator.Catalog.Contracts;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.Extensions.Options;
@@ -77,6 +79,11 @@ public sealed class S3CatalogPublicationArtifactStore(
         if (existing is not null)
         {
             EnsureMetadata(existing, objectKey, content.Length, sha256Digest);
+            await EnsureStoredContentAsync(
+                objectKey,
+                content.Length,
+                expectedDigestBytes,
+                cancellationToken);
             return;
         }
 
@@ -91,8 +98,9 @@ public sealed class S3CatalogPublicationArtifactStore(
             ChecksumSHA256 = Convert.ToBase64String(expectedDigestBytes),
         };
         request.Metadata["sha256"] = sha256Digest;
-        request.Metadata["contract"] = "aggregator-catalog-publication";
-        request.Metadata["contract-revision"] = "1";
+        request.Metadata["contract"] = CatalogPublicationArtifactContract.Identity;
+        request.Metadata["contract-revision"] = CatalogPublicationArtifactContract.Revision.ToString(
+            CultureInfo.InvariantCulture);
         _ = await client.PutObjectAsync(request, cancellationToken);
 
         var stored = await client.GetObjectMetadataAsync(
@@ -103,6 +111,11 @@ public sealed class S3CatalogPublicationArtifactStore(
             },
             cancellationToken);
         EnsureMetadata(stored, objectKey, content.Length, sha256Digest);
+        await EnsureStoredContentAsync(
+            objectKey,
+            content.Length,
+            expectedDigestBytes,
+            cancellationToken);
     }
 
     private async Task<GetObjectMetadataResponse?> TryGetMetadataAsync(
@@ -125,7 +138,34 @@ public sealed class S3CatalogPublicationArtifactStore(
         }
     }
 
-    private static void EnsureMetadata(
+    private async Task EnsureStoredContentAsync(
+        string objectKey,
+        long expectedLength,
+        byte[] expectedDigest,
+        CancellationToken cancellationToken)
+    {
+        using var response = await client.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = _options.BucketName,
+                Key = objectKey,
+            },
+            cancellationToken);
+        if (response.ContentLength != expectedLength)
+        {
+            throw new InvalidOperationException(
+                $"Read-back publication artifact '{objectKey}' length is '{response.ContentLength}', expected '{expectedLength}'.");
+        }
+
+        var storedDigest = await SHA256.HashDataAsync(response.ResponseStream, cancellationToken);
+        if (!CryptographicOperations.FixedTimeEquals(storedDigest, expectedDigest))
+        {
+            throw new InvalidOperationException(
+                $"Read-back publication artifact '{objectKey}' has a mismatched digest.");
+        }
+    }
+
+    internal static void EnsureMetadata(
         GetObjectMetadataResponse metadata,
         string objectKey,
         long expectedLength,
@@ -145,6 +185,28 @@ public sealed class S3CatalogPublicationArtifactStore(
         {
             throw new InvalidOperationException(
                 $"Stored publication artifact '{objectKey}' has a mismatched digest.");
+        }
+
+        var storedContract = metadata.Metadata["x-amz-meta-contract"];
+        if (!string.Equals(
+                storedContract,
+                CatalogPublicationArtifactContract.Identity,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Stored publication artifact '{objectKey}' has contract identity '{storedContract}', expected '{CatalogPublicationArtifactContract.Identity}'.");
+        }
+
+        var expectedContractRevision = CatalogPublicationArtifactContract.Revision.ToString(
+            CultureInfo.InvariantCulture);
+        var storedContractRevision = metadata.Metadata["x-amz-meta-contract-revision"];
+        if (!string.Equals(
+                storedContractRevision,
+                expectedContractRevision,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Stored publication artifact '{objectKey}' has contract revision '{storedContractRevision}', expected '{expectedContractRevision}'.");
         }
     }
 
