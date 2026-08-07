@@ -85,7 +85,9 @@ public sealed partial class EfCatalogRepository
         var media = await _dbContext.Media
             .AsNoTracking()
             .Where(row => row.ListingRevisionId == revisionId)
-            .OrderBy(row => row.MediaId)
+            .OrderBy(row => row.DisplayOrder)
+            .ThenBy(row => row.MediaId)
+            .ThenBy(row => row.VariantId)
             .ToArrayAsync(cancellationToken);
 
         var subjectKind = RequireEnum<SubjectKind>(revisionRow.SubjectKind, "subject kind");
@@ -111,11 +113,14 @@ public sealed partial class EfCatalogRepository
                 row.AssertionId)),
             media.Select(row => MediaReference.Create(
                 row.MediaId,
+                row.MediaAggregateRevision,
+                row.VariantId,
                 RequireAbsoluteUri(row.ObjectUri, "media object URI"),
                 row.ContentType,
                 row.ContentDigest,
                 RequireEnum<MediaRightsBasis>(row.RightsBasis, "media rights basis"),
-                row.RightsReference,
+                row.DisplayOrder,
+                row.Caption,
                 row.AssertionId)),
             assertions.Select(row => ProvenanceAssertion.Create(
                 row.AssertionId,
@@ -307,11 +312,14 @@ public sealed partial class EfCatalogRepository
             {
                 MediaId = media.MediaId,
                 ListingRevisionId = revision.Id,
+                MediaAggregateRevision = media.MediaAggregateRevision,
+                VariantId = media.VariantId,
                 ObjectUri = media.ObjectUri.AbsoluteUri,
                 ContentType = media.ContentType,
                 ContentDigest = media.ContentDigest,
                 RightsBasis = (int)media.RightsBasis,
-                RightsReference = media.RightsReference,
+                DisplayOrder = media.DisplayOrder,
+                Caption = media.Caption,
                 AssertionId = media.AssertionId,
             });
         }
