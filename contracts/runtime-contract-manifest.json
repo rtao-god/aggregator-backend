@@ -55,8 +55,13 @@
       "file": "src/Catalog/Catalog.Contracts/CatalogPublicationArtifact.cs",
       "required": [
         "public const string Identity = \"aggregator-catalog-publication\";",
-        "public const int Revision = 3;",
-        "public sealed record PublicContact(\n    Guid ContactId,"
+        "public const int Revision = 4;",
+        "public sealed record PublicContact(\n    Guid ContactId,",
+        "public sealed record PublicMedia(",
+        "long MediaAggregateRevision,",
+        "Guid VariantId,",
+        "int DisplayOrder,",
+        "string? Caption,"
       ]
     },
     {
