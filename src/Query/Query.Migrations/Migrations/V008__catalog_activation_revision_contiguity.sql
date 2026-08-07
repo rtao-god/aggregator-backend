@@ -60,16 +60,16 @@ BEGIN
     FROM projection.catalog_activation_checkpoint AS checkpoint
     CROSS JOIN LATERAL
     (
-        SELECT revision
-        FROM generate_series(1, checkpoint.last_activation_revision) AS revision
+        SELECT expected.revision
+        FROM generate_series(1, checkpoint.last_activation_revision) AS expected(revision)
         WHERE NOT EXISTS
         (
             SELECT 1
             FROM messaging.inbox_message AS inbox
             WHERE inbox.catalog_key = checkpoint.catalog_key
-              AND inbox.activation_revision = revision
+              AND inbox.activation_revision = expected.revision
         )
-        ORDER BY revision
+        ORDER BY expected.revision
         LIMIT 1
     ) AS missing_revision
     LIMIT 1;
