@@ -21,6 +21,14 @@ public interface ICatalogPublicationArtifactReader
         CancellationToken cancellationToken);
 }
 
+/// <summary>Reads the last durable Catalog activation revision accepted by Query.</summary>
+public interface IQueryActivationCheckpointReader
+{
+    public Task<long?> GetLastActivationRevisionAsync(
+        string catalogKey,
+        CancellationToken cancellationToken);
+}
+
 public sealed record QueryInboxMessage(
     Guid EventId,
     string EventType,

@@ -43,6 +43,7 @@ public static class QueryInfrastructureServiceCollectionExtensions
         services.AddSingleton<IQueryClock, SystemQueryClock>();
         services.AddSingleton<IQueryIdFactory, UuidV7QueryIdFactory>();
         services.AddSingleton<ICatalogPublicationArtifactReader, ObjectStoreCatalogPublicationArtifactReader>();
+        services.AddSingleton<IQueryActivationCheckpointReader, NpgsqlQueryActivationCheckpointReader>();
         services.AddSingleton<IQueryProjectionStore, NpgsqlQueryProjectionStore>();
         services.AddSingleton<QueryProjectionService>();
         return services;

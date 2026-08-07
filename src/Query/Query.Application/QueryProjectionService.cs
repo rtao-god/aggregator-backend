@@ -4,6 +4,7 @@ namespace Aggregator.Query.Application;
 
 public sealed class QueryProjectionService(
     ICatalogPublicationArtifactReader artifactReader,
+    IQueryActivationCheckpointReader checkpointReader,
     IQueryProjectionStore projectionStore,
     IQueryClock clock,
     IQueryIdFactory idFactory)
@@ -26,6 +27,14 @@ public sealed class QueryProjectionService(
                 "Catalog publication event payload digest is invalid.",
                 "Reject the broker message and inspect the producer outbox payload.");
         }
+
+        var lastActivationRevision = await checkpointReader.GetLastActivationRevisionAsync(
+            activation.CatalogKey,
+            cancellationToken);
+        QueryActivationRevisionGuard.EnsureCanApply(
+            activation.CatalogKey,
+            activation.ActivationRevision,
+            lastActivationRevision);
 
         var artifact = await artifactReader.ReadAsync(
             activation.ArtifactKey,
