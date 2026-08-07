@@ -1,10 +1,12 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
+using Aggregator.Catalog.Media.Application;
 
 namespace Aggregator.Catalog.Application;
 
 public sealed class CatalogListingService(
     ICatalogRepository repository,
+    ICatalogMediaBindingAuthority mediaBindingAuthority,
     ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
@@ -45,6 +47,8 @@ public sealed class CatalogListingService(
 
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(request.Content);
+        ArgumentNullException.ThrowIfNull(request.Content.Media);
         var listing = await RequireListingAsync(listingId, cancellationToken);
         var configuration = await repository.GetConfigurationAsync(
                 request.ConfigurationRevisionId,
@@ -71,11 +75,16 @@ public sealed class CatalogListingService(
         }
 
         var subject = CatalogContractMapper.ToDomain(request.Subject);
+        var mediaBindings = await ResolveMediaBindingsAsync(
+            listing.CatalogKey.Value,
+            request.Content.Media,
+            cancellationToken);
         var revisionId = idSource.CreateId();
         var content = CatalogContractMapper.ToDomain(
             subject.Kind,
             request.Content,
             configuration,
+            mediaBindings,
             idSource.CreateId);
         var canonicalContent = CatalogCanonicalJson.SerializeListingContent(content);
         var contentDigest = CatalogCanonicalJson.ComputeSha256(canonicalContent);
@@ -169,6 +178,39 @@ public sealed class CatalogListingService(
 
     public async Task<ListingResponse> GetAsync(Guid listingId, CancellationToken cancellationToken) =>
         CatalogContractMapper.ToResponse(await RequireListingAsync(listingId, cancellationToken));
+
+    private async Task<IReadOnlyDictionary<Guid, CatalogMediaPublicationBinding>> ResolveMediaBindingsAsync(
+        string catalogKey,
+        IReadOnlyList<MediaReferenceContract> references,
+        CancellationToken cancellationToken)
+    {
+        var bindings = new Dictionary<Guid, CatalogMediaPublicationBinding>();
+        foreach (var reference in references
+                     .Select(value => value ?? throw new CatalogContractException(
+                         "catalog.media_reference_null",
+                         "Listing revision content cannot contain a null media reference."))
+                     .OrderBy(value => value.DisplayOrder)
+                     .ThenBy(value => value.MediaId)
+                     .ThenBy(value => value.VariantId))
+        {
+            if (bindings.ContainsKey(reference.VariantId))
+            {
+                throw new CatalogContractException(
+                    "catalog.media_variant_duplicate",
+                    $"Media variant '{reference.VariantId}' is referenced more than once.");
+            }
+
+            var binding = await mediaBindingAuthority.RequirePublishableBindingAsync(
+                catalogKey,
+                reference.MediaId,
+                reference.ExpectedMediaAggregateRevision,
+                reference.VariantId,
+                cancellationToken);
+            bindings.Add(reference.VariantId, binding);
+        }
+
+        return bindings;
+    }
 
     private async Task<Listing> RequireListingAsync(Guid listingId, CancellationToken cancellationToken)
     {
