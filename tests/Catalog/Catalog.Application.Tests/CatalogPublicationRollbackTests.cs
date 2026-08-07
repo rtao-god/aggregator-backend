@@ -242,7 +242,7 @@ public sealed class CatalogPublicationRollbackTests
             CancellationToken cancellationToken) =>
             Unsupported();
 
-        private static void EnsureCatalog(CatalogKey catalogKey)
+        private void EnsureCatalog(CatalogKey catalogKey)
         {
             if (catalogKey != targetPublication.CatalogKey)
             {
