@@ -95,15 +95,20 @@ internal static class CatalogCanonicalJson
                 })
                 .ToArray(),
             media = content.Media
-                .OrderBy(value => value.MediaId)
+                .OrderBy(value => value.DisplayOrder)
+                .ThenBy(value => value.MediaId)
+                .ThenBy(value => value.VariantId)
                 .Select(value => new
                 {
                     value.MediaId,
+                    value.MediaAggregateRevision,
+                    value.VariantId,
                     objectUri = value.ObjectUri.AbsoluteUri,
                     value.ContentType,
                     value.ContentDigest,
                     value.RightsBasis,
-                    value.RightsReference,
+                    value.DisplayOrder,
+                    value.Caption,
                     value.AssertionId,
                 })
                 .ToArray(),
