@@ -97,8 +97,9 @@ public sealed class CatalogMigrationIntegrationTests
                 """
                 SELECT count(*)
                 FROM pg_constraint
-                WHERE conname = 'fk_catalog_listing_media_asset'
-                  AND conrelid = 'catalog.media'::regclass;
+                WHERE conname = 'fk_catalog_listing_media_variant'
+                  AND conrelid = 'catalog.media'::regclass
+                  AND contype = 'f';
                 """));
         Assert.Equal(
             1,
