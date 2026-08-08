@@ -27,6 +27,9 @@ public sealed partial class EfCatalogRepository
             throw new ArgumentException("Configuration import actor ID is required.", nameof(importedByActorId));
         }
 
+        var validationProof = CatalogProductConfigurationValidation.Create(
+            configuration,
+            canonicalDocument);
         return ExecuteInTransactionAsync(async innerCancellationToken =>
         {
             var duplicate = await _dbContext.ConfigurationRevisions
@@ -63,6 +66,30 @@ public sealed partial class EfCatalogRepository
                 (
                     {configuration.RevisionId},
                     {importedByActorId}
+                );
+                """,
+                innerCancellationToken);
+            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO catalog.configuration_validation_result
+                (
+                    configuration_revision_id,
+                    contract_identity,
+                    contract_revision,
+                    content_digest,
+                    validation_state,
+                    result_digest,
+                    validated_at_utc
+                )
+                VALUES
+                (
+                    {validationProof.ConfigurationRevisionId},
+                    {validationProof.ContractIdentity},
+                    {validationProof.ContractRevision},
+                    {validationProof.ContentDigest},
+                    {(int)validationProof.State},
+                    {validationProof.ResultDigest},
+                    {importedAtUtc}
                 );
                 """,
                 innerCancellationToken);
