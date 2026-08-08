@@ -113,8 +113,8 @@ public static class CatalogProductConfigurationSourceLoader
             $"Unexpected: {FormatInventory(unexpectedEntries)}.");
     }
 
-    private static string FormatInventory(IReadOnlyCollection<string> values) =>
-        values.Count == 0 ? "none" : string.Join(", ", values);
+    private static string FormatInventory(string[] values) =>
+        values.Length == 0 ? "none" : string.Join(", ", values);
 
     private static async Task<T> ReadRequiredAsync<T>(
         string sourceDirectory,
