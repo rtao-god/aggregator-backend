@@ -24,9 +24,12 @@ CatalogPublicationActivated
 → exact artifact identity and digest validation
 → immutable base projection
 → validate the captured Promotion overlay against new base membership
-→ new PublicReadRevision preserving the exact Promotion and safety overlays
-→ atomic current pointer switch, inbox completion, checkpoint advance, and recomposition unblock
+→ load the exact current Promotion and safety overlays
+→ build one final PublicReadRevision from the new base and captured overlays
+→ one atomic current pointer switch, inbox completion, checkpoint advance, and recomposition unblock
 ```
+
+Candidate empty overlays emitted by the base builder are not activated when a catalog already has public state. The recomposition owner supplies the exact current immutable overlays to the persistence boundary. Re-inserting the same overlay identity with identical owner state is idempotent; reusing that identity with changed state is PostgreSQL corruption and fails closed.
 
 ```text
 promotion.placement.changed
@@ -63,7 +66,7 @@ Sponsored rows preserve campaign/placement identities, slot position, disclosure
 
 Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its publication pointer and outbox. Query accepts the first Catalog activation only at revision `1`, then requires every subsequent checkpoint transition to be exactly `last + 1`. Stale lower revisions may be recorded as ignored only after a later contiguous checkpoint is already proven. A forward gap cannot switch the public pointer or advance the checkpoint.
 
-`Query.Migrations/V008__catalog_activation_revision_contiguity.sql` enforces this invariant on the durable checkpoint. Its upgrade validation rejects a database whose checkpoint claims revisions absent from the durable inbox; recovery is an explicit replay or rebuild operation, not a silent checkpoint reset.
+`Query.Migrations/V008__catalog_activation_revision_contiguity.sql` introduces the durable checkpoint invariant and rejects upgrades whose checkpoint claims revisions absent from the durable inbox. `V010__catalog_activation_upsert_contiguity.sql` preserves the same invariant for the repository's `INSERT ... ON CONFLICT DO UPDATE` checkpoint write: the trigger reads the existing owner row before validating the incoming revision. Recovery remains an explicit replay or rebuild operation, never a silent checkpoint reset.
 
 ## Failure behavior
 
@@ -80,8 +83,8 @@ Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its
 ## Proof
 
 - Domain/application tests cover immutable components, exact suppression mapping, deterministic safety digests, publication overlay recomposition, replay/conflict, validation, and component preservation.
-- Worker tests cover strict payload integrity, producer event identity, retry classification, and bounded options.
-- Real PostgreSQL tests prove initial activation revision `1`, exact contiguous checkpoint advancement, transaction rollback of a forward gap, and fail-closed migration when historical inbox coverage is incomplete.
-- Migration/schema checks cover event-scoped visibility blocks, immutable overlay items, inbox terminal states, and revision constraints.
-- Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while blocked.
-- Real PostgreSQL/RabbitMQ concurrent block events and base-publication recomposition proof remain mandatory before release completion.
+- Worker tests cover strict payload integrity, producer event identity, retry classification, bounded options, RabbitMQ redelivery, and non-retryable dead-letter behavior while the event-scoped block remains active.
+- Real PostgreSQL tests prove initial activation revision `1`, exact contiguous checkpoint advancement, transaction rollback of a forward gap, checkpoint UPSERT ordering, and fail-closed migration when historical inbox coverage is incomplete.
+- Migration/schema tests prove exact immutable overlay reinsertion is idempotent while same-ID changed state fails with a typed PostgreSQL owner error.
+- Recomposition integration proof verifies a new Catalog base preserves the exact active Promotion and safety overlays, performs one activation revision transition, updates inbox/checkpoint/pointer consistently, and removes only its own recomposition block.
+- Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while any relevant block remains.
