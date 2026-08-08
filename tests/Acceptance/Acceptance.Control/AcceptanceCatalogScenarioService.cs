@@ -29,6 +29,7 @@ public sealed class AcceptanceCatalogScenarioService(
                 CatalogContractIdentity.ProductConfigurationRevision,
                 AcceptanceCatalogConstants.ConfigurationDigest,
                 CreateConfiguration()),
+            actor,
             cancellationToken);
         _ = await configurationService.ActivateAsync(
             AcceptanceCatalogConstants.CatalogKey,
