@@ -19,6 +19,8 @@ public sealed class BerlinProductConfigurationPersistenceTests
     private const string ExpectedCatalogKey = "berlin-recording-services";
     private const string ExpectedContentDigest =
         "c9aed74233be4bd8fba9fd728677f522b27b8e27c82af21924542b5cf1aed941";
+    private const string ExpectedValidationResultDigest =
+        "393bed7bd10341cf7dff42b5514f57f48090c0e3c3c462e5da3dc4564f2a0f47";
 
     [Fact]
     public async Task AuthoredBerlinConfigurationImportsPersistsAndActivatesExactly()
@@ -66,6 +68,7 @@ public sealed class BerlinProductConfigurationPersistenceTests
                 WHERE configuration_revision_id = @revision_id;
                 """,
                 new NpgsqlParameter<Guid>("revision_id", ExpectedRevisionId)));
+        await AssertStoredValidationResultAsync(database);
 
         var duplicate = await Assert.ThrowsAsync<CatalogConflictException>(() =>
             service.ImportAsync(request, actor, CancellationToken.None));
@@ -127,6 +130,52 @@ public sealed class BerlinProductConfigurationPersistenceTests
         Assert.Equal(ExpectedContentDigest, activeConfiguration.Digest);
     }
 
+    [Fact]
+    public async Task ConfigurationRevisionWithoutValidationResultCannotCommit()
+    {
+        await using var database = await CatalogPostgresTestDatabase.CreateAsync();
+        await database.ApplyAllCatalogMigrationsAsync();
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync(
+            """
+            INSERT INTO catalog.configuration_revision
+            (
+                id,
+                site_key,
+                catalog_key,
+                content_digest,
+                canonical_document,
+                created_at_utc,
+                imported_at_utc
+            )
+            VALUES
+            (
+                '019fe000-0000-7000-8000-000000000099',
+                'unproven-site',
+                'unproven-catalog',
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                decode('7b7d', 'hex'),
+                @timestamp,
+                @timestamp
+            );
+            """,
+            CatalogPostgresTestDatabase.UtcParameter("timestamp", ImportedAtUtc)));
+
+        Assert.Equal("P7113", exception.SqlState);
+        Assert.Contains(
+            "no matching owner validation result",
+            exception.MessageText,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            0L,
+            await database.ScalarAsync<long>(
+                """
+                SELECT count(*)
+                FROM catalog.configuration_revision
+                WHERE id = '019fe000-0000-7000-8000-000000000099';
+                """));
+    }
+
     private static async Task AssertStoredArtifactAsync(
         CatalogPostgresTestDatabase database,
         ImportProductConfigurationRequest request)
@@ -159,6 +208,40 @@ public sealed class BerlinProductConfigurationPersistenceTests
             .ToLowerInvariant();
         Assert.Equal(ExpectedContentDigest, storedDocumentDigest);
         Assert.Equal(ImportedAtUtc, reader.GetFieldValue<DateTimeOffset>(4));
+        Assert.False(await reader.ReadAsync());
+    }
+
+    private static async Task AssertStoredValidationResultAsync(
+        CatalogPostgresTestDatabase database)
+    {
+        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                contract_identity,
+                contract_revision,
+                content_digest,
+                validation_state,
+                result_digest,
+                validated_at_utc
+            FROM catalog.configuration_validation_result
+            WHERE configuration_revision_id = @revision_id;
+            """;
+        command.Parameters.Add(
+            new NpgsqlParameter<Guid>("revision_id", ExpectedRevisionId));
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(
+            CatalogProductConfigurationValidationContract.Identity,
+            reader.GetString(0));
+        Assert.Equal(
+            CatalogProductConfigurationValidationContract.Revision,
+            reader.GetInt32(1));
+        Assert.Equal(ExpectedContentDigest, reader.GetString(2));
+        Assert.Equal((short)ProductConfigurationValidationState.Validated, reader.GetInt16(3));
+        Assert.Equal(ExpectedValidationResultDigest, reader.GetString(4));
+        Assert.Equal(ImportedAtUtc, reader.GetFieldValue<DateTimeOffset>(5));
         Assert.False(await reader.ReadAsync());
     }
 
