@@ -16,7 +16,8 @@ public sealed class CatalogProductConfigurationArtifactBuilderTests
     public void CompleteAuthoredConfigurationProducesExactImportArtifact()
     {
         var artifact = CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
-            CreateConfiguration(["recording-studio"]));
+            CreateConfiguration(["recording-studio"]),
+            ExpectedDigest);
 
         Assert.Equal(CatalogContractIdentity.ProductConfiguration, artifact.ContractIdentity);
         Assert.Equal(CatalogContractIdentity.ProductConfigurationRevision, artifact.ContractRevision);
@@ -29,11 +30,38 @@ public sealed class CatalogProductConfigurationArtifactBuilderTests
     {
         var exception = Assert.Throws<ArgumentException>(() =>
             CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
-                CreateConfiguration(["unknown-category"])));
+                CreateConfiguration(["unknown-category"]),
+                ExpectedDigest));
 
         Assert.Equal("attributes", exception.ParamName);
         Assert.Contains("unknown-category", exception.Message, StringComparison.Ordinal);
         Assert.Contains("hourly-price", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuthoredDigestMismatchFailsBeforeImportArtifactIsReturned()
+    {
+        var declaredDigest = new string('0', 64);
+
+        var exception = Assert.Throws<CatalogContractException>(() =>
+            CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
+                CreateConfiguration(["recording-studio"]),
+                declaredDigest));
+
+        Assert.Equal("catalog.product_configuration_digest_mismatch", exception.Code);
+        Assert.Contains(declaredDigest, exception.Message, StringComparison.Ordinal);
+        Assert.Contains(ExpectedDigest, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuthoredDigestMustUseCanonicalLowercaseSha256Encoding()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
+                CreateConfiguration(["recording-studio"]),
+                ExpectedDigest.ToUpperInvariant()));
+
+        Assert.Equal("expectedContentDigest", exception.ParamName);
     }
 
     private static ProductConfigurationContract CreateConfiguration(

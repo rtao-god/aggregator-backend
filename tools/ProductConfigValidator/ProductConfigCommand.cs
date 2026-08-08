@@ -113,7 +113,8 @@ internal static class ProductConfigCommand
                 site,
                 catalog,
                 categories,
-                attributes));
+                attributes),
+            manifest.ExpectedContentDigest);
     }
 
     private static async Task<T> ReadRequiredAsync<T>(
@@ -158,7 +159,8 @@ internal static class ProductConfigCommand
         string ContractIdentity,
         int ContractRevision,
         Guid RevisionId,
-        DateTimeOffset CreatedAtUtc)
+        DateTimeOffset CreatedAtUtc,
+        string ExpectedContentDigest)
     {
         public void Validate()
         {
@@ -177,6 +179,8 @@ internal static class ProductConfigCommand
             {
                 throw new InvalidDataException("Product configuration creation timestamp must be UTC.");
             }
+
+            ArgumentException.ThrowIfNullOrWhiteSpace(ExpectedContentDigest);
         }
     }
 }
