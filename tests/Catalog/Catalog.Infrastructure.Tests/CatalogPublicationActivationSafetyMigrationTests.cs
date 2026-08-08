@@ -249,8 +249,7 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
                 validation_contract_revision,
                 validation_state,
                 validation_result_digest,
-                validated_at_utc,
-                validated_by_actor_id
+                validated_at_utc
             )
             VALUES
             (
@@ -265,8 +264,7 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
                 1,
                 1,
                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                @timestamp,
-                @actor_id
+                @timestamp
             );
 
             INSERT INTO catalog.listing
