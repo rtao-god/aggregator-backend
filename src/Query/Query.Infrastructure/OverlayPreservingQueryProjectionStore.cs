@@ -7,8 +7,8 @@ namespace Aggregator.Query.Infrastructure;
 
 /// <summary>
 /// Preserves the current promotion and visibility-safety components when Catalog activates a new
-/// base projection. A durable block covers the inner base switch until the final composite revision
-/// is committed, and a catalog advisory lock serializes every Query projection writer.
+/// base projection. A durable block covers the base switch until the exact composite revision is
+/// committed, and a catalog advisory lock serializes every Query projection writer.
 /// </summary>
 public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjectionStore
 {
@@ -45,8 +45,14 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
             activation,
             inboxMessage,
             cancellationToken);
+        var effectiveActivation = recomposition is null
+            ? activation
+            : await CreateOverlayPreservingActivationAsync(
+                activation,
+                recomposition,
+                cancellationToken);
         var innerResult = await _inner.ActivateAsync(
-            activation,
+            effectiveActivation,
             inboxMessage,
             cancellationToken);
         if (recomposition is null)
@@ -63,11 +69,49 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
         }
 
         return await FinalizeAsync(
-            activation,
+            effectiveActivation,
             inboxMessage,
             recomposition,
             innerResult,
             cancellationToken);
+    }
+
+    private async Task<QueryProjectionActivation> CreateOverlayPreservingActivationAsync(
+        QueryProjectionActivation activation,
+        PublicationRecompositionState state,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+        var promotionOverlay = await ReadOverlayAsync(
+            connection,
+            transaction,
+            state.PromotionOverlayId,
+            QueryOverlayKind.Promotion,
+            activation.BaseProjection.CatalogKey,
+            cancellationToken);
+        var safetyOverlay = await ReadOverlayAsync(
+            connection,
+            transaction,
+            state.SafetyOverlayId,
+            QueryOverlayKind.VisibilitySafety,
+            activation.BaseProjection.CatalogKey,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var finalRevision = CatalogPublicationOverlayRecomposer.Compose(
+            activation.BaseProjection,
+            promotionOverlay,
+            safetyOverlay,
+            _idFactory.Create(),
+            RequireUtc(_clock.GetUtcNow()));
+        return new QueryProjectionActivation(
+            activation.BaseProjection,
+            promotionOverlay,
+            safetyOverlay,
+            finalRevision);
     }
 
     private async Task<PublicationRecompositionState?> PrepareAsync(
@@ -217,76 +261,18 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
                 "Keep the catalog blocked and replay the Catalog publication projection.");
         if (current.PublicReadRevisionId != innerResult.PublicReadRevision.Id ||
             current.BaseProjectionId != innerResult.PublicReadRevision.BaseProjectionId ||
-            current.SourcePublicationId != innerResult.PublicReadRevision.SourcePublicationId)
+            current.SourcePublicationId != innerResult.PublicReadRevision.SourcePublicationId ||
+            current.ActivationRevision != inboxMessage.ActivationRevision ||
+            innerResult.PublicReadRevision.PromotionOverlayId != state.PromotionOverlayId ||
+            innerResult.PublicReadRevision.SafetyOverlayId != state.SafetyOverlayId)
         {
             throw Failure(
-                "QUERY_PUBLICATION_CURRENT_BASE_MISMATCH",
+                "QUERY_PUBLICATION_CURRENT_COMPOSITE_MISMATCH",
                 409,
-                $"Catalog '{activation.BaseProjection.CatalogKey}' current base does not match publication event '{inboxMessage.EventId}'.",
-                "Keep the catalog blocked and inspect Query publication ordering.");
+                $"Catalog '{activation.BaseProjection.CatalogKey}' current composite does not match publication event '{inboxMessage.EventId}'.",
+                "Keep the catalog blocked and inspect Query publication ordering and overlay preservation.");
         }
 
-        var baseProjection = await ReadBaseProjectionComponentAsync(
-            connection,
-            transaction,
-            current.BaseProjectionId,
-            activation.BaseProjection.CatalogKey,
-            cancellationToken);
-        var promotionOverlay = await ReadOverlayAsync(
-            connection,
-            transaction,
-            state.PromotionOverlayId,
-            QueryOverlayKind.Promotion,
-            activation.BaseProjection.CatalogKey,
-            cancellationToken);
-        var safetyOverlay = await ReadOverlayAsync(
-            connection,
-            transaction,
-            state.SafetyOverlayId,
-            QueryOverlayKind.VisibilitySafety,
-            activation.BaseProjection.CatalogKey,
-            cancellationToken);
-        await EnsurePromotionOverlayCompatibleAsync(
-            connection,
-            transaction,
-            promotionOverlay.Id,
-            baseProjection.Id,
-            cancellationToken);
-
-        var builtAtUtc = RequireUtc(_clock.GetUtcNow());
-        var finalRevision = CatalogPublicationOverlayRecomposer.Compose(
-            baseProjection,
-            promotionOverlay,
-            safetyOverlay,
-            _idFactory.Create(),
-            builtAtUtc);
-        await InsertPublicReadRevisionAsync(
-            connection,
-            transaction,
-            finalRevision,
-            cancellationToken);
-        await UpdateCurrentPointerAsync(
-            connection,
-            transaction,
-            finalRevision,
-            checked(Math.Max(
-                current.ActivationRevision,
-                state.PreviousPointerActivationRevision) + 1),
-            builtAtUtc,
-            cancellationToken);
-        await UpdatePublicationCheckpointAsync(
-            connection,
-            transaction,
-            finalRevision,
-            inboxMessage,
-            builtAtUtc,
-            cancellationToken);
-        await UpdatePublicationInboxAsync(
-            connection,
-            transaction,
-            finalRevision.Id,
-            inboxMessage.EventId,
-            cancellationToken);
         await DeletePublicationBlockAsync(
             connection,
             transaction,
@@ -298,9 +284,7 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
             inboxMessage.EventId,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new QueryProjectionActivationResult(
-            finalRevision,
-            innerResult.Disposition);
+        return innerResult;
     }
 
     private async Task RemovePendingRecompositionAsync(
