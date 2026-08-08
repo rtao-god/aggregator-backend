@@ -1,12 +1,9 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Aggregator.Catalog.Application;
-using Aggregator.Catalog.Contracts;
 
 internal static class ProductConfigCommand
 {
     private const string Owner = "Catalog.ProductConfiguration";
-    private static readonly JsonSerializerOptions InputOptions = CreateInputOptions();
     private static readonly JsonSerializerOptions OutputOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -27,7 +24,9 @@ internal static class ProductConfigCommand
         var sourceDirectory = Path.GetFullPath(args[1]);
         try
         {
-            var artifact = await LoadAndValidateAsync(sourceDirectory, cancellationToken);
+            var artifact = await CatalogProductConfigurationSourceLoader.LoadAsync(
+                sourceDirectory,
+                cancellationToken);
             Console.WriteLine(JsonSerializer.Serialize(
                 new
                 {
@@ -57,130 +56,6 @@ internal static class ProductConfigCommand
                 $"actual={exception.GetType().Name}: {exception.Message} " +
                 "requiredAction=Correct the authored product configuration and rerun the exact validator command.");
             return 1;
-        }
-    }
-
-    private static async Task<ImportProductConfigurationRequest> LoadAndValidateAsync(
-        string sourceDirectory,
-        CancellationToken cancellationToken)
-    {
-        if (!Directory.Exists(sourceDirectory))
-        {
-            throw new DirectoryNotFoundException(
-                $"Product configuration directory '{sourceDirectory}' does not exist.");
-        }
-
-        var manifest = await ReadRequiredAsync<ProductConfigurationSourceManifest>(
-            sourceDirectory,
-            "manifest.json",
-            cancellationToken);
-        manifest.Validate();
-        var site = await ReadRequiredAsync<SiteDefinitionContract>(
-            sourceDirectory,
-            "site.json",
-            cancellationToken);
-        var catalog = await ReadRequiredAsync<CatalogDefinitionContract>(
-            sourceDirectory,
-            "catalog.json",
-            cancellationToken);
-        var categories = await ReadRequiredAsync<CategoryDefinitionContract[]>(
-            sourceDirectory,
-            "taxonomy.json",
-            cancellationToken);
-        var attributes = await ReadRequiredAsync<AttributeDefinitionContract[]>(
-            sourceDirectory,
-            "attributes.json",
-            cancellationToken);
-
-        var directoryName = new DirectoryInfo(sourceDirectory).Name;
-        if (!string.Equals(site.Key, directoryName, StringComparison.Ordinal))
-        {
-            throw new InvalidDataException(
-                $"Product configuration directory '{directoryName}' does not match site key '{site.Key}'.");
-        }
-
-        if (!string.Equals(manifest.ContractIdentity, CatalogContractIdentity.ProductConfiguration, StringComparison.Ordinal) ||
-            manifest.ContractRevision != CatalogContractIdentity.ProductConfigurationRevision)
-        {
-            throw new InvalidDataException(
-                $"Manifest contract '{manifest.ContractIdentity}@{manifest.ContractRevision}' is not supported by Catalog.");
-        }
-
-        return CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
-            new ProductConfigurationContract(
-                manifest.RevisionId,
-                manifest.CreatedAtUtc,
-                site,
-                catalog,
-                categories,
-                attributes),
-            manifest.ExpectedContentDigest);
-    }
-
-    private static async Task<T> ReadRequiredAsync<T>(
-        string sourceDirectory,
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var path = Path.Combine(sourceDirectory, fileName);
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException(
-                $"Required product configuration file '{fileName}' does not exist.",
-                path);
-        }
-
-        await using var stream = File.OpenRead(path);
-        return await JsonSerializer.DeserializeAsync<T>(
-                stream,
-                InputOptions,
-                cancellationToken)
-            ?? throw new InvalidDataException(
-                $"Product configuration file '{fileName}' contains a null document.");
-    }
-
-    private static JsonSerializerOptions CreateInputOptions()
-    {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
-        {
-            AllowTrailingCommas = false,
-            PropertyNameCaseInsensitive = false,
-            ReadCommentHandling = JsonCommentHandling.Disallow,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        };
-        options.Converters.Add(
-            new JsonStringEnumConverter(
-                JsonNamingPolicy.CamelCase,
-                allowIntegerValues: false));
-        return options;
-    }
-
-    private sealed record ProductConfigurationSourceManifest(
-        string ContractIdentity,
-        int ContractRevision,
-        Guid RevisionId,
-        DateTimeOffset CreatedAtUtc,
-        string ExpectedContentDigest)
-    {
-        public void Validate()
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(ContractIdentity);
-            if (ContractRevision <= 0)
-            {
-                throw new InvalidDataException("Product configuration contract revision must be positive.");
-            }
-
-            if (RevisionId == Guid.Empty)
-            {
-                throw new InvalidDataException("Product configuration revision ID is required.");
-            }
-
-            if (CreatedAtUtc.Offset != TimeSpan.Zero)
-            {
-                throw new InvalidDataException("Product configuration creation timestamp must be UTC.");
-            }
-
-            ArgumentException.ThrowIfNullOrWhiteSpace(ExpectedContentDigest);
         }
     }
 }
