@@ -1,0 +1,438 @@
+[
+  {
+    "key": "hourly-price",
+    "valueKind": "decimal",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Stundenpreis",
+      "en-GB": "Hourly price"
+    },
+    "minimum": 0,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": true
+  },
+  {
+    "key": "minimum-booking-duration",
+    "valueKind": "durationMinutes",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Mindestbuchungsdauer",
+      "en-GB": "Minimum booking duration"
+    },
+    "minimum": 0,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": true
+  },
+  {
+    "key": "vocal-booth",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio"
+    ],
+    "localizedNames": {
+      "de-DE": "Gesangskabine",
+      "en-GB": "Vocal booth"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "live-room",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Aufnahmeraum",
+      "en-GB": "Live room"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "live-room-area",
+    "valueKind": "decimal",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Fläche des Aufnahmeraums",
+      "en-GB": "Live room area"
+    },
+    "minimum": 0,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": true
+  },
+  {
+    "key": "drum-recording",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Schlagzeugaufnahme",
+      "en-GB": "Drum recording"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "grand-piano",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Flügel",
+      "en-GB": "Grand piano"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "analog-equipment",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Analoges Equipment",
+      "en-GB": "Analog equipment"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "engineer-included",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Toningenieur inklusive",
+      "en-GB": "Engineer included"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "mixing",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio"
+    ],
+    "localizedNames": {
+      "de-DE": "Mixing",
+      "en-GB": "Mixing"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "mastering",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "music-producer",
+      "mixing-engineer",
+      "mastering-studio"
+    ],
+    "localizedNames": {
+      "de-DE": "Mastering",
+      "en-GB": "Mastering"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "podcast",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer"
+    ],
+    "localizedNames": {
+      "de-DE": "Podcast-Produktion",
+      "en-GB": "Podcast production"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "voice-over-adr",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "recording-engineer"
+    ],
+    "localizedNames": {
+      "de-DE": "Voice-over und ADR",
+      "en-GB": "Voice-over and ADR"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "languages",
+    "valueKind": "textSet",
+    "cardinality": "multiple",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Sprachen",
+      "en-GB": "Languages"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "parking",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Parkplatz",
+      "en-GB": "Parking"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "public-transport",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "ÖPNV-Anbindung",
+      "en-GB": "Public transport"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "whatsapp",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "WhatsApp-Kontakt",
+      "en-GB": "WhatsApp contact"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  },
+  {
+    "key": "owner-verified",
+    "valueKind": "boolean",
+    "cardinality": "single",
+    "requirement": "optional",
+    "categories": [
+      "recording-studio",
+      "vocal-recording-studio",
+      "band-recording-studio",
+      "drum-recording-studio",
+      "podcast-studio",
+      "voice-over-adr-studio",
+      "music-producer",
+      "recording-engineer",
+      "mixing-engineer",
+      "mastering-studio",
+      "rehearsal-recording-space"
+    ],
+    "localizedNames": {
+      "de-DE": "Vom Inhaber bestätigt",
+      "en-GB": "Owner verified"
+    },
+    "minimum": null,
+    "maximum": null,
+    "allowedValues": [],
+    "isFilterable": true,
+    "isSortable": false
+  }
+]
