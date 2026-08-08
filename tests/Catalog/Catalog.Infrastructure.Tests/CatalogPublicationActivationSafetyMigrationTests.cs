@@ -244,7 +244,13 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
                 content_digest,
                 canonical_document,
                 created_at_utc,
-                imported_at_utc
+                imported_at_utc,
+                validation_contract_identity,
+                validation_contract_revision,
+                validation_state,
+                validation_result_digest,
+                validated_at_utc,
+                validated_by_actor_id
             )
             VALUES
             (
@@ -254,7 +260,13 @@ public sealed class CatalogPublicationActivationSafetyMigrationTests
                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
                 decode('7b7d', 'hex'),
                 @timestamp,
-                @timestamp
+                @timestamp,
+                'aggregator-catalog-product-configuration-validation',
+                1,
+                1,
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                @timestamp,
+                @actor_id
             );
 
             INSERT INTO catalog.listing
