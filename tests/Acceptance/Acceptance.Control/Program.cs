@@ -60,6 +60,7 @@ app.MapPost("/acceptance/catalog/seed", async (
             CatalogContractIdentity.ProductConfigurationRevision,
             AcceptanceIds.ConfigurationDigest,
             CreateConfiguration()),
+        actor,
         cancellationToken);
     _ = await configurationService.ActivateAsync(
         AcceptanceIds.CatalogKey,
