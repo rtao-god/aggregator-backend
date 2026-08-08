@@ -1,0 +1,57 @@
+name: geography-owner-migration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/geography-owner-migration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Replace product-specific geography state names
+        shell: python
+        run: |
+          from pathlib import Path
+
+          roots = ["src", "tests", ".codex", "docs", "contracts", "tools", ".tools"]
+          extensions = {".cs", ".md", ".json", ".py", ".sql", ".yml", ".yaml"}
+          replacements = {
+              "BerlinCore": "PrimaryMarket",
+              "BerlinNearby": "NearbyMarket",
+          }
+          changed = []
+          for root_name in roots:
+              root = Path(root_name)
+              if not root.exists():
+                  continue
+              for path in root.rglob("*"):
+                  if not path.is_file() or path.suffix not in extensions:
+                      continue
+                  text = path.read_text(encoding="utf-8")
+                  updated = text
+                  for old, new in replacements.items():
+                      updated = updated.replace(old, new)
+                  if updated != text:
+                      path.write_text(updated, encoding="utf-8")
+                      changed.append(path.as_posix())
+          if not changed:
+              raise SystemExit("No product-specific geography states were found.")
+          print("\n".join(changed))
+      - name: Commit owner migration
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests .codex docs contracts tools .tools
+          git commit -m "Replace product-specific geography states"
+          git push origin HEAD:main
