@@ -1,0 +1,10 @@
+{
+  "key": "berlin-recording",
+  "defaultLocale": "de-DE",
+  "supportedLocales": [
+    "de-DE",
+    "en-GB"
+  ],
+  "currency": "EUR",
+  "timeZone": "Europe/Berlin"
+}
