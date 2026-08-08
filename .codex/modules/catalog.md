@@ -8,7 +8,7 @@ Catalog is the canonical owner of product configuration, listing identities and 
 
 - `Catalog.Domain`: owner invariants and state transitions; no framework dependencies.
 - `Catalog.Contracts`: producer-owned wire contracts, publication artifact, and integration events. Visibility events expose only public target/reason/response state and never private evidence.
-- `Catalog.Application`: use cases, deterministic serialization, explicit mapping, typed failure translation, event correlation, and canonical payload digests.
+- `Catalog.Application`: authored product-configuration source loading, strict source validation, canonical import artifacts, use cases, deterministic serialization, explicit mapping, typed failure translation, event correlation, and canonical payload digests.
 - `Catalog.Infrastructure`: EF Core/PostgreSQL persistence, suppression revision persistence, durable outbox rows, S3-compatible publication adapter, and read-only readiness.
 - `Catalog.Media.Domain`: media aggregate state and invariants.
 - `Catalog.Media.Contracts`: the sole producer-owned contract for resolving one exact publishable media asset revision and public variant.
@@ -26,9 +26,12 @@ Catalog geography states describe reusable product meaning: `PrimaryMarket`, `Ne
 ## Active flows
 
 ```text
-validated product configuration artifact
+Git-authored product-config directory
+→ Catalog.Application strict source loader
+→ canonical import contract + locked SHA-256 digest
 → explicit import
-→ explicit activation
+→ immutable PostgreSQL configuration revision
+→ explicit optimistic activation
 → listing identity
 → immutable listing revision
 → editorial approval
@@ -38,6 +41,8 @@ validated product configuration artifact
 → bounded Catalog worker lease
 → publisher-confirmed RabbitMQ delivery or explicit dead-letter state
 ```
+
+The validator CLI is only a composition root over `CatalogProductConfigurationSourceLoader`; it does not define a parallel manifest, parser, semantic validator, or digest formula. Runtime startup never reads or imports product-config files.
 
 ```text
 exact rollback target publication ID
@@ -91,6 +96,7 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 
 - Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, suppression target/lifecycle rules, and exact media binding identity.
 - Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, exact rollback, exact rollback-artifact verification, and pointer isolation when verification fails.
+- Product-configuration tests prove strict authored-source parsing, locked canonical digest, semantic Catalog validation, real PostgreSQL canonical-byte persistence, immutable duplicate rejection, explicit activation, stale pointer rejection, and exact active revision rehydration.
 - Catalog geography contract tests prove generic wire tokens, rejection of product-specific/numeric tokens, and stable numeric storage identities.
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
 - Catalog media domain/application/infrastructure tests cover immutable state transitions, exact command replay, storage verification, work leases, and producer-owned publication eligibility.
