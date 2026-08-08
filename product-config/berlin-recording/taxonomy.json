@@ -1,0 +1,101 @@
+[
+  {
+    "key": "recording-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Tonstudio",
+      "en-GB": "Recording studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "vocal-recording-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Vocal-Tonstudio",
+      "en-GB": "Vocal recording studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "band-recording-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Band-Tonstudio",
+      "en-GB": "Band recording studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "drum-recording-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Schlagzeug-Tonstudio",
+      "en-GB": "Drum recording studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "podcast-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Podcast-Studio",
+      "en-GB": "Podcast studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "voice-over-adr-studio",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Voice-over- und ADR-Studio",
+      "en-GB": "Voice-over and ADR studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "music-producer",
+    "subjectKinds": ["provider"],
+    "localizedNames": {
+      "de-DE": "Musikproduzent",
+      "en-GB": "Music producer"
+    },
+    "isActive": true
+  },
+  {
+    "key": "recording-engineer",
+    "subjectKinds": ["provider"],
+    "localizedNames": {
+      "de-DE": "Toningenieur",
+      "en-GB": "Recording engineer"
+    },
+    "isActive": true
+  },
+  {
+    "key": "mixing-engineer",
+    "subjectKinds": ["provider"],
+    "localizedNames": {
+      "de-DE": "Mixing Engineer",
+      "en-GB": "Mixing engineer"
+    },
+    "isActive": true
+  },
+  {
+    "key": "mastering-studio",
+    "subjectKinds": ["place", "provider"],
+    "localizedNames": {
+      "de-DE": "Mastering-Studio",
+      "en-GB": "Mastering studio"
+    },
+    "isActive": true
+  },
+  {
+    "key": "rehearsal-recording-space",
+    "subjectKinds": ["place"],
+    "localizedNames": {
+      "de-DE": "Proberaum mit Aufnahme",
+      "en-GB": "Rehearsal recording space"
+    },
+    "isActive": true
+  }
+]
