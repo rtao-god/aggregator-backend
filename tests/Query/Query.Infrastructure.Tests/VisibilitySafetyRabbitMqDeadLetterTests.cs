@@ -35,8 +35,6 @@ public sealed class VisibilitySafetyRabbitMqDeadLetterTests
         Guid.Parse("01990400-0000-7000-8000-000000000010");
     private static readonly Guid SuppressionId =
         Guid.Parse("01990400-0000-7000-8000-000000000011");
-    private static readonly Guid ListingId =
-        Guid.Parse("01990400-0000-7000-8000-000000000012");
     private static readonly Guid MissingContactId =
         Guid.Parse("01990400-0000-7000-8000-000000000013");
     private static readonly JsonSerializerOptions SerializerOptions =
@@ -208,7 +206,7 @@ public sealed class VisibilitySafetyRabbitMqDeadLetterTests
             CatalogKey,
             new PublicVisibilitySuppressionTargetContract(
                 PublicVisibilitySuppressionTargetKindContract.Contact,
-                ListingId,
+                ListingId: null,
                 MissingContactId.ToString("D")),
             "legal-removal",
             PublicVisibilitySuppressionResponseModeContract.OmitChildElement,
