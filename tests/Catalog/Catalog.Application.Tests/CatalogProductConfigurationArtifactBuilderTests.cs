@@ -32,7 +32,8 @@ public sealed class CatalogProductConfigurationArtifactBuilderTests
                 CreateConfiguration(["unknown-category"])));
 
         Assert.Equal("attributes", exception.ParamName);
-        Assert.Contains("unknown category", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unknown-category", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("hourly-price", exception.Message, StringComparison.Ordinal);
     }
 
     private static ProductConfigurationContract CreateConfiguration(
