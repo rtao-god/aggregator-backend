@@ -299,7 +299,7 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
                     CategoryKeys: ["recording-studio"],
                     Attributes: [],
                     new PublicGeography(
-                        GeographyStateContract.BerlinCore,
+                        GeographyStateContract.PrimaryMarket,
                         Latitude: 52.520008m,
                         Longitude: 13.404954m,
                         DistrictKey: "mitte",

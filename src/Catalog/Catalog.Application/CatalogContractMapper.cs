@@ -511,8 +511,8 @@ internal static class CatalogContractMapper
 
     private static GeographyState ToDomain(GeographyStateContract value) => value switch
     {
-        GeographyStateContract.BerlinCore => GeographyState.BerlinCore,
-        GeographyStateContract.BerlinNearby => GeographyState.BerlinNearby,
+        GeographyStateContract.PrimaryMarket => GeographyState.PrimaryMarket,
+        GeographyStateContract.NearbyMarket => GeographyState.NearbyMarket,
         GeographyStateContract.RemoteOnly => GeographyState.RemoteOnly,
         GeographyStateContract.OutsideMarket => GeographyState.OutsideMarket,
         GeographyStateContract.Unresolved => GeographyState.Unresolved,

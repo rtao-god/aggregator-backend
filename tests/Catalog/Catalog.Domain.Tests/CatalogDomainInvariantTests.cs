@@ -33,7 +33,7 @@ public sealed class CatalogDomainInvariantTests
                 [CategoryAssignment.Create(CategoryKey.Create("recording-studio"), categoryAssertion.Id)],
                 [],
                 GeographyValue.Create(
-                    GeographyState.BerlinCore,
+                    GeographyState.PrimaryMarket,
                     52.52m,
                     13.40m,
                     "mitte",
@@ -152,7 +152,7 @@ public sealed class CatalogDomainInvariantTests
             [CategoryAssignment.Create(CategoryKey.Create("recording-studio"), categoryAssertion.Id)],
             [],
             GeographyValue.Create(
-                GeographyState.BerlinCore,
+                GeographyState.PrimaryMarket,
                 52.52m,
                 13.40m,
                 "mitte",

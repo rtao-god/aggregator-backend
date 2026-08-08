@@ -135,8 +135,8 @@ public static class CatalogPublicationProjectionBuilder
         var geography = new QueryGeographyDocument(
             source.Geography.State switch
             {
-                GeographyStateContract.BerlinCore => QueryGeographyState.PrimaryMarket,
-                GeographyStateContract.BerlinNearby => QueryGeographyState.NearbyMarket,
+                GeographyStateContract.PrimaryMarket => QueryGeographyState.PrimaryMarket,
+                GeographyStateContract.NearbyMarket => QueryGeographyState.NearbyMarket,
                 GeographyStateContract.RemoteOnly => QueryGeographyState.RemoteOnly,
                 GeographyStateContract.OutsideMarket => QueryGeographyState.OutsideMarket,
                 _ => throw Failure(

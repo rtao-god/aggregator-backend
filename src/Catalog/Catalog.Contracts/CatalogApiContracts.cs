@@ -83,8 +83,8 @@ public enum ContactKindContract
 
 public enum GeographyStateContract
 {
-    BerlinCore = 1,
-    BerlinNearby = 2,
+    PrimaryMarket = 1,
+    NearbyMarket = 2,
     RemoteOnly = 3,
     OutsideMarket = 4,
     Unresolved = 5,

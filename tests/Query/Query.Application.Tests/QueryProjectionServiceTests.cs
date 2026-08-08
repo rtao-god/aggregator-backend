@@ -197,7 +197,7 @@ public sealed class QueryProjectionServiceTests
                 [new PublicLocalizedText("de-DE", FieldValueStateContract.Observed, "Aufnahmestudio", null, Guid.CreateVersion7())],
                 ["recording-studio"],
                 [],
-                new PublicGeography(GeographyStateContract.BerlinCore, 52.5m, 13.4m, "mitte", Guid.CreateVersion7()),
+                new PublicGeography(GeographyStateContract.PrimaryMarket, 52.5m, 13.4m, "mitte", Guid.CreateVersion7()),
                 [],
                 [],
                 [],

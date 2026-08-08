@@ -11,8 +11,8 @@ public sealed class ProductGeographyIsolationTests
         var violations = new List<string>();
         var forbiddenTokens = new[]
         {
-            "BerlinCore",
-            "BerlinNearby",
+            "PrimaryMarket",
+            "NearbyMarket",
         };
         var roots = new[]
         {

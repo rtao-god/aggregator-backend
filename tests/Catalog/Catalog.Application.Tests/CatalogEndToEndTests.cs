@@ -240,7 +240,7 @@ public sealed class CatalogEndToEndTests
                     MissingReason: null),
             ],
             new GeographyValueContract(
-                GeographyStateContract.BerlinCore,
+                GeographyStateContract.PrimaryMarket,
                 Latitude: 52.520008m,
                 Longitude: 13.404954m,
                 DistrictKey: "mitte",
