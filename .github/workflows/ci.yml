@@ -67,6 +67,14 @@ jobs:
         timeout-minutes: 1
         run: python3 .tools/complete-backend.py --check
 
+      - name: Product configuration
+        timeout-minutes: 1
+        run: >-
+          dotnet run
+          --project tools/ProductConfigValidator/ProductConfigValidator.csproj
+          --configuration Release
+          -- validate product-config/berlin-recording
+
       - name: Runtime contract manifest
         timeout-minutes: 1
         run: python3 tools/verify-contracts.py
