@@ -4,6 +4,7 @@ using Aggregator.Catalog.Contracts;
 using Aggregator.Catalog.Domain;
 using Aggregator.Catalog.Infrastructure;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Catalog.Infrastructure.Tests;
 
@@ -159,7 +160,7 @@ public sealed class BerlinProductConfigurationPersistenceTests
                 @timestamp
             );
             """,
-            CatalogPostgresTestDatabase.UtcParameter("timestamp", ImportedAtUtc)));
+            UtcParameter("timestamp", ImportedAtUtc)));
 
         Assert.Equal("P7113", exception.SqlState);
         Assert.Contains(
@@ -244,6 +245,14 @@ public sealed class BerlinProductConfigurationPersistenceTests
         Assert.Equal(ImportedAtUtc, reader.GetFieldValue<DateTimeOffset>(5));
         Assert.False(await reader.ReadAsync());
     }
+
+    private static NpgsqlParameter UtcParameter(
+        string name,
+        DateTimeOffset value) =>
+        new(name, NpgsqlDbType.TimestampTz)
+        {
+            Value = value,
+        };
 
     private static string FindRepositoryRoot()
     {
