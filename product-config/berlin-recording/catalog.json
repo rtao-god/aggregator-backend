@@ -1,0 +1,11 @@
+{
+  "key": "berlin-recording-services",
+  "siteKey": "berlin-recording",
+  "marketAreaKey": "berlin-core-and-nearby",
+  "currency": "EUR",
+  "timeZone": "Europe/Berlin",
+  "allowedListingKinds": [
+    "place",
+    "provider"
+  ]
+}
