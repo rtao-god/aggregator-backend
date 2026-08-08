@@ -19,7 +19,10 @@ public sealed class CatalogConfigurationController(CatalogConfigurationService s
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var response = await service.ImportAsync(request, cancellationToken);
+        var response = await service.ImportAsync(
+            request,
+            CatalogActorAccessor.Require(HttpContext),
+            cancellationToken);
         return StatusCode(StatusCodes.Status201Created, response);
     }
 

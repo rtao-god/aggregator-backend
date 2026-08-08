@@ -10,9 +10,11 @@ public sealed class CatalogConfigurationService(
 {
     public async Task<ProductConfigurationRevisionResponse> ImportAsync(
         ImportProductConfigurationRequest request,
+        CatalogActor actor,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(actor);
         EnsureConfigurationContract(request.ContractIdentity, request.ContractRevision);
 
         var canonicalDocument = CatalogCanonicalJson.SerializeConfiguration(request.Configuration);
@@ -32,6 +34,7 @@ public sealed class CatalogConfigurationService(
         await repository.AddConfigurationAsync(
             configuration,
             canonicalDocument,
+            actor.Id,
             importedAtUtc,
             cancellationToken);
 

@@ -41,6 +41,7 @@ public sealed class CatalogEndToEndTests
                 CatalogContractIdentity.ProductConfigurationRevision,
                 ConfigurationDigest,
                 CreateConfiguration()),
+            actor,
             CancellationToken.None);
         Assert.Equal(ConfigurationDigest, imported.ContentDigest);
         Assert.False(imported.IsActive);
@@ -362,11 +363,13 @@ public sealed class CatalogEndToEndTests
         public Task AddConfigurationAsync(
             ProductConfiguration configuration,
             byte[] canonicalDocument,
+            Guid importedByActorId,
             DateTimeOffset importedAtUtc,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Assert.NotEmpty(canonicalDocument);
+            Assert.Equal(ActorId, importedByActorId);
             Assert.True(_configurations.TryAdd(configuration.RevisionId, configuration));
             return Task.CompletedTask;
         }

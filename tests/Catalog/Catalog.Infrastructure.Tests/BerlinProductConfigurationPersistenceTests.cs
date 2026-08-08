@@ -43,8 +43,12 @@ public sealed class BerlinProductConfigurationPersistenceTests
         var service = new CatalogConfigurationService(
             repository,
             new FixedTimeProvider(ImportedAtUtc));
+        var actor = CatalogActor.Create(ActorId);
 
-        var imported = await service.ImportAsync(request, CancellationToken.None);
+        var imported = await service.ImportAsync(
+            request,
+            actor,
+            CancellationToken.None);
 
         Assert.Equal(ExpectedRevisionId, imported.RevisionId);
         Assert.Equal(ExpectedSiteKey, imported.SiteKey);
@@ -53,9 +57,18 @@ public sealed class BerlinProductConfigurationPersistenceTests
         Assert.Equal(ImportedAtUtc, imported.ImportedAtUtc);
         Assert.False(imported.IsActive);
         await AssertStoredArtifactAsync(database, request);
+        Assert.Equal(
+            ActorId.ToString("D"),
+            await database.ScalarAsync<string>(
+                """
+                SELECT imported_by_actor_id::text
+                FROM catalog.configuration_import_actor
+                WHERE configuration_revision_id = @revision_id;
+                """,
+                new NpgsqlParameter<Guid>("revision_id", ExpectedRevisionId)));
 
         var duplicate = await Assert.ThrowsAsync<CatalogConflictException>(() =>
-            service.ImportAsync(request, CancellationToken.None));
+            service.ImportAsync(request, actor, CancellationToken.None));
         Assert.Contains(ExpectedRevisionId.ToString("D"), duplicate.Message, StringComparison.Ordinal);
         Assert.Contains(ExpectedContentDigest, duplicate.Message, StringComparison.Ordinal);
 
@@ -66,7 +79,7 @@ public sealed class BerlinProductConfigurationPersistenceTests
                 new ConfigurationPointerExpectationContract(
                     PointerExpectationKindContract.Absent,
                     ConfigurationRevisionId: null)),
-            CatalogActor.Create(ActorId),
+            actor,
             CancellationToken.None);
 
         Assert.True(activated.IsActive);
@@ -100,7 +113,7 @@ public sealed class BerlinProductConfigurationPersistenceTests
                     new ConfigurationPointerExpectationContract(
                         PointerExpectationKindContract.Absent,
                         ConfigurationRevisionId: null)),
-                CatalogActor.Create(ActorId),
+                actor,
                 CancellationToken.None));
         Assert.Contains("expected no active configuration", staleExpectation.Message, StringComparison.Ordinal);
 

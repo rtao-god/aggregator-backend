@@ -8,9 +8,10 @@ namespace Aggregator.Catalog.Infrastructure;
 
 public sealed partial class EfCatalogRepository
 {
-    public async Task AddConfigurationAsync(
+    public Task AddConfigurationAsync(
         ProductConfiguration configuration,
         byte[] canonicalDocument,
+        Guid importedByActorId,
         DateTimeOffset importedAtUtc,
         CancellationToken cancellationToken)
     {
@@ -21,29 +22,51 @@ public sealed partial class EfCatalogRepository
             throw new ArgumentException("Canonical configuration document cannot be empty.", nameof(canonicalDocument));
         }
 
-        var duplicate = await _dbContext.ConfigurationRevisions
-            .AsNoTracking()
-            .AnyAsync(
-                row => row.Id == configuration.RevisionId ||
-                       (row.CatalogKey == configuration.Catalog.Key.Value && row.ContentDigest == configuration.Digest),
-                cancellationToken);
-        if (duplicate)
+        if (importedByActorId == Guid.Empty)
         {
-            throw new CatalogConflictException(
-                $"Configuration revision '{configuration.RevisionId}' or digest '{configuration.Digest}' already exists.");
+            throw new ArgumentException("Configuration import actor ID is required.", nameof(importedByActorId));
         }
 
-        _dbContext.ConfigurationRevisions.Add(new CatalogConfigurationRevisionRow
+        return ExecuteInTransactionAsync(async innerCancellationToken =>
         {
-            Id = configuration.RevisionId,
-            SiteKey = configuration.Site.Key.Value,
-            CatalogKey = configuration.Catalog.Key.Value,
-            ContentDigest = configuration.Digest,
-            CanonicalDocument = canonicalDocument.ToArray(),
-            CreatedAtUtc = configuration.CreatedAtUtc,
-            ImportedAtUtc = importedAtUtc,
-        });
-        await _dbContext.SaveChangesAsync(cancellationToken);
+            var duplicate = await _dbContext.ConfigurationRevisions
+                .AsNoTracking()
+                .AnyAsync(
+                    row => row.Id == configuration.RevisionId ||
+                           (row.CatalogKey == configuration.Catalog.Key.Value && row.ContentDigest == configuration.Digest),
+                    innerCancellationToken);
+            if (duplicate)
+            {
+                throw new CatalogConflictException(
+                    $"Configuration revision '{configuration.RevisionId}' or digest '{configuration.Digest}' already exists.");
+            }
+
+            _dbContext.ConfigurationRevisions.Add(new CatalogConfigurationRevisionRow
+            {
+                Id = configuration.RevisionId,
+                SiteKey = configuration.Site.Key.Value,
+                CatalogKey = configuration.Catalog.Key.Value,
+                ContentDigest = configuration.Digest,
+                CanonicalDocument = canonicalDocument.ToArray(),
+                CreatedAtUtc = configuration.CreatedAtUtc,
+                ImportedAtUtc = importedAtUtc,
+            });
+            await _dbContext.SaveChangesAsync(innerCancellationToken);
+            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO catalog.configuration_import_actor
+                (
+                    configuration_revision_id,
+                    imported_by_actor_id
+                )
+                VALUES
+                (
+                    {configuration.RevisionId},
+                    {importedByActorId}
+                );
+                """,
+                innerCancellationToken);
+        }, cancellationToken);
     }
 
     public async Task<ProductConfiguration?> GetConfigurationAsync(

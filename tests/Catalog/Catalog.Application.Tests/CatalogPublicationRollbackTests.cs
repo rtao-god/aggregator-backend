@@ -147,6 +147,7 @@ public sealed class CatalogPublicationRollbackTests
         public Task AddConfigurationAsync(
             ProductConfiguration configuration,
             byte[] canonicalDocument,
+            Guid importedByActorId,
             DateTimeOffset importedAtUtc,
             CancellationToken cancellationToken) =>
             Unsupported();
