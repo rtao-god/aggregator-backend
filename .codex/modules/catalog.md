@@ -21,6 +21,8 @@ Catalog is the canonical owner of product configuration, listing identities and 
 
 Catalog-owned media code uses CLR namespaces under `Aggregator.Catalog.Media.*` and diagnostic owners under `Catalog.Media.*`. Former standalone CLR and diagnostic identities without the Catalog module separator are prohibited active paths; transport middleware surfaces the canonical producer owner directly and does not normalize a legacy owner name. Catalog listing use cases depend only on `Catalog.Media.Contracts`; consumer-local media binding ports and Infrastructure-owned authority copies are prohibited.
 
+Catalog geography states describe reusable product meaning: `PrimaryMarket`, `NearbyMarket`, `RemoteOnly`, `OutsideMarket`, and `Unresolved`. Berlin boundaries, zones, labels, and inclusion policy belong to imported product configuration; they cannot become Domain or wire enum names. The generic rename preserves stored numeric identities `1` and `2`, while strict JSON accepts only the current `primaryMarket` and `nearbyMarket` tokens and rejects the former product-specific tokens.
+
 ## Active flows
 
 ```text
@@ -89,9 +91,10 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 
 - Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, suppression target/lifecycle rules, and exact media binding identity.
 - Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, exact rollback, exact rollback-artifact verification, and pointer isolation when verification fails.
+- Catalog geography contract tests prove generic wire tokens, rejection of product-specific/numeric tokens, and stable numeric storage identities.
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
 - Catalog media domain/application/infrastructure tests cover immutable state transitions, exact command replay, storage verification, work leases, and producer-owned publication eligibility.
 - Catalog migration integration tests cover clean creation, partial legacy media rejection, exact outbox text storage, media ownership transfer, FK publication gating, and PostgreSQL constraints.
 - Catalog API contract tests cover anonymous liveness, authentication, actor mapping, canonical media owner errors, route/body identity mismatch, enum wire rejection, and the Catalog-owned media endpoints.
 - Catalog worker tests cover strict required configuration and bounded transport settings.
-- Architecture tests block forbidden project references, obsolete media API/migration projects and services, obsolete Catalog Media CLR/diagnostic identities, consumer-local binding ports, Infrastructure authority copies, and business ownership in BuildingBlocks.
+- Architecture tests block forbidden project references, product-specific geography tokens in reusable Catalog/Query production source, obsolete media API/migration projects and services, obsolete Catalog Media CLR/diagnostic identities, consumer-local binding ports, Infrastructure authority copies, and business ownership in BuildingBlocks.
