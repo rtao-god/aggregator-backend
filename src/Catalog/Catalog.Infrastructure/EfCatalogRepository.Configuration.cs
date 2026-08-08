@@ -44,17 +44,40 @@ public sealed partial class EfCatalogRepository
                     $"Configuration revision '{configuration.RevisionId}' or digest '{configuration.Digest}' already exists.");
             }
 
-            _dbContext.ConfigurationRevisions.Add(new CatalogConfigurationRevisionRow
-            {
-                Id = configuration.RevisionId,
-                SiteKey = configuration.Site.Key.Value,
-                CatalogKey = configuration.Catalog.Key.Value,
-                ContentDigest = configuration.Digest,
-                CanonicalDocument = canonicalDocument.ToArray(),
-                CreatedAtUtc = configuration.CreatedAtUtc,
-                ImportedAtUtc = importedAtUtc,
-            });
-            await _dbContext.SaveChangesAsync(innerCancellationToken);
+            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO catalog.configuration_revision
+                (
+                    id,
+                    site_key,
+                    catalog_key,
+                    content_digest,
+                    canonical_document,
+                    created_at_utc,
+                    imported_at_utc,
+                    validation_contract_identity,
+                    validation_contract_revision,
+                    validation_state,
+                    validation_result_digest,
+                    validated_at_utc
+                )
+                VALUES
+                (
+                    {configuration.RevisionId},
+                    {configuration.Site.Key.Value},
+                    {configuration.Catalog.Key.Value},
+                    {configuration.Digest},
+                    {canonicalDocument},
+                    {configuration.CreatedAtUtc},
+                    {importedAtUtc},
+                    {validationProof.ContractIdentity},
+                    {validationProof.ContractRevision},
+                    {(int)validationProof.State},
+                    {validationProof.ResultDigest},
+                    {importedAtUtc}
+                );
+                """,
+                innerCancellationToken);
             _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
                 $"""
                 INSERT INTO catalog.configuration_import_actor
@@ -66,30 +89,6 @@ public sealed partial class EfCatalogRepository
                 (
                     {configuration.RevisionId},
                     {importedByActorId}
-                );
-                """,
-                innerCancellationToken);
-            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"""
-                INSERT INTO catalog.configuration_validation_result
-                (
-                    configuration_revision_id,
-                    contract_identity,
-                    contract_revision,
-                    content_digest,
-                    validation_state,
-                    result_digest,
-                    validated_at_utc
-                )
-                VALUES
-                (
-                    {validationProof.ConfigurationRevisionId},
-                    {validationProof.ContractIdentity},
-                    {validationProof.ContractRevision},
-                    {validationProof.ContentDigest},
-                    {(int)validationProof.State},
-                    {validationProof.ResultDigest},
-                    {importedAtUtc}
                 );
                 """,
                 innerCancellationToken);

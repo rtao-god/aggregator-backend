@@ -132,7 +132,7 @@ public sealed class BerlinProductConfigurationPersistenceTests
     }
 
     [Fact]
-    public async Task ConfigurationRevisionWithoutValidationResultCannotCommit()
+    public async Task ConfigurationRevisionWithoutValidationProofCannotExist()
     {
         await using var database = await CatalogPostgresTestDatabase.CreateAsync();
         await database.ApplyAllCatalogMigrationsAsync();
@@ -162,11 +162,10 @@ public sealed class BerlinProductConfigurationPersistenceTests
             """,
             UtcParameter("timestamp", ImportedAtUtc)));
 
-        Assert.Equal("P7113", exception.SqlState);
-        Assert.Contains(
-            "no matching owner validation result",
-            exception.MessageText,
-            StringComparison.Ordinal);
+        Assert.Equal(PostgresErrorCodes.NotNullViolation, exception.SqlState);
+        Assert.Equal("catalog", exception.SchemaName);
+        Assert.Equal("configuration_revision", exception.TableName);
+        Assert.Equal("validation_contract_identity", exception.ColumnName);
         Assert.Equal(
             0L,
             await database.ScalarAsync<long>(
@@ -220,14 +219,14 @@ public sealed class BerlinProductConfigurationPersistenceTests
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT
-                contract_identity,
-                contract_revision,
+                validation_contract_identity,
+                validation_contract_revision,
                 content_digest,
                 validation_state,
-                result_digest,
+                validation_result_digest,
                 validated_at_utc
-            FROM catalog.configuration_validation_result
-            WHERE configuration_revision_id = @revision_id;
+            FROM catalog.configuration_revision
+            WHERE id = @revision_id;
             """;
         command.Parameters.Add(
             new NpgsqlParameter<Guid>("revision_id", ExpectedRevisionId));
