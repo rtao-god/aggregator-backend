@@ -9,6 +9,14 @@ namespace Aggregator.Catalog.Application;
 /// </summary>
 public static class CatalogProductConfigurationSourceLoader
 {
+    private static readonly string[] RequiredSourceFiles =
+    [
+        "attributes.json",
+        "catalog.json",
+        "manifest.json",
+        "site.json",
+        "taxonomy.json",
+    ];
     private static readonly JsonSerializerOptions InputOptions = CreateInputOptions();
 
     /// <summary>
@@ -26,6 +34,7 @@ public static class CatalogProductConfigurationSourceLoader
                 $"Product configuration directory '{normalizedDirectory}' does not exist.");
         }
 
+        ValidateSourceInventory(normalizedDirectory);
         var manifest = await ReadRequiredAsync<ProductConfigurationSourceManifest>(
             normalizedDirectory,
             "manifest.json",
@@ -76,19 +85,43 @@ public static class CatalogProductConfigurationSourceLoader
             manifest.ExpectedContentDigest);
     }
 
+    private static void ValidateSourceInventory(string sourceDirectory)
+    {
+        var actualEntries = Directory
+            .EnumerateFileSystemEntries(sourceDirectory, "*", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .Where(fileName => fileName is not null)
+            .Select(fileName => fileName!)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var missingFiles = RequiredSourceFiles
+            .Except(actualEntries, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var unexpectedEntries = actualEntries
+            .Except(RequiredSourceFiles, StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (missingFiles.Length == 0 && unexpectedEntries.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidDataException(
+            "Product configuration source inventory does not match its active contract. " +
+            $"Missing: {FormatInventory(missingFiles)}. " +
+            $"Unexpected: {FormatInventory(unexpectedEntries)}.");
+    }
+
+    private static string FormatInventory(IReadOnlyCollection<string> values) =>
+        values.Count == 0 ? "none" : string.Join(", ", values);
+
     private static async Task<T> ReadRequiredAsync<T>(
         string sourceDirectory,
         string fileName,
         CancellationToken cancellationToken)
     {
         var path = Path.Combine(sourceDirectory, fileName);
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException(
-                $"Required product configuration file '{fileName}' does not exist.",
-                path);
-        }
-
         await using var stream = File.OpenRead(path);
         return await JsonSerializer.DeserializeAsync<T>(
                 stream,
