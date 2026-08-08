@@ -1,6 +1,5 @@
 using Aggregator.Catalog.Application;
 using Aggregator.Catalog.Contracts;
-using Aggregator.Catalog.Domain;
 
 namespace Catalog.Application.Tests;
 
@@ -28,10 +27,11 @@ public sealed class CatalogProductConfigurationArtifactBuilderTests
     [Fact]
     public void AttributeReferencingUnknownCategoryFailsAtCatalogOwnerBoundary()
     {
-        var exception = Assert.Throws<CatalogInvariantException>(() =>
+        var exception = Assert.Throws<ArgumentException>(() =>
             CatalogProductConfigurationArtifactBuilder.BuildImportRequest(
                 CreateConfiguration(["unknown-category"])));
 
+        Assert.Equal("attributes", exception.ParamName);
         Assert.Contains("unknown category", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
