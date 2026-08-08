@@ -223,8 +223,9 @@ public sealed class CatalogPublicationRecompositionIntegrationTests
             await database.ScalarAsync<long>(
                 """
                 SELECT count(*)
-                FROM projection.catalog_publication_recomposition_block
-                WHERE catalog_key = @catalog_key;
+                FROM projection.catalog_visibility_block
+                WHERE catalog_key = @catalog_key
+                  AND block_kind = 'publication_recomposition';
                 """,
                 new NpgsqlParameter<string>("catalog_key", CatalogKey)));
     }
