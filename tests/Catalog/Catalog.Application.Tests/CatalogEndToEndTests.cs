@@ -138,7 +138,7 @@ public sealed class CatalogEndToEndTests
             $"\"contactId\":\"{identifiers[2]:D}\"",
             firstArtifactJson,
             StringComparison.Ordinal);
-        Assert.Equal(4, repository.OutboxMessages.Count);
+        Assert.Equal(7, repository.OutboxMessages.Count);
         Assert.Equal(4, repository.NextPublicationActivationRevision);
         var configurationEvent = Assert.Single(
             repository.OutboxMessages,
@@ -150,6 +150,11 @@ public sealed class CatalogEndToEndTests
             3,
             repository.OutboxMessages.Count(
                 message => message.EventType == CatalogIntegrationEventTypes.PublicationActivated));
+        Assert.Equal(
+            3,
+            repository.OutboxMessages.Count(
+                message => message.EventType ==
+                    CatalogIntegrationEventTypes.ListingPromotionEligibilityChanged));
     }
 
     private static ProductConfigurationContract CreateConfiguration() =>
@@ -367,6 +372,7 @@ public sealed class CatalogEndToEndTests
         private readonly Dictionary<Guid, Listing> _listings = [];
         private readonly Dictionary<Guid, ListingRevision> _revisions = [];
         private readonly Dictionary<Guid, CatalogPublication> _publications = [];
+        private readonly Dictionary<Guid, long> _nextEligibilityRevisions = [];
         private long _nextPublicationSequence = 1;
         private long _nextPublicationActivationRevision = 1;
 
@@ -485,10 +491,15 @@ public sealed class CatalogEndToEndTests
             return Task.CompletedTask;
         }
 
-        public Task ArchiveListingAsync(Listing listing, CancellationToken cancellationToken)
+        public Task ArchiveListingAsync(
+            Listing listing,
+            CatalogListingPromotionEligibilityOutboxRequest eligibilityOutboxRequest,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             _listings[listing.Id] = listing;
+            OutboxMessages.Add(eligibilityOutboxRequest.OutboxFactory(
+                NextEligibilityRevision(listing.Id)));
             return Task.CompletedTask;
         }
 
@@ -537,6 +548,7 @@ public sealed class CatalogEndToEndTests
             Guid? expectedCurrentPublicationId,
             IReadOnlyList<Listing> listings,
             CatalogPublicationActivationOutboxFactory outboxFactory,
+            IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -545,6 +557,12 @@ public sealed class CatalogEndToEndTests
             Assert.True(_publications.TryAdd(publication.Id, publication));
             CurrentPublicationId = publication.Id;
             OutboxMessages.Add(outboxMessage);
+            foreach (var eligibilityRequest in eligibilityOutboxRequests)
+            {
+                OutboxMessages.Add(eligibilityRequest.OutboxFactory(
+                    NextEligibilityRevision(eligibilityRequest.ListingId)));
+            }
+
             _nextPublicationActivationRevision++;
             return Task.CompletedTask;
         }
@@ -554,6 +572,7 @@ public sealed class CatalogEndToEndTests
             Guid expectedCurrentPublicationId,
             CurrentPublicationPointer publicationPointer,
             CatalogPublicationActivationOutboxFactory outboxFactory,
+            IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -562,6 +581,12 @@ public sealed class CatalogEndToEndTests
             var outboxMessage = outboxFactory(_nextPublicationActivationRevision);
             CurrentPublicationId = targetPublication.Id;
             OutboxMessages.Add(outboxMessage);
+            foreach (var eligibilityRequest in eligibilityOutboxRequests)
+            {
+                OutboxMessages.Add(eligibilityRequest.OutboxFactory(
+                    NextEligibilityRevision(eligibilityRequest.ListingId)));
+            }
+
             _nextPublicationActivationRevision++;
             return Task.CompletedTask;
         }
@@ -584,6 +609,15 @@ public sealed class CatalogEndToEndTests
             CatalogOutboxMessage? outboxMessage,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("Claims are outside this publication flow test.");
+
+        private long NextEligibilityRevision(Guid listingId)
+        {
+            var next = _nextEligibilityRevisions.TryGetValue(listingId, out var current)
+                ? checked(current + 1)
+                : 1;
+            _nextEligibilityRevisions[listingId] = next;
+            return next;
+        }
 
         private void EnsurePointer(Guid? expected)
         {
