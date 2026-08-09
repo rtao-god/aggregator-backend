@@ -115,6 +115,11 @@ public sealed partial class EfCatalogRepository
 
         return await ExecuteInTransactionAsync(async innerCancellationToken =>
         {
+            // Every dispute/publication path locks the listing before its dispute state.
+            // The shared order prevents resolve/open/publication deadlocks.
+            var listingRow = await RequireLockedListingAsync(
+                dispute.ListingId,
+                innerCancellationToken);
             var row = await _dbContext.ListingDisputes
                 .FromSqlInterpolated($"""
                     SELECT *
@@ -140,9 +145,6 @@ public sealed partial class EfCatalogRepository
             row.ResolvedAtUtc = dispute.ResolvedAtUtc;
             row.AggregateRevision = dispute.AggregateRevision;
 
-            var listingRow = await RequireLockedListingAsync(
-                dispute.ListingId,
-                innerCancellationToken);
             var listing = RehydrateListing(listingRow);
             var eligibilityOutbox = await CreateListingPromotionEligibilityOutboxAsync(
                 listing,
@@ -190,27 +192,24 @@ public sealed partial class EfCatalogRepository
             .Distinct()
             .OrderBy(value => value)
             .ToArray();
+        foreach (var listingId in ids)
+        {
+            var lockedListing = await RequireLockedListingAsync(
+                listingId,
+                cancellationToken);
+            if (!string.Equals(
+                    lockedListing.CatalogKey,
+                    catalogKey,
+                    StringComparison.Ordinal))
+            {
+                throw new CatalogConflictException(
+                    $"Listing '{listingId}' does not belong to Catalog '{catalogKey}'.");
+            }
+        }
+
         if (ids.Length == 0)
         {
             return;
-        }
-
-        var lockedListings = await _dbContext.Listings
-            .FromSqlInterpolated($"""
-                SELECT *
-                FROM catalog.listing
-                WHERE id = ANY ({ids})
-                ORDER BY id
-                FOR UPDATE
-                """)
-            .ToArrayAsync(cancellationToken);
-        if (lockedListings.Length != ids.Length)
-        {
-            var existing = lockedListings
-                .Select(row => row.Id)
-                .ToHashSet();
-            var missing = ids.First(id => !existing.Contains(id));
-            throw new CatalogNotFoundException("listing", missing);
         }
 
         var blocked = await _dbContext.ListingDisputes
