@@ -9,7 +9,8 @@ public sealed partial class EfCatalogRepository :
     ICatalogRepository,
     ICatalogPublicationOperationCommitter,
     ICatalogConfigurationActivationRepository,
-    ICatalogListingDisputeRepository
+    ICatalogListingDisputeRepository,
+    ICatalogListingAccessGrantRepository
 {
     private readonly CatalogDbContext _dbContext;
     private readonly ICatalogPublicationArtifactStore _publicationArtifactStore;

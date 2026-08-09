@@ -34,16 +34,49 @@ public sealed partial class EfCatalogRepository
         return row is null ? null : RehydrateClaim(row);
     }
 
-    public Task CompleteClaimVerificationAsync(
+    public async Task<ListingAccessGrant?> GetByClaimAsync(
+        Guid claimId,
+        CancellationToken cancellationToken)
+    {
+        if (claimId == Guid.Empty)
+        {
+            throw new ArgumentException("Claim ID is required.", nameof(claimId));
+        }
+
+        var row = await _dbContext.ListingAccessGrants
+            .AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.ClaimId == claimId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var scopeValues = await _dbContext.ListingAccessScopes
+            .AsNoTracking()
+            .Where(candidate => candidate.GrantId == row.Id)
+            .OrderBy(candidate => candidate.Scope)
+            .Select(candidate => candidate.Scope)
+            .ToArrayAsync(cancellationToken);
+        var scopes = scopeValues
+            .Select(value => RequireEnum<ListingAccessScope>(
+                value,
+                "listing access scope"))
+            .ToHashSet();
+        return RehydrateAccessGrant(row, scopes);
+    }
+
+    public Task CompleteVerificationAsync(
         ListingClaim claim,
         ListingAccessGrant grant,
-        CatalogOutboxMessage outboxMessage,
+        CatalogOutboxMessage claimOutboxMessage,
+        CatalogOutboxMessage grantOutboxMessage,
         CancellationToken cancellationToken) =>
         ExecuteInTransactionAsync(async innerCancellationToken =>
         {
             ArgumentNullException.ThrowIfNull(claim);
             ArgumentNullException.ThrowIfNull(grant);
-            ArgumentNullException.ThrowIfNull(outboxMessage);
+            ArgumentNullException.ThrowIfNull(claimOutboxMessage);
+            ArgumentNullException.ThrowIfNull(grantOutboxMessage);
             var claimRow = await RequireTrackedClaimAsync(claim.Id, innerCancellationToken);
             if (claimRow.State != (int)ClaimState.Pending)
             {
@@ -52,19 +85,7 @@ public sealed partial class EfCatalogRepository
             }
 
             ApplyClaimMutation(claimRow, claim);
-            _dbContext.ListingAccessGrants.Add(new CatalogListingAccessGrantRow
-            {
-                Id = grant.Id,
-                ListingId = grant.ListingId,
-                ActorId = grant.ActorId,
-                GrantedAtUtc = grant.GrantedAtUtc,
-                ExpiresAtUtc = grant.ExpiresAtUtc,
-                ClaimId = grant.ClaimId,
-                RevokedAtUtc = grant.RevokedAtUtc,
-                RevokedByActorId = grant.RevokedByActorId,
-                RevocationReason = grant.RevocationReason,
-                AggregateRevision = grant.AggregateRevision,
-            });
+            _dbContext.ListingAccessGrants.Add(ToRow(grant));
             foreach (var scope in grant.Scopes)
             {
                 _dbContext.ListingAccessScopes.Add(new CatalogListingAccessScopeRow
@@ -74,9 +95,56 @@ public sealed partial class EfCatalogRepository
                 });
             }
 
-            AddOutbox(outboxMessage);
+            AddOutbox(claimOutboxMessage);
+            AddOutbox(grantOutboxMessage);
             await _dbContext.SaveChangesAsync(innerCancellationToken);
         }, cancellationToken);
+
+    public Task CompleteRevocationAsync(
+        ListingClaim claim,
+        ListingAccessGrant grant,
+        CatalogOutboxMessage claimOutboxMessage,
+        CatalogOutboxMessage grantOutboxMessage,
+        CancellationToken cancellationToken) =>
+        ExecuteInTransactionAsync(async innerCancellationToken =>
+        {
+            ArgumentNullException.ThrowIfNull(claim);
+            ArgumentNullException.ThrowIfNull(grant);
+            ArgumentNullException.ThrowIfNull(claimOutboxMessage);
+            ArgumentNullException.ThrowIfNull(grantOutboxMessage);
+            var claimRow = await RequireTrackedClaimAsync(claim.Id, innerCancellationToken);
+            if (claimRow.State != (int)ClaimState.Verified)
+            {
+                throw new CatalogConflictException(
+                    $"Claim '{claim.Id}' is no longer verified.");
+            }
+
+            var grantRow = await RequireTrackedAccessGrantAsync(
+                grant.Id,
+                claim.Id,
+                innerCancellationToken);
+            var expectedPreviousRevision = checked(grant.AggregateRevision - 1);
+            if (grantRow.AggregateRevision != expectedPreviousRevision ||
+                grantRow.RevokedAtUtc is not null)
+            {
+                throw new CatalogConflictException(
+                    $"Access grant '{grant.Id}' expected revision '{expectedPreviousRevision}' but is at '{grantRow.AggregateRevision}'.");
+            }
+
+            ApplyClaimMutation(claimRow, claim);
+            ApplyGrantMutation(grantRow, grant);
+            AddOutbox(claimOutboxMessage);
+            AddOutbox(grantOutboxMessage);
+            await _dbContext.SaveChangesAsync(innerCancellationToken);
+        }, cancellationToken);
+
+    public Task CompleteClaimVerificationAsync(
+        ListingClaim claim,
+        ListingAccessGrant grant,
+        CatalogOutboxMessage outboxMessage,
+        CancellationToken cancellationToken) =>
+        throw new CatalogConflictException(
+            "The legacy single-event claim verification path is disabled.");
 
     public Task SaveClaimDecisionAsync(
         ListingClaim claim,
@@ -85,40 +153,20 @@ public sealed partial class EfCatalogRepository
         ExecuteInTransactionAsync(async innerCancellationToken =>
         {
             ArgumentNullException.ThrowIfNull(claim);
-            var claimRow = await RequireTrackedClaimAsync(claim.Id, innerCancellationToken);
-            var expectedPreviousState = claim.State switch
-            {
-                ClaimState.Rejected => ClaimState.Pending,
-                ClaimState.Revoked => ClaimState.Verified,
-                _ => throw new CatalogConflictException(
-                    $"Claim state '{claim.State}' is not a persisted decision transition."),
-            };
-            if (claimRow.State != (int)expectedPreviousState)
+            if (claim.State != ClaimState.Rejected || outboxMessage is not null)
             {
                 throw new CatalogConflictException(
-                    $"Claim '{claim.Id}' expected state '{expectedPreviousState}' but is at '{RequireEnum<ClaimState>(claimRow.State, "claim state")}'.");
+                    "Claim decision persistence accepts only a rejection without cross-context effects.");
+            }
+
+            var claimRow = await RequireTrackedClaimAsync(claim.Id, innerCancellationToken);
+            if (claimRow.State != (int)ClaimState.Pending)
+            {
+                throw new CatalogConflictException(
+                    $"Claim '{claim.Id}' is no longer pending.");
             }
 
             ApplyClaimMutation(claimRow, claim);
-            if (claim.State == ClaimState.Revoked)
-            {
-                var grants = await _dbContext.ListingAccessGrants
-                    .Where(row => row.ClaimId == claim.Id && row.RevokedAtUtc == null)
-                    .ToArrayAsync(innerCancellationToken);
-                foreach (var grant in grants)
-                {
-                    grant.RevokedAtUtc = claim.DecidedAtUtc;
-                    grant.RevokedByActorId = claim.DecidedByActorId;
-                    grant.RevocationReason = claim.DecisionReason;
-                    grant.AggregateRevision = checked(grant.AggregateRevision + 1);
-                }
-            }
-
-            if (outboxMessage is not null)
-            {
-                AddOutbox(outboxMessage);
-            }
-
             await _dbContext.SaveChangesAsync(innerCancellationToken);
         }, cancellationToken);
 
@@ -127,6 +175,15 @@ public sealed partial class EfCatalogRepository
         CancellationToken cancellationToken) =>
         await _dbContext.ListingClaims.SingleOrDefaultAsync(row => row.Id == claimId, cancellationToken)
             ?? throw new CatalogNotFoundException("listing-claim", claimId);
+
+    private async Task<CatalogListingAccessGrantRow> RequireTrackedAccessGrantAsync(
+        Guid grantId,
+        Guid claimId,
+        CancellationToken cancellationToken) =>
+        await _dbContext.ListingAccessGrants.SingleOrDefaultAsync(
+            row => row.Id == grantId && row.ClaimId == claimId,
+            cancellationToken)
+        ?? throw new CatalogNotFoundException("listing-access-grant", grantId);
 
     private static CatalogListingClaimRow ToRow(ListingClaim claim) =>
         new()
@@ -143,6 +200,21 @@ public sealed partial class EfCatalogRepository
             DecisionReason = claim.DecisionReason,
         };
 
+    private static CatalogListingAccessGrantRow ToRow(ListingAccessGrant grant) =>
+        new()
+        {
+            Id = grant.Id,
+            ListingId = grant.ListingId,
+            ActorId = grant.ActorId,
+            GrantedAtUtc = grant.GrantedAtUtc,
+            ExpiresAtUtc = grant.ExpiresAtUtc,
+            ClaimId = grant.ClaimId,
+            RevokedAtUtc = grant.RevokedAtUtc,
+            RevokedByActorId = grant.RevokedByActorId,
+            RevocationReason = grant.RevocationReason,
+            AggregateRevision = grant.AggregateRevision,
+        };
+
     private static ListingClaim RehydrateClaim(CatalogListingClaimRow row) =>
         ListingClaim.Restore(new ListingClaimSnapshot(
             row.Id,
@@ -156,11 +228,37 @@ public sealed partial class EfCatalogRepository
             row.DecidedAtUtc,
             row.DecisionReason));
 
+    private static ListingAccessGrant RehydrateAccessGrant(
+        CatalogListingAccessGrantRow row,
+        IReadOnlySet<ListingAccessScope> scopes) =>
+        ListingAccessGrant.Restore(new ListingAccessGrantSnapshot(
+            row.Id,
+            row.ListingId,
+            row.ActorId,
+            scopes,
+            row.GrantedAtUtc,
+            row.ExpiresAtUtc,
+            row.ClaimId,
+            row.RevokedAtUtc,
+            row.RevokedByActorId,
+            row.RevocationReason,
+            row.AggregateRevision));
+
     private static void ApplyClaimMutation(CatalogListingClaimRow row, ListingClaim claim)
     {
         row.State = (int)claim.State;
         row.DecidedByActorId = claim.DecidedByActorId;
         row.DecidedAtUtc = claim.DecidedAtUtc;
         row.DecisionReason = claim.DecisionReason;
+    }
+
+    private static void ApplyGrantMutation(
+        CatalogListingAccessGrantRow row,
+        ListingAccessGrant grant)
+    {
+        row.RevokedAtUtc = grant.RevokedAtUtc;
+        row.RevokedByActorId = grant.RevokedByActorId;
+        row.RevocationReason = grant.RevocationReason;
+        row.AggregateRevision = grant.AggregateRevision;
     }
 }

@@ -5,6 +5,7 @@ namespace Aggregator.Catalog.Application;
 
 public sealed class CatalogClaimService(
     ICatalogRepository repository,
+    ICatalogListingAccessGrantRepository accessGrantRepository,
     ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
@@ -53,31 +54,37 @@ public sealed class CatalogClaimService(
         var grant = claim.Verify(
             idSource.CreateId(),
             reviewer.Id,
-            request.Scopes.Select(CatalogContractMapper.ToDomain),
+            request.Scopes.Select(CatalogListingAccessGrantContractMapper.ToDomain),
             verifiedAtUtc,
             request.ExpiresAtUtc);
-        var integrationEvent = new CatalogListingClaimVerified(
+        var claimEvent = new CatalogListingClaimVerified(
             idSource.CreateId(),
             claim.Id,
             grant.Id,
             grant.ListingId,
             grant.ActorId,
-            grant.Scopes.Select(scope => (ListingAccessScopeContract)scope).Order().ToArray(),
+            CatalogListingAccessGrantContractMapper.ToContracts(grant.Scopes),
             grant.ExpiresAtUtc,
             verifiedAtUtc);
-        var outboxMessage = CatalogOutboxMessageFactory.Create(
-            integrationEvent.EventId,
+        var claimOutboxMessage = CatalogOutboxMessageFactory.Create(
+            claimEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimVerified,
             CatalogIntegrationEventContracts.ListingClaimVerified,
-            integrationEvent,
+            claimEvent,
             verifiedAtUtc,
             eventContext);
-        await repository.CompleteClaimVerificationAsync(
+        var grantOutboxMessage = CatalogListingAccessGrantEventFactory.Create(
+            grant,
+            idSource.CreateId(),
+            verifiedAtUtc,
+            eventContext);
+        await accessGrantRepository.CompleteVerificationAsync(
             claim,
             grant,
-            outboxMessage,
+            claimOutboxMessage,
+            grantOutboxMessage,
             cancellationToken);
-        return CatalogContractMapper.ToResponse(grant);
+        return CatalogListingAccessGrantContractMapper.ToResponse(grant);
     }
 
     public async Task<ListingClaimResponse> RejectAsync(
@@ -90,7 +97,10 @@ public sealed class CatalogClaimService(
         ArgumentNullException.ThrowIfNull(reviewer);
         var claim = await RequireClaimAsync(claimId, cancellationToken);
         claim.Reject(reviewer.Id, request.Reason, timeProvider.GetUtcNow());
-        await repository.SaveClaimDecisionAsync(claim, outboxMessage: null, cancellationToken);
+        await repository.SaveClaimDecisionAsync(
+            claim,
+            outboxMessage: null,
+            cancellationToken);
         return CatalogContractMapper.ToResponse(claim);
     }
 
@@ -113,22 +123,36 @@ public sealed class CatalogClaimService(
         ArgumentNullException.ThrowIfNull(reviewer);
         ArgumentNullException.ThrowIfNull(eventContext);
         var claim = await RequireClaimAsync(claimId, cancellationToken);
+        var grant = await accessGrantRepository.GetByClaimAsync(claim.Id, cancellationToken)
+            ?? throw new CatalogConflictException(
+                $"Verified claim '{claim.Id}' has no Catalog access grant.");
         var revokedAtUtc = timeProvider.GetUtcNow();
         claim.Revoke(reviewer.Id, request.Reason, revokedAtUtc);
-        var integrationEvent = new CatalogListingClaimRevoked(
+        grant.Revoke(reviewer.Id, request.Reason, revokedAtUtc);
+        var claimEvent = new CatalogListingClaimRevoked(
             idSource.CreateId(),
             claim.Id,
             claim.ListingId,
             claim.ClaimantActorId,
             revokedAtUtc);
-        var outboxMessage = CatalogOutboxMessageFactory.Create(
-            integrationEvent.EventId,
+        var claimOutboxMessage = CatalogOutboxMessageFactory.Create(
+            claimEvent.EventId,
             CatalogIntegrationEventTypes.ListingClaimRevoked,
             CatalogIntegrationEventContracts.ListingClaimRevoked,
-            integrationEvent,
+            claimEvent,
             revokedAtUtc,
             eventContext);
-        await repository.SaveClaimDecisionAsync(claim, outboxMessage, cancellationToken);
+        var grantOutboxMessage = CatalogListingAccessGrantEventFactory.Create(
+            grant,
+            idSource.CreateId(),
+            revokedAtUtc,
+            eventContext);
+        await accessGrantRepository.CompleteRevocationAsync(
+            claim,
+            grant,
+            claimOutboxMessage,
+            grantOutboxMessage,
+            cancellationToken);
         return CatalogContractMapper.ToResponse(claim);
     }
 
