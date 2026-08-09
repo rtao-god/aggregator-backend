@@ -41,6 +41,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
     internal DbSet<CatalogListingAccessScopeRow> ListingAccessScopes => Set<CatalogListingAccessScopeRow>();
 
+    internal DbSet<CatalogPublicationOperationRow> PublicationOperations => Set<CatalogPublicationOperationRow>();
+
     internal DbSet<CatalogOutboxRow> OutboxMessages => Set<CatalogOutboxRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -71,9 +73,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.ToTable("listing");
             entity.HasKey(row => row.Id);
             entity.Property(row => row.CatalogKey).HasMaxLength(96);
-            entity.Property(row => row.Version).IsConcurrencyToken();
-            entity.HasIndex(row => new { row.CatalogKey, row.SubjectId }).IsUnique();
-            entity.HasIndex(row => new { row.CatalogKey, row.State });
+            entity.Property(row => row.ArchiveReason).HasMaxLength(2048);
+            entity.HasIndex(row => new { row.CatalogKey, row.SubjectKind, row.SubjectId }).IsUnique();
         });
 
         modelBuilder.Entity<CatalogListingRevisionRow>(entity =>
@@ -82,23 +83,24 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.HasKey(row => row.Id);
             entity.Property(row => row.ContentDigest).HasMaxLength(64);
             entity.HasIndex(row => new { row.ListingId, row.RevisionNumber }).IsUnique();
-            entity.HasIndex(row => row.ConfigurationRevisionId);
         });
 
         modelBuilder.Entity<CatalogProvenanceAssertionRow>(entity =>
         {
             entity.ToTable("provenance_assertion");
-            entity.HasKey(row => new { row.ListingRevisionId, row.AssertionId });
+            entity.HasKey(row => row.Id);
             entity.Property(row => row.SourceReference).HasMaxLength(2048);
             entity.Property(row => row.EvidenceDigest).HasMaxLength(64);
+            entity.HasIndex(row => row.ListingRevisionId);
         });
 
         modelBuilder.Entity<CatalogLocalizedTextRow>(entity =>
         {
             entity.ToTable("localized_text");
             entity.HasKey(row => new { row.ListingRevisionId, row.FieldKind, row.Locale });
-            entity.Property(row => row.FieldKind).HasMaxLength(24);
-            entity.Property(row => row.Locale).HasMaxLength(32);
+            entity.Property(row => row.Locale).HasMaxLength(35);
+            entity.Property(row => row.Value).HasMaxLength(4096);
+            entity.Property(row => row.MissingReason).HasMaxLength(512);
         });
 
         modelBuilder.Entity<CatalogCategoryAssignmentRow>(entity =>
@@ -204,6 +206,27 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         {
             entity.ToTable("listing_access_scope");
             entity.HasKey(row => new { row.GrantId, row.Scope });
+        });
+
+        modelBuilder.Entity<CatalogPublicationOperationRow>(entity =>
+        {
+            entity.ToTable("publication_operation");
+            entity.HasKey(row => row.Id);
+            entity.Property(row => row.CatalogKey).HasMaxLength(96);
+            entity.Property(row => row.IdempotencyKey).HasMaxLength(128);
+            entity.Property(row => row.RequestDocument).HasColumnType("bytea");
+            entity.Property(row => row.RequestDigest).HasMaxLength(64);
+            entity.Property(row => row.CorrelationId).HasMaxLength(128);
+            entity.Property(row => row.LeasedBy).HasMaxLength(200);
+            entity.Property(row => row.FailureOwner).HasMaxLength(200);
+            entity.Property(row => row.FailureCode).HasMaxLength(200);
+            entity.Property(row => row.FailureDetail).HasMaxLength(4000);
+            entity.Property(row => row.FailureRequiredAction).HasMaxLength(2000);
+            entity.HasIndex(row => row.PublicationId).IsUnique();
+            entity.HasIndex(row => new { row.CatalogKey, row.PublicationSequence }).IsUnique();
+            entity.HasIndex(row => new { row.CatalogKey, row.ActorId, row.IdempotencyKey }).IsUnique();
+            entity.HasIndex(row => new { row.State, row.NextAttemptAtUtc, row.CreatedAtUtc });
+            entity.HasIndex(row => row.LeaseExpiresAtUtc);
         });
 
         modelBuilder.Entity<CatalogOutboxRow>(entity =>

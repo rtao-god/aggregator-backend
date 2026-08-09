@@ -8,11 +8,13 @@ internal sealed class CatalogConfigurationRevisionRow
 
     public required string CatalogKey { get; set; }
 
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
     public required string ContentDigest { get; set; }
 
     public required byte[] CanonicalDocument { get; set; }
 
-    public DateTimeOffset CreatedAtUtc { get; set; }
+    public Guid ImportedByActorId { get; set; }
 
     public DateTimeOffset ImportedAtUtc { get; set; }
 }
@@ -42,19 +44,23 @@ internal sealed class CatalogListingRow
 
     public int State { get; set; }
 
-    public long Version { get; set; }
-
-    public long LatestRevisionNumber { get; set; }
-
-    public Guid? CurrentDraftRevisionId { get; set; }
+    public Guid? DraftRevisionId { get; set; }
 
     public Guid? ApprovedRevisionId { get; set; }
 
     public Guid? PublishedRevisionId { get; set; }
 
+    public long Version { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public DateTimeOffset UpdatedAtUtc { get; set; }
+
+    public DateTimeOffset? ArchivedAtUtc { get; set; }
+
+    public Guid? ArchivedByActorId { get; set; }
+
+    public string? ArchiveReason { get; set; }
 }
 
 internal sealed class CatalogListingRevisionRow
@@ -82,9 +88,9 @@ internal sealed class CatalogListingRevisionRow
 
 internal sealed class CatalogProvenanceAssertionRow
 {
-    public Guid ListingRevisionId { get; set; }
+    public Guid Id { get; set; }
 
-    public Guid AssertionId { get; set; }
+    public Guid ListingRevisionId { get; set; }
 
     public int SourceKind { get; set; }
 
@@ -103,17 +109,17 @@ internal sealed class CatalogLocalizedTextRow
 {
     public Guid ListingRevisionId { get; set; }
 
-    public required string FieldKind { get; set; }
+    public int FieldKind { get; set; }
 
     public required string Locale { get; set; }
 
     public int State { get; set; }
 
-    public string? TextValue { get; set; }
+    public string? Value { get; set; }
 
     public Guid? AssertionId { get; set; }
 
-    public int? MissingReason { get; set; }
+    public string? MissingReason { get; set; }
 }
 
 internal sealed class CatalogCategoryAssignmentRow
@@ -145,7 +151,7 @@ internal sealed class CatalogAttributeValueRow
 
     public Guid? AssertionId { get; set; }
 
-    public int? MissingReason { get; set; }
+    public string? MissingReason { get; set; }
 }
 
 internal sealed class CatalogGeographyRow
@@ -160,7 +166,7 @@ internal sealed class CatalogGeographyRow
 
     public string? DistrictKey { get; set; }
 
-    public Guid AssertionId { get; set; }
+    public Guid? AssertionId { get; set; }
 }
 
 internal sealed class CatalogContactRow
@@ -180,9 +186,9 @@ internal sealed class CatalogContactRow
 
 internal sealed class CatalogMediaRow
 {
-    public Guid MediaId { get; set; }
-
     public Guid ListingRevisionId { get; set; }
+
+    public Guid MediaId { get; set; }
 
     public long MediaAggregateRevision { get; set; }
 
@@ -211,11 +217,11 @@ internal sealed class CatalogEditorialDecisionRow
 
     public Guid RevisionId { get; set; }
 
-    public int Kind { get; set; }
+    public int Decision { get; set; }
+
+    public required string Reason { get; set; }
 
     public Guid ActorId { get; set; }
-
-    public string? Reason { get; set; }
 
     public DateTimeOffset DecidedAtUtc { get; set; }
 }
@@ -314,6 +320,55 @@ internal sealed class CatalogListingAccessScopeRow
     public Guid GrantId { get; set; }
 
     public int Scope { get; set; }
+}
+
+internal sealed class CatalogPublicationOperationRow
+{
+    public Guid Id { get; set; }
+
+    public Guid PublicationId { get; set; }
+
+    public long PublicationSequence { get; set; }
+
+    public required string CatalogKey { get; set; }
+
+    public Guid ActorId { get; set; }
+
+    public required string IdempotencyKey { get; set; }
+
+    public required byte[] RequestDocument { get; set; }
+
+    public required string RequestDigest { get; set; }
+
+    public required string CorrelationId { get; set; }
+
+    public Guid? CausationId { get; set; }
+
+    public int State { get; set; }
+
+    public int Attempt { get; set; }
+
+    public Guid? LeaseToken { get; set; }
+
+    public string? LeasedBy { get; set; }
+
+    public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+
+    public DateTimeOffset? NextAttemptAtUtc { get; set; }
+
+    public Guid? ResultPublicationId { get; set; }
+
+    public string? FailureOwner { get; set; }
+
+    public string? FailureCode { get; set; }
+
+    public string? FailureDetail { get; set; }
+
+    public string? FailureRequiredAction { get; set; }
+
+    public DateTimeOffset CreatedAtUtc { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
 internal sealed class CatalogOutboxRow
