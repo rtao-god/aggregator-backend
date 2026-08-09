@@ -1,6 +1,7 @@
 using System.Data;
 using Aggregator.Catalog.Application;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace Aggregator.Catalog.Infrastructure;
@@ -14,6 +15,25 @@ public sealed class PostgresCatalogPublicationOperationStore(CatalogDbContext db
         CancellationToken cancellationToken)
     {
         ValidateRegistration(registration);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        await AcquireIdempotencyLockAsync(registration, cancellationToken);
+
+        var existing = await dbContext.PublicationOperations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                candidate => candidate.CatalogKey == registration.CatalogKey &&
+                    candidate.ActorId == registration.ActorId &&
+                    candidate.IdempotencyKey == registration.IdempotencyKey,
+                cancellationToken);
+        if (existing is not null)
+        {
+            EnsureRequestDigest(existing, registration);
+            await transaction.CommitAsync(cancellationToken);
+            return ToSnapshot(existing);
+        }
+
         var publicationSequence = await AllocatePublicationSequenceAsync(
             registration.CatalogKey,
             cancellationToken);
@@ -51,23 +71,13 @@ public sealed class PostgresCatalogPublicationOperationStore(CatalogDbContext db
                 0,
                 {registration.CreatedAtUtc},
                 {registration.CreatedAtUtc}
-            )
-            ON CONFLICT (catalog_key, actor_id, idempotency_key) DO NOTHING;
+            );
             """, cancellationToken);
 
         var row = await dbContext.PublicationOperations
             .AsNoTracking()
-            .SingleAsync(
-                candidate => candidate.CatalogKey == registration.CatalogKey &&
-                    candidate.ActorId == registration.ActorId &&
-                    candidate.IdempotencyKey == registration.IdempotencyKey,
-                cancellationToken);
-        if (!string.Equals(row.RequestDigest, registration.RequestDigest, StringComparison.Ordinal))
-        {
-            throw new CatalogConflictException(
-                $"Idempotency key '{registration.IdempotencyKey}' is already bound to a different Catalog publication request.");
-        }
-
+            .SingleAsync(candidate => candidate.Id == registration.OperationId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return ToSnapshot(row);
     }
 
@@ -252,6 +262,36 @@ public sealed class PostgresCatalogPublicationOperationStore(CatalogDbContext db
         EnsureLeaseMutation(affected, operationId);
     }
 
+    private async Task AcquireIdempotencyLockAsync(
+        CatalogPublicationOperationRegistration registration,
+        CancellationToken cancellationToken)
+    {
+        var transaction = dbContext.Database.CurrentTransaction
+            ?? throw new InvalidOperationException(
+                "Catalog publication registration requires an active database transaction.");
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException(
+                "Catalog database connection is not open for publication registration.");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction.GetDbTransaction();
+        command.CommandText = """
+            SELECT pg_advisory_xact_lock(hashtextextended(@lock_identity, 0));
+            """;
+        command.Parameters.Add(new NpgsqlParameter<string>(
+            "lock_identity",
+            string.Concat(
+                registration.CatalogKey,
+                "\u001f",
+                registration.ActorId.ToString("D"),
+                "\u001f",
+                registration.IdempotencyKey)));
+        _ = await command.ExecuteScalarAsync(cancellationToken);
+    }
+
     private async Task<long> AllocatePublicationSequenceAsync(
         string catalogKey,
         CancellationToken cancellationToken)
@@ -266,6 +306,11 @@ public sealed class PostgresCatalogPublicationOperationStore(CatalogDbContext db
         try
         {
             await using var command = connection.CreateCommand();
+            if (dbContext.Database.CurrentTransaction is { } transaction)
+            {
+                command.Transaction = transaction.GetDbTransaction();
+            }
+
             command.CommandText = """
                 INSERT INTO catalog.publication_sequence (catalog_key, next_sequence)
                 VALUES (@catalog_key, 2)
@@ -287,6 +332,17 @@ public sealed class PostgresCatalogPublicationOperationStore(CatalogDbContext db
             {
                 await dbContext.Database.CloseConnectionAsync();
             }
+        }
+    }
+
+    private static void EnsureRequestDigest(
+        CatalogPublicationOperationRow row,
+        CatalogPublicationOperationRegistration registration)
+    {
+        if (!string.Equals(row.RequestDigest, registration.RequestDigest, StringComparison.Ordinal))
+        {
+            throw new CatalogConflictException(
+                $"Idempotency key '{registration.IdempotencyKey}' is already bound to a different Catalog publication request.");
         }
     }
 
