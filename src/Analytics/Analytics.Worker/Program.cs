@@ -34,8 +34,12 @@ public static class Program
         var listingAccessOptions = builder.Configuration
             .GetSection(AnalyticsListingAccessProjectionWorkerOptions.SectionName)
             .Get<AnalyticsListingAccessProjectionWorkerOptions>()
-            ?? throw new InvalidOperationException(
-                $"Configuration section '{AnalyticsListingAccessProjectionWorkerOptions.SectionName}' is required.");
+            ?? new AnalyticsListingAccessProjectionWorkerOptions
+            {
+                BrokerUri = publicReadOptions.BrokerUri,
+                Exchange = publicReadOptions.Exchange,
+                DeadLetterExchange = publicReadOptions.DeadLetterExchange,
+            };
         listingAccessOptions.Validate();
 
         builder.Services.AddSingleton(aggregationOptions);
