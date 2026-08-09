@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Aggregator.Catalog.Contracts;
 using Aggregator.Ingestion.Contracts;
 using Aggregator.Ingestion.Domain;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,20 +25,6 @@ public sealed record IngestionProcessingDecision(
 public sealed record IngestionProcessingSnapshot(
     IngestionBatchSnapshot Batch,
     IReadOnlyList<IngestionProcessingDecision> Decisions);
-
-public sealed record PendingIngestionCatalogDelivery(
-    Guid DeliveryId,
-    Guid BatchId,
-    string ItemKey,
-    CatalogIngestionUpsertDraftCommand Command,
-    string CommandDigest,
-    int AttemptCount);
-
-public sealed record IngestionCatalogDeliveryOutcome(
-    Guid DeliveryId,
-    Guid BatchId,
-    string ItemKey,
-    CatalogIngestionCommandOutcome Outcome);
 
 public interface IIngestionProcessingStore
 {
@@ -83,18 +68,6 @@ public interface IIngestionProcessingStore
         string callerIdentity,
         DateTimeOffset requestedAtUtc,
         CancellationToken cancellationToken);
-
-    public Task<IReadOnlyList<PendingIngestionCatalogDelivery>> LeaseCatalogDeliveriesAsync(
-        string workerIdentity,
-        int limit,
-        DateTimeOffset leasedAtUtc,
-        DateTimeOffset leaseExpiresAtUtc,
-        CancellationToken cancellationToken);
-
-    public Task<IngestionProcessingSnapshot> RecordCatalogOutcomeAsync(
-        IngestionCatalogDeliveryOutcome outcome,
-        DateTimeOffset completedAtUtc,
-        CancellationToken cancellationToken);
 }
 
 public sealed record IngestionCommitResult(
@@ -109,13 +82,6 @@ public interface IIngestionProcessingPayloadReader
         string expectedDigest,
         long expectedSize,
         string expectedContentType,
-        CancellationToken cancellationToken);
-}
-
-public interface IIngestionCatalogCommandPublisher
-{
-    public Task PublishAsync(
-        CatalogIngestionUpsertDraftCommand command,
         CancellationToken cancellationToken);
 }
 
@@ -595,72 +561,6 @@ public sealed class CommitIngestionPackageService(
             "Correct the commit request and retry with the current aggregate revision.");
 }
 
-public sealed class DeliverIngestionCatalogCommandsService(
-    IIngestionProcessingStore store,
-    IIngestionCatalogCommandPublisher publisher,
-    TimeProvider timeProvider)
-{
-    public async Task<int> DeliverAsync(
-        string workerIdentity,
-        int limit,
-        TimeSpan leaseDuration,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(workerIdentity) || workerIdentity.Length > 200)
-        {
-            throw new IngestionApplicationException(
-                "Ingestion.Delivery",
-                "INGESTION_DELIVERY_WORKER_INVALID",
-                500,
-                "A bounded delivery worker identity is required.",
-                "Correct the worker configuration.");
-        }
-
-        if (limit is < 1 or > 1_000 ||
-            leaseDuration < TimeSpan.FromSeconds(10) ||
-            leaseDuration > TimeSpan.FromMinutes(15))
-        {
-            throw new IngestionApplicationException(
-                "Ingestion.Delivery",
-                "INGESTION_DELIVERY_LEASE_INVALID",
-                500,
-                "The delivery batch or lease duration is outside the supported bounds.",
-                "Correct the worker configuration.");
-        }
-
-        var now = timeProvider.GetUtcNow();
-        var deliveries = await store.LeaseCatalogDeliveriesAsync(
-            workerIdentity,
-            limit,
-            now,
-            now + leaseDuration,
-            cancellationToken);
-        var delivered = 0;
-        foreach (var delivery in deliveries)
-        {
-            try
-            {
-                await publisher.PublishAsync(delivery.Command, cancellationToken);
-                delivered++;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-        }
-
-        return delivered;
-    }
-
-    public Task RecordOutcomeAsync(
-        IngestionCatalogDeliveryOutcome outcome,
-        CancellationToken cancellationToken) =>
-        store.RecordCatalogOutcomeAsync(
-            outcome,
-            timeProvider.GetUtcNow(),
-            cancellationToken);
-}
-
 public sealed class ReadIngestionProcessingService(IIngestionProcessingStore store)
 {
     public async Task<IngestionBatchProcessingResponse> ReadAsync(
@@ -687,7 +587,6 @@ public static class IngestionProcessingApplicationExtensions
         services.AddScoped<ValidateIngestionPackageService>();
         services.AddScoped<ReviewIngestionPackageService>();
         services.AddScoped<CommitIngestionPackageService>();
-        services.AddScoped<DeliverIngestionCatalogCommandsService>();
         services.AddScoped<ReadIngestionProcessingService>();
         return services;
     }

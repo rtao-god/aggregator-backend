@@ -490,124 +490,6 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
         return result;
     }
 
-    public async Task<IReadOnlyList<PendingIngestionCatalogDelivery>> LeaseCatalogDeliveriesAsync(
-        string workerIdentity,
-        int limit,
-        DateTimeOffset leasedAtUtc,
-        DateTimeOffset leaseExpiresAtUtc,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var rows = await dbContext.Deliveries
-            .FromSqlInterpolated($$"""
-                SELECT *
-                FROM processing.catalog_delivery
-                WHERE state IN (1, 2)
-                  AND (lease_expires_at_utc IS NULL OR lease_expires_at_utc <= {{leasedAtUtc}})
-                ORDER BY created_at_utc, delivery_id
-                FOR UPDATE SKIP LOCKED
-                LIMIT {{limit}}
-                """)
-            .ToArrayAsync(cancellationToken);
-        foreach (var row in rows)
-        {
-            row.State = 2;
-            row.AttemptCount++;
-            row.WorkerIdentity = workerIdentity;
-            row.LeaseExpiresAtUtc = leaseExpiresAtUtc;
-            row.LastChangedAtUtc = leasedAtUtc;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return rows.Select(row => new PendingIngestionCatalogDelivery(
-            row.DeliveryId,
-            row.BatchId,
-            row.ItemKey,
-            ProcessingDocument.Deserialize<CatalogIngestionUpsertDraftCommand>(row.CommandDocument),
-            row.CommandDigest,
-            row.AttemptCount)).ToArray();
-    }
-
-    public async Task<IngestionProcessingSnapshot> RecordCatalogOutcomeAsync(
-        IngestionCatalogDeliveryOutcome outcome,
-        DateTimeOffset completedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(outcome);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            System.Data.IsolationLevel.Serializable,
-            cancellationToken);
-        var delivery = await dbContext.Deliveries
-            .SingleOrDefaultAsync(row => row.DeliveryId == outcome.DeliveryId, cancellationToken)
-            ?? throw ProcessingFailure(
-                "INGESTION_DELIVERY_NOT_FOUND",
-                404,
-                $"Catalog delivery '{outcome.DeliveryId:D}' was not found.",
-                "Use the exact delivery identity emitted by Ingestion.");
-        if (delivery.BatchId != outcome.BatchId ||
-            !string.Equals(delivery.ItemKey, outcome.ItemKey, StringComparison.Ordinal) ||
-            outcome.Outcome.CommandId != delivery.DeliveryId)
-        {
-            throw ProcessingFailure(
-                "INGESTION_DELIVERY_OUTCOME_IDENTITY_MISMATCH",
-                409,
-                "The Catalog outcome identifies a different Ingestion delivery.",
-                "Replay the exact producer-owned outcome for this delivery identity.");
-        }
-
-        var terminalState = outcome.Outcome.State == CatalogIngestionOutcomeStateContract.Rejected ? 4 : 3;
-        if (delivery.State is 3 or 4)
-        {
-            if (delivery.State != terminalState ||
-                delivery.CatalogListingId != outcome.Outcome.ListingId ||
-                delivery.CatalogListingRevisionId != outcome.Outcome.ListingRevisionId ||
-                !string.Equals(delivery.FailureCode, outcome.Outcome.FailureCode, StringComparison.Ordinal))
-            {
-                throw ProcessingFailure(
-                    "INGESTION_DELIVERY_OUTCOME_CONFLICT",
-                    409,
-                    "The delivery already has a different terminal Catalog outcome.",
-                    "Use the exact original Catalog outcome.");
-            }
-        }
-        else
-        {
-            delivery.State = terminalState;
-            delivery.CatalogListingId = outcome.Outcome.ListingId;
-            delivery.CatalogListingRevisionId = outcome.Outcome.ListingRevisionId;
-            delivery.FailureCode = outcome.Outcome.FailureCode;
-            delivery.WorkerIdentity = null;
-            delivery.LeaseExpiresAtUtc = null;
-            delivery.LastChangedAtUtc = completedAtUtc;
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        var batch = await RequireBatchAsync(delivery.BatchId, cancellationToken);
-        var allDeliveries = await dbContext.Deliveries
-            .Where(row => row.BatchId == batch.Id)
-            .ToArrayAsync(cancellationToken);
-        if (batch.State == (int)ImportBatchState.Committing &&
-            allDeliveries.All(row => row.State is 3 or 4))
-        {
-            var delivered = allDeliveries.Count(row => row.State == 3);
-            var deliveryRejected = allDeliveries.Count(row => row.State == 4);
-            batch.AcceptedItemCount = delivered;
-            batch.RejectedItemCount += deliveryRejected;
-            await AdvanceAsync(
-                batch,
-                batch.RejectedItemCount == 0
-                    ? ImportBatchState.Committed
-                    : ImportBatchState.PartiallyRejected,
-                completedAtUtc,
-                cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        var decisions = await ReadLatestDecisionsAsync(batch.Id, cancellationToken);
-        return new IngestionProcessingSnapshot(ToSnapshot(batch), decisions);
-    }
-
     private async Task<IngestionCommitResult?> ReadCommitReplayAsync(
         IngestionCommandIdentity identity,
         CancellationToken cancellationToken)
@@ -882,7 +764,7 @@ public sealed class EfIngestionProcessingStore(IngestionProcessingDbContext dbCo
     private static string DeliveryStateName(int state) => state switch
     {
         1 => "pending",
-        2 => "published",
+        2 => "leased",
         3 => "succeeded",
         4 => "rejected",
         _ => throw ProcessingFailure(

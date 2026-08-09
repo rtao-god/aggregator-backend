@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Aggregator.Ingestion.Application;
 
@@ -11,7 +10,6 @@ public static class IngestionApplicationServiceCollectionExtensions
         services.AddScoped<RegisterIngestionBatchService>();
         services.AddScoped<ReadIngestionBatchService>();
         services.AddIngestionProcessingApplication();
-        services.RemoveAll<DeliverIngestionCatalogCommandsService>();
         services.AddScoped<ProcessIngestionCatalogDeliveriesService>();
         services.AddScoped<PrepareIngestionUploadService>();
         services.AddScoped<CompleteIngestionUploadService>();
