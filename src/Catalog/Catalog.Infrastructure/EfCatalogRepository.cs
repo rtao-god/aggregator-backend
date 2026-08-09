@@ -5,8 +5,7 @@ namespace Aggregator.Catalog.Infrastructure;
 
 public sealed partial class EfCatalogRepository :
     ICatalogRepository,
-    ICatalogConfigurationActivationRepository,
-    ICatalogPublicationOperationCommitter
+    ICatalogConfigurationActivationRepository
 {
     private readonly CatalogDbContext _dbContext;
 
