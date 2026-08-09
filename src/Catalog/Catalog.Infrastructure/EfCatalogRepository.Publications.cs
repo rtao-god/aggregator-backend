@@ -425,68 +425,58 @@ public sealed partial class EfCatalogRepository
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(publication);
-        if (TryGetPostgresException(exception) is not { } postgresException)
+        var postgres = exception.InnerException as PostgresException
+            ?? exception.GetBaseException() as PostgresException;
+        if (postgres is null)
         {
             activationFailure = null!;
             return false;
         }
 
-        switch (postgresException.SqlState)
+        var reason = postgres.SqlState switch
         {
-            case PublicationPointerIdentityMismatchSqlState:
-                activationFailure = new CatalogPublicationActivationBlockedException(
-                    publication.CatalogKey.Value,
-                    publication.Id,
-                    CatalogPublicationActivationBlockReason.PointerIdentityMismatch,
-                    "Reload the exact current Catalog publication pointer before retrying activation.",
-                    postgresException.MessageText);
-                return true;
-            case PublicationMediaNotPublishableSqlState:
-                activationFailure = new CatalogPublicationActivationBlockedException(
-                    publication.CatalogKey.Value,
-                    publication.Id,
-                    CatalogPublicationActivationBlockReason.MediaNotPublishable,
-                    "Resolve the revoked, expired, unapproved, or mismatched media binding and create a new Catalog publication.",
-                    postgresException.MessageText);
-                return true;
-            case PublicationVisibilitySuppressionSqlState:
-                activationFailure = new CatalogPublicationActivationBlockedException(
-                    publication.CatalogKey.Value,
-                    publication.Id,
-                    CatalogPublicationActivationBlockReason.PublicVisibilitySuppression,
-                    "Resolve the active public visibility suppression at its Catalog owner or create a new publication without the suppressed content.",
-                    postgresException.MessageText);
-                return true;
-            default:
-                activationFailure = null!;
-                return false;
-        }
-    }
-
-    private static PostgresException? TryGetPostgresException(Exception exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
+            PublicationPointerIdentityMismatchSqlState =>
+                CatalogPublicationActivationBlockReason.PointerIdentityMismatch,
+            PublicationMediaNotPublishableSqlState =>
+                CatalogPublicationActivationBlockReason.MediaNotPublishable,
+            PublicationVisibilitySuppressionSqlState =>
+                CatalogPublicationActivationBlockReason.PublicVisibilitySuppression,
+            _ => (CatalogPublicationActivationBlockReason?)null,
+        };
+        if (reason is null)
         {
-            if (current is PostgresException postgresException)
-            {
-                return postgresException;
-            }
+            activationFailure = null!;
+            return false;
         }
 
-        return null;
+        var requiredAction = postgres.Hint ?? reason.Value switch
+        {
+            CatalogPublicationActivationBlockReason.PointerIdentityMismatch =>
+                "Reload the exact Catalog publication and its current pointer identity before retrying.",
+            CatalogPublicationActivationBlockReason.MediaNotPublishable =>
+                "Create and approve a new listing revision from current rights-active Catalog Media output.",
+            CatalogPublicationActivationBlockReason.PublicVisibilitySuppression =>
+                "Create a replacement publication without the suppressed target or resolve the suppression through Catalog.",
+            _ => throw new InvalidOperationException("Publication activation block reason is unsupported."),
+        };
+        activationFailure = new CatalogPublicationActivationBlockedException(
+            publication.CatalogKey,
+            publication.Id,
+            reason.Value,
+            postgres.MessageText,
+            requiredAction);
+        return true;
     }
 
     private static void EnsurePublicationPointer(
-        Guid? actualCurrentPublicationId,
-        Guid? expectedCurrentPublicationId,
+        Guid? actualPublicationId,
+        Guid? expectedPublicationId,
         CatalogKey catalogKey)
     {
-        if (actualCurrentPublicationId != expectedCurrentPublicationId)
+        if (actualPublicationId != expectedPublicationId)
         {
             throw new CatalogConflictException(
-                $"Catalog '{catalogKey}' current publication changed from expected " +
-                $"'{expectedCurrentPublicationId?.ToString() ?? "absent"}' to " +
-                $"'{actualCurrentPublicationId?.ToString() ?? "absent"}'.");
+                $"Catalog '{catalogKey}' expected current publication '{expectedPublicationId?.ToString() ?? "absent"}' but is at '{actualPublicationId?.ToString() ?? "absent"}'.");
         }
     }
 }
