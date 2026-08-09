@@ -1,5 +1,6 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Promotion.Application;
+using Aggregator.Promotion.Domain;
 
 namespace Promotion.Application.Tests;
 
@@ -14,6 +15,8 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         Guid.Parse("0198ff00-0000-7000-8000-000000000002");
     private static readonly Guid RevisionId =
         Guid.Parse("0198ff00-0000-7000-8000-000000000003");
+    private static readonly Guid SystemActorId =
+        Guid.Parse("0198ff00-0000-7000-8000-000000000004");
     private const string PayloadDigest =
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -21,8 +24,13 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
     public async Task ExactCatalogEventBecomesOneAtomicProjectionChange()
     {
         var store = new CapturingStore();
+        var reconciler = new CapturingReconciler();
+        var idSource = new FixedIdSource(
+            Guid.Parse("0198ff00-0000-7000-8000-000000000005"));
         var service = new ApplyCatalogListingPromotionEligibilityService(
             store,
+            reconciler,
+            idSource,
             new FixedClock(ReceivedAtUtc));
         var integrationEvent = CreateEvent();
 
@@ -34,6 +42,7 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
                 "correlation-eligibility-1",
                 CausationId: null,
                 integrationEvent),
+            PromotionActor.Create(SystemActorId),
             CancellationToken.None);
 
         Assert.Equal(PromotionEligibilityProjectionApplyResult.Applied, result);
@@ -54,6 +63,34 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         Assert.Equal(OccurredAtUtc, change.Eligibility.ChangedAtUtc);
         Assert.Matches("^[0-9a-f]{64}$", change.ProjectionDigest);
         Assert.Equal(ReceivedAtUtc, store.ReceivedAtUtc);
+        Assert.Equal(change.Eligibility, reconciler.Eligibility);
+        Assert.Equal(SystemActorId, reconciler.CommandContext?.Actor.Id);
+        Assert.Equal("correlation-eligibility-1", reconciler.CommandContext?.CorrelationId);
+        Assert.Equal(EventId, reconciler.CommandContext?.CausationId);
+        Assert.Equal(ReceivedAtUtc, reconciler.ChangedAtUtc);
+        Assert.Same(idSource, reconciler.IdSource);
+    }
+
+    [Fact]
+    public async Task ReplayedProjectionStillReconcilesPlacements()
+    {
+        var store = new CapturingStore(PromotionEligibilityProjectionApplyResult.Replayed);
+        var reconciler = new CapturingReconciler();
+        var service = new ApplyCatalogListingPromotionEligibilityService(
+            store,
+            reconciler,
+            new FixedIdSource(
+                Guid.Parse("0198ff00-0000-7000-8000-000000000006")),
+            new FixedClock(ReceivedAtUtc));
+
+        var result = await service.ApplyAsync(
+            CreateMessage(CreateEvent()),
+            PromotionActor.Create(SystemActorId),
+            CancellationToken.None);
+
+        Assert.Equal(PromotionEligibilityProjectionApplyResult.Replayed, result);
+        Assert.Equal(1, reconciler.CallCount);
+        Assert.Equal(EventId, reconciler.CommandContext?.CausationId);
     }
 
     [Fact]
@@ -61,6 +98,9 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
     {
         var service = new ApplyCatalogListingPromotionEligibilityService(
             new UnexpectedStore(),
+            new UnexpectedReconciler(),
+            new FixedIdSource(
+                Guid.Parse("0198ff00-0000-7000-8000-000000000090")),
             new FixedClock(ReceivedAtUtc));
         var invalidEvent = CreateEvent() with
         {
@@ -71,6 +111,7 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
             service.ApplyAsync(
                 CreateMessage(invalidEvent),
+                PromotionActor.Create(SystemActorId),
                 CancellationToken.None));
 
         Assert.Equal(
@@ -84,6 +125,9 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
     {
         var service = new ApplyCatalogListingPromotionEligibilityService(
             new UnexpectedStore(),
+            new UnexpectedReconciler(),
+            new FixedIdSource(
+                Guid.Parse("0198ff00-0000-7000-8000-000000000090")),
             new FixedClock(ReceivedAtUtc));
         var invalidEvent = CreateEvent() with
         {
@@ -93,6 +137,7 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
             service.ApplyAsync(
                 CreateMessage(invalidEvent),
+                PromotionActor.Create(SystemActorId),
                 CancellationToken.None));
 
         Assert.Equal(
@@ -105,6 +150,9 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
     {
         var service = new ApplyCatalogListingPromotionEligibilityService(
             new UnexpectedStore(),
+            new UnexpectedReconciler(),
+            new FixedIdSource(
+                Guid.Parse("0198ff00-0000-7000-8000-000000000090")),
             new FixedClock(ReceivedAtUtc));
         var message = CreateMessage(CreateEvent()) with
         {
@@ -112,7 +160,10 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         };
 
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
-            service.ApplyAsync(message, CancellationToken.None));
+            service.ApplyAsync(
+                message,
+                PromotionActor.Create(SystemActorId),
+                CancellationToken.None));
 
         Assert.Equal(
             "PROMOTION_ELIGIBILITY_MESSAGE_ID_MISMATCH",
@@ -158,7 +209,10 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
         public DateTimeOffset GetUtcNow() => value;
     }
 
-    private sealed class CapturingStore : IPromotionEligibilityProjectionStore
+    private sealed class CapturingStore(
+        PromotionEligibilityProjectionApplyResult result =
+            PromotionEligibilityProjectionApplyResult.Applied)
+        : IPromotionEligibilityProjectionStore
     {
         public PromotionEligibilityProjectionChange? Change { get; private set; }
 
@@ -172,8 +226,54 @@ public sealed class CatalogListingPromotionEligibilityProjectionTests
             cancellationToken.ThrowIfCancellationRequested();
             Change = change;
             ReceivedAtUtc = receivedAtUtc;
-            return Task.FromResult(PromotionEligibilityProjectionApplyResult.Applied);
+            return Task.FromResult(result);
         }
+    }
+
+    private sealed class FixedIdSource(Guid id) : IPromotionIdSource
+    {
+        public Guid CreateId() => id;
+    }
+
+    private sealed class CapturingReconciler : IPromotionEligibilityPlacementReconciler
+    {
+        public int CallCount { get; private set; }
+
+        public ListingPromotionEligibility? Eligibility { get; private set; }
+
+        public PromotionCommandContext? CommandContext { get; private set; }
+
+        public DateTimeOffset? ChangedAtUtc { get; private set; }
+
+        public IPromotionIdSource? IdSource { get; private set; }
+
+        public Task<int> PauseIneligiblePlacementsAsync(
+            ListingPromotionEligibility eligibility,
+            PromotionCommandContext commandContext,
+            DateTimeOffset changedAtUtc,
+            IPromotionIdSource idSource,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            Eligibility = eligibility;
+            CommandContext = commandContext;
+            ChangedAtUtc = changedAtUtc;
+            IdSource = idSource;
+            return Task.FromResult(0);
+        }
+    }
+
+    private sealed class UnexpectedReconciler : IPromotionEligibilityPlacementReconciler
+    {
+        public Task<int> PauseIneligiblePlacementsAsync(
+            ListingPromotionEligibility eligibility,
+            PromotionCommandContext commandContext,
+            DateTimeOffset changedAtUtc,
+            IPromotionIdSource idSource,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException(
+                "Invalid producer input must be rejected before placement reconciliation.");
     }
 
     private sealed class UnexpectedStore : IPromotionEligibilityProjectionStore
