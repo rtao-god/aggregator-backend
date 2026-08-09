@@ -107,7 +107,7 @@ public sealed record PromotionOutboxMessage(
 public sealed record PromotionCommandResult<TAggregate>(TAggregate Aggregate, bool Replayed)
     where TAggregate : class;
 
-/// <summary>Persists Promotion aggregates, idempotent command results, eligibility projections and outbox effects.</summary>
+/// <summary>Persists Promotion aggregates, idempotent command results, eligibility reads and outbox effects.</summary>
 public interface IPromotionRepository
 {
     public Task<PromotionProduct?> GetProductAsync(Guid productId, CancellationToken cancellationToken);
@@ -183,9 +183,5 @@ public interface IPromotionRepository
         PromotionCommandIdentity commandIdentity,
         PromotionCommandContext commandContext,
         PromotionOutboxMessage outboxMessage,
-        CancellationToken cancellationToken);
-
-    public Task UpsertEligibilityAsync(
-        ListingPromotionEligibility eligibility,
         CancellationToken cancellationToken);
 }
