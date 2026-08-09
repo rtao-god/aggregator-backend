@@ -146,7 +146,7 @@ public sealed class CatalogConfigurationProjectionServiceTests
             "berlin-core-and-nearby",
             [SubjectKindContract.Place, SubjectKindContract.Provider],
             AggregateRevision: 1,
-            Timestamp);
+            OccurredAtUtc: Timestamp);
 
     private sealed class FixedTimeProvider(DateTimeOffset timestamp) : TimeProvider
     {
