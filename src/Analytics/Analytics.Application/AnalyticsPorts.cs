@@ -109,6 +109,7 @@ public sealed record PublicReadReferenceProjection
     private PublicReadReferenceProjection(
         Guid publicReadRevisionId,
         string catalogKey,
+        long activationRevision,
         Guid baseProjectionId,
         Guid promotionOverlayId,
         Guid safetyOverlayId,
@@ -122,6 +123,7 @@ public sealed record PublicReadReferenceProjection
     {
         PublicReadRevisionId = publicReadRevisionId;
         CatalogKey = catalogKey;
+        ActivationRevision = activationRevision;
         BaseProjectionId = baseProjectionId;
         PromotionOverlayId = promotionOverlayId;
         SafetyOverlayId = safetyOverlayId;
@@ -137,6 +139,8 @@ public sealed record PublicReadReferenceProjection
     public Guid PublicReadRevisionId { get; }
 
     public string CatalogKey { get; }
+
+    public long ActivationRevision { get; }
 
     public Guid BaseProjectionId { get; }
 
@@ -161,6 +165,7 @@ public sealed record PublicReadReferenceProjection
     public static PublicReadReferenceProjection Create(
         Guid publicReadRevisionId,
         string catalogKey,
+        long activationRevision,
         Guid baseProjectionId,
         Guid promotionOverlayId,
         Guid safetyOverlayId,
@@ -173,6 +178,13 @@ public sealed record PublicReadReferenceProjection
     {
         AnalyticsDomainRules.RequireIdentifier(publicReadRevisionId, nameof(publicReadRevisionId));
         var normalizedCatalogKey = AnalyticsDomainRules.RequireKey(catalogKey, nameof(catalogKey));
+        if (activationRevision <= 0)
+        {
+            throw new AnalyticsDomainException(
+                "ANALYTICS_PUBLIC_ACTIVATION_REVISION_INVALID",
+                "Public-read activation revision must be positive.");
+        }
+
         AnalyticsDomainRules.RequireIdentifier(baseProjectionId, nameof(baseProjectionId));
         AnalyticsDomainRules.RequireIdentifier(promotionOverlayId, nameof(promotionOverlayId));
         AnalyticsDomainRules.RequireIdentifier(safetyOverlayId, nameof(safetyOverlayId));
@@ -233,6 +245,7 @@ public sealed record PublicReadReferenceProjection
         {
             PublicReadRevisionId = publicReadRevisionId,
             CatalogKey = normalizedCatalogKey,
+            ActivationRevision = activationRevision,
             BaseProjectionId = baseProjectionId,
             PromotionOverlayId = promotionOverlayId,
             SafetyOverlayId = safetyOverlayId,
@@ -246,6 +259,7 @@ public sealed record PublicReadReferenceProjection
         return new PublicReadReferenceProjection(
             publicReadRevisionId,
             normalizedCatalogKey,
+            activationRevision,
             baseProjectionId,
             promotionOverlayId,
             safetyOverlayId,

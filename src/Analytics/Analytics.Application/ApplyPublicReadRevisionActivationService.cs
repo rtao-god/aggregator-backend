@@ -29,6 +29,7 @@ public sealed class ApplyPublicReadRevisionActivationService(
             var projection = PublicReadReferenceProjection.Create(
                 activation.PublicReadRevisionId,
                 activation.CatalogKey,
+                activation.ActivationRevision,
                 activation.BaseProjectionId,
                 activation.PromotionOverlayId,
                 activation.SafetyOverlayId,
