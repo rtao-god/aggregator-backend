@@ -19,19 +19,27 @@ public partial class Program
     {
         ArgumentNullException.ThrowIfNull(args);
         var builder = Host.CreateApplicationBuilder(args);
-        var options = builder.Configuration
+        var aggregationOptions = builder.Configuration
             .GetSection(AnalyticsAggregationWorkerOptions.SectionName)
             .Get<AnalyticsAggregationWorkerOptions>()
             ?? new AnalyticsAggregationWorkerOptions();
-        options.Validate();
+        aggregationOptions.Validate();
+        var publicReadOptions = builder.Configuration
+            .GetSection(AnalyticsPublicReadProjectionWorkerOptions.SectionName)
+            .Get<AnalyticsPublicReadProjectionWorkerOptions>()
+            ?? throw new InvalidOperationException(
+                $"Configuration section '{AnalyticsPublicReadProjectionWorkerOptions.SectionName}' is required.");
+        publicReadOptions.Validate();
 
-        builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton(aggregationOptions);
+        builder.Services.AddSingleton(publicReadOptions);
         builder.Services.AddAnalyticsApplication();
         builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(
             builder.Configuration,
-            "analytics-aggregation-worker");
+            "analytics-worker");
         builder.Services.AddHostedService<AnalyticsAggregationWorker>();
+        builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();
         return builder.Build();
     }
 }
