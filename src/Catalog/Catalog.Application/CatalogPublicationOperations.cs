@@ -41,6 +41,7 @@ public sealed record CatalogPublicationOperationFailure(
 /// <summary>Immutable registration command for a durable publication operation.</summary>
 public sealed record CatalogPublicationOperationRegistration(
     Guid OperationId,
+    Guid PublicationId,
     string CatalogKey,
     Guid ActorId,
     string IdempotencyKey,
@@ -53,6 +54,8 @@ public sealed record CatalogPublicationOperationRegistration(
 /// <summary>Read model of one durable publication operation.</summary>
 public sealed record CatalogPublicationOperationSnapshot(
     Guid OperationId,
+    Guid PlannedPublicationId,
+    long PlannedPublicationSequence,
     string CatalogKey,
     Guid ActorId,
     CatalogPublicationOperationState State,
@@ -66,14 +69,47 @@ public sealed record CatalogPublicationOperationSnapshot(
 /// <summary>Exclusive execution lease over one exact publication request snapshot.</summary>
 public sealed record CatalogPublicationOperationLease(
     Guid OperationId,
+    Guid PublicationId,
+    long PublicationSequence,
     string CatalogKey,
     Guid ActorId,
     byte[] RequestDocument,
     string RequestDigest,
     string CorrelationId,
     Guid? CausationId,
+    DateTimeOffset CreatedAtUtc,
     Guid LeaseToken,
     int Attempt);
+
+/// <summary>Prepared publication effect awaiting one atomic Catalog database commit.</summary>
+public sealed record CatalogPreparedPublication(
+    CatalogPublication Publication,
+    Guid? ExpectedCurrentPublicationId,
+    IReadOnlyList<Listing> Listings,
+    CatalogPublicationActivationOutboxFactory OutboxFactory);
+
+/// <summary>Exact lease identity that must be consumed by the publication transaction.</summary>
+public sealed record CatalogPublicationOperationCompletion(
+    Guid OperationId,
+    Guid LeaseToken,
+    DateTimeOffset CompletedAtUtc);
+
+/// <summary>Signals that a worker no longer owns the publication operation it attempted to mutate.</summary>
+public sealed class CatalogPublicationOperationLeaseLostException : InvalidOperationException
+{
+    public CatalogPublicationOperationLeaseLostException(Guid operationId)
+        : base($"Catalog publication operation '{operationId}' lease is absent, expired, or owned by another worker.")
+    {
+        if (operationId == Guid.Empty)
+        {
+            throw new ArgumentException("Operation ID is required.", nameof(operationId));
+        }
+
+        OperationId = operationId;
+    }
+
+    public Guid OperationId { get; }
+}
 
 /// <summary>Failure classifier decision used by the durable publication executor.</summary>
 public sealed record CatalogPublicationOperationFailureDecision(
@@ -98,13 +134,6 @@ public interface ICatalogPublicationOperationStore
         TimeSpan leaseDuration,
         CancellationToken cancellationToken);
 
-    public Task CompleteAsync(
-        Guid operationId,
-        Guid leaseToken,
-        Guid publicationId,
-        DateTimeOffset completedAtUtc,
-        CancellationToken cancellationToken);
-
     public Task ScheduleRetryAsync(
         Guid operationId,
         Guid leaseToken,
@@ -118,6 +147,15 @@ public interface ICatalogPublicationOperationStore
         Guid leaseToken,
         CatalogPublicationOperationFailure failure,
         DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Commits publication state and consumes its exact operation lease in one Catalog transaction.</summary>
+public interface ICatalogPublicationOperationCommitter
+{
+    public Task CommitAsync(
+        CatalogPreparedPublication preparedPublication,
+        CatalogPublicationOperationCompletion completion,
         CancellationToken cancellationToken);
 }
 
@@ -152,6 +190,7 @@ public sealed class CatalogPublicationOperationService(
         var requestDigest = CatalogCanonicalJson.ComputeSha256(requestDocument);
         var createdAtUtc = timeProvider.GetUtcNow();
         var registration = new CatalogPublicationOperationRegistration(
+            idSource.CreateId(),
             idSource.CreateId(),
             CatalogKey.Create(request.CatalogKey).Value,
             actor.Id,
@@ -237,6 +276,7 @@ public sealed class CatalogPublicationOperationService(
 /// <summary>Executes one leased publication operation through the existing Catalog publication owner.</summary>
 public sealed class CatalogPublicationOperationExecutor(
     ICatalogPublicationOperationStore store,
+    ICatalogPublicationOperationCommitter committer,
     ICatalogPublicationOperationFailureClassifier failureClassifier,
     CatalogPublicationService publicationService,
     TimeProvider timeProvider)
@@ -266,16 +306,24 @@ public sealed class CatalogPublicationOperationExecutor(
 
         if (lease.Attempt > maximumAttempts)
         {
-            await store.FailAsync(
-                lease.OperationId,
-                lease.LeaseToken,
-                CatalogPublicationOperationFailure.Create(
-                    "Catalog.Publications",
-                    "CATALOG_PUBLICATION_ATTEMPT_LIMIT_EXCEEDED",
-                    $"Publication operation '{lease.OperationId}' exceeded its maximum attempt count '{maximumAttempts}'.",
-                    "Inspect the retained operation failures and create a new publication request after correcting the owner state."),
-                timeProvider.GetUtcNow(),
-                cancellationToken);
+            try
+            {
+                await store.FailAsync(
+                    lease.OperationId,
+                    lease.LeaseToken,
+                    CatalogPublicationOperationFailure.Create(
+                        "Catalog.Publications",
+                        "CATALOG_PUBLICATION_ATTEMPT_LIMIT_EXCEEDED",
+                        $"Publication operation '{lease.OperationId}' exceeded its maximum attempt count '{maximumAttempts}'.",
+                        "Inspect the retained operation failures and create a new publication request after correcting the owner state."),
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
+            catch (CatalogPublicationOperationLeaseLostException)
+            {
+                // Another worker owns the operation now; this attempt must not mutate it.
+            }
+
             return true;
         }
 
@@ -290,17 +338,25 @@ public sealed class CatalogPublicationOperationExecutor(
             }
 
             var request = CatalogCanonicalJson.DeserializePublicationRequest(lease.RequestDocument);
-            var response = await publicationService.PublishAsync(
+            var preparedPublication = await publicationService.PrepareAsync(
                 request,
                 CatalogActor.Create(lease.ActorId),
                 CatalogEventContext.Create(lease.CorrelationId, lease.CausationId),
+                lease.PublicationId,
+                lease.PublicationSequence,
+                lease.CreatedAtUtc,
                 cancellationToken);
-            await store.CompleteAsync(
-                lease.OperationId,
-                lease.LeaseToken,
-                response.Id,
-                timeProvider.GetUtcNow(),
+            await committer.CommitAsync(
+                preparedPublication,
+                new CatalogPublicationOperationCompletion(
+                    lease.OperationId,
+                    lease.LeaseToken,
+                    timeProvider.GetUtcNow()),
                 cancellationToken);
+        }
+        catch (CatalogPublicationOperationLeaseLostException)
+        {
+            return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -314,27 +370,34 @@ public sealed class CatalogPublicationOperationExecutor(
                 lease.Attempt,
                 maximumAttempts,
                 failedAtUtc);
-            if (decision.Retry)
+            try
             {
-                var nextAttemptAtUtc = decision.NextAttemptAtUtc
-                    ?? throw new InvalidOperationException(
-                        "Retryable publication failure must define the next attempt time.");
-                await store.ScheduleRetryAsync(
-                    lease.OperationId,
-                    lease.LeaseToken,
-                    decision.Failure,
-                    nextAttemptAtUtc,
-                    failedAtUtc,
-                    cancellationToken);
+                if (decision.Retry)
+                {
+                    var nextAttemptAtUtc = decision.NextAttemptAtUtc
+                        ?? throw new InvalidOperationException(
+                            "Retryable publication failure must define the next attempt time.");
+                    await store.ScheduleRetryAsync(
+                        lease.OperationId,
+                        lease.LeaseToken,
+                        decision.Failure,
+                        nextAttemptAtUtc,
+                        failedAtUtc,
+                        cancellationToken);
+                }
+                else
+                {
+                    await store.FailAsync(
+                        lease.OperationId,
+                        lease.LeaseToken,
+                        decision.Failure,
+                        failedAtUtc,
+                        cancellationToken);
+                }
             }
-            else
+            catch (CatalogPublicationOperationLeaseLostException)
             {
-                await store.FailAsync(
-                    lease.OperationId,
-                    lease.LeaseToken,
-                    decision.Failure,
-                    failedAtUtc,
-                    cancellationToken);
+                // A replacement attempt owns the operation; retain its state unchanged.
             }
         }
 

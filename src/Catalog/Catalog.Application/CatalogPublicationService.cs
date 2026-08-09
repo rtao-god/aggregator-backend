@@ -23,8 +23,60 @@ public sealed class CatalogPublicationService(
         CancellationToken cancellationToken)
     {
         CatalogPublicationRequestValidator.Validate(request);
+        var catalogKey = CatalogKey.Create(request.CatalogKey);
+        var publicationId = idSource.CreateId();
+        var sequence = await repository.GetNextPublicationSequenceAsync(catalogKey, cancellationToken);
+        var preparedPublication = await PrepareAsync(
+            request,
+            actor,
+            eventContext,
+            publicationId,
+            sequence,
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+        await repository.CommitPublicationAsync(
+            preparedPublication.Publication,
+            preparedPublication.ExpectedCurrentPublicationId,
+            preparedPublication.Listings,
+            preparedPublication.OutboxFactory,
+            cancellationToken);
+        return CatalogContractMapper.ToResponse(
+            preparedPublication.Publication,
+            isCurrent: true);
+    }
+
+    internal async Task<CatalogPreparedPublication> PrepareAsync(
+        CreateCatalogPublicationRequest request,
+        CatalogActor actor,
+        CatalogEventContext eventContext,
+        Guid publicationId,
+        long sequence,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        CatalogPublicationRequestValidator.Validate(request);
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(eventContext);
+        if (publicationId == Guid.Empty)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_identity_invalid",
+                "Prepared publication ID must be a non-empty UUID.");
+        }
+
+        if (sequence <= 0)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_sequence_invalid",
+                "Prepared publication sequence must be greater than zero.");
+        }
+
+        if (createdAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_timestamp_invalid",
+                "Prepared publication timestamp must be normalized to UTC.");
+        }
 
         var catalogKey = CatalogKey.Create(request.CatalogKey);
         var activeConfiguration = await repository.GetActiveConfigurationAsync(catalogKey, cancellationToken)
@@ -73,9 +125,6 @@ public sealed class CatalogPublicationService(
             EnsureCurrentRevisionDigest(selection.Revision);
         }
 
-        var publicationId = idSource.CreateId();
-        var sequence = await repository.GetNextPublicationSequenceAsync(catalogKey, cancellationToken);
-        var createdAtUtc = timeProvider.GetUtcNow();
         var artifactKey = $"catalog/{catalogKey.Value}/publications/{publicationId:N}.json";
         var artifact = CatalogPublicationArtifactFactory.Create(
             publicationId,
@@ -143,13 +192,11 @@ public sealed class CatalogPublicationService(
                 eventContext);
         }
 
-        await repository.CommitPublicationAsync(
+        return new CatalogPreparedPublication(
             publication,
             expectedCurrentPublicationId,
             selections.Select(selection => selection.Listing).ToArray(),
-            CreateOutbox,
-            cancellationToken);
-        return CatalogContractMapper.ToResponse(publication, isCurrent: true);
+            CreateOutbox);
     }
 
     /// <summary>Starts a new correlation root for a direct application or operator rollback command.</summary>
