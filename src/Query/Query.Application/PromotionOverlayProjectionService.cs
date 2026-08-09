@@ -6,7 +6,11 @@ namespace Aggregator.Query.Application;
 public sealed record PromotionPlacementInboxMessage(
     Guid EventId,
     string PayloadDigest,
-    DateTimeOffset ReceivedAtUtc);
+    DateTimeOffset ReceivedAtUtc)
+{
+    /// <summary>Correlation chain preserved from the producer message or started by a direct owner call.</summary>
+    public string CorrelationId { get; init; } = EventId.ToString("D");
+}
 
 public enum PromotionPlacementProjectionDisposition
 {
@@ -41,9 +45,21 @@ public sealed class PromotionOverlayProjectionService(
     IPromotionPlacementProjectionStore store,
     IQueryClock clock)
 {
+    public Task<PromotionPlacementProjectionResult> ApplyAsync(
+        SponsoredPlacementChanged change,
+        string eventPayloadDigest,
+        CancellationToken cancellationToken) =>
+        ApplyAsync(
+            change,
+            eventPayloadDigest,
+            change?.EventId.ToString("D")
+                ?? throw new ArgumentNullException(nameof(change)),
+            cancellationToken);
+
     public async Task<PromotionPlacementProjectionResult> ApplyAsync(
         SponsoredPlacementChanged change,
         string eventPayloadDigest,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -52,7 +68,10 @@ public sealed class PromotionOverlayProjectionService(
         var inbox = new PromotionPlacementInboxMessage(
             change.EventId,
             eventPayloadDigest,
-            clock.GetUtcNow());
+            clock.GetUtcNow())
+        {
+            CorrelationId = NormalizeCorrelationId(correlationId),
+        };
         return await store.ApplyAsync(placement, inbox, cancellationToken);
     }
 
@@ -110,6 +129,20 @@ public sealed class PromotionOverlayProjectionService(
             $"Promotion placement state '{value}' is unsupported.",
             "Upgrade Query to the exact Promotion contract before replaying the event."),
     };
+
+
+    private static string NormalizeCorrelationId(string correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128)
+        {
+            throw Failure(
+                "QUERY_PROMOTION_CORRELATION_INVALID",
+                "Promotion message correlation ID is missing or too long.",
+                "Republish the Promotion event with a bounded correlation identity.");
+        }
+
+        return correlationId.Trim();
+    }
 
     private static void ValidateDigest(string digest, string owner)
     {
@@ -181,15 +214,15 @@ public static class PromotionOverlayProjectionBuilder
         var overlayDigest = QueryCanonicalJson.ComputeDigest(new
         {
             currentPublicReadRevision.CatalogKey,
-            kind = "promotion",
-            sourceRevision,
-            items = orderedPlacements.Select(item => new
+            Kind = QueryOverlayKind.Promotion,
+            SourceRevision = sourceRevision,
+            Placements = orderedPlacements.Select(item => new
             {
                 item.PlacementId,
                 item.EntitlementId,
                 item.ListingId,
                 item.ProductKey,
-                scope = item.Scope.ToString(),
+                ScopeType = item.ScopeType.ToString(),
                 item.ScopeKey,
                 item.LocaleScope,
                 item.StartsAtUtc,
@@ -198,9 +231,8 @@ public static class PromotionOverlayProjectionBuilder
                 item.PriorityBand,
                 item.CapacitySlot,
                 item.PresentationLabelKey,
-                state = item.State.ToString(),
                 item.AggregateRevision,
-            }),
+            }).ToArray(),
         });
         var overlay = QueryOverlayRevision.Create(
             promotionOverlayId,
@@ -212,10 +244,14 @@ public static class PromotionOverlayProjectionBuilder
             orderedPlacements.Length);
         var publicReadDigest = QueryCanonicalJson.ComputeDigest(new
         {
-            baseProjectionDigest,
-            promotionOverlayDigest = overlay.ContentDigest,
-            safetyOverlayDigest,
+            currentPublicReadRevision.CatalogKey,
+            currentPublicReadRevision.BaseProjectionId,
+            PromotionOverlayId = overlay.Id,
+            currentPublicReadRevision.SafetyOverlayId,
             currentPublicReadRevision.SourcePublicationId,
+            BaseProjectionDigest = baseProjectionDigest,
+            PromotionOverlayDigest = overlay.ContentDigest,
+            SafetyOverlayDigest = safetyOverlayDigest,
         });
         var publicReadRevision = PublicReadRevision.Restore(
             publicReadRevisionId,
@@ -237,7 +273,7 @@ public static class PromotionOverlayProjectionBuilder
         string message,
         string requiredAction) =>
         new(
-            "Query.PromotionProjectionBuilder",
+            "Query.PromotionProjection",
             code,
             500,
             message,

@@ -34,7 +34,11 @@ public sealed record QueryInboxMessage(
     string EventType,
     string PayloadDigest,
     long ActivationRevision,
-    DateTimeOffset ReceivedAtUtc);
+    DateTimeOffset ReceivedAtUtc)
+{
+    /// <summary>Correlation chain preserved from the producer message or started by a direct owner call.</summary>
+    public string CorrelationId { get; init; } = EventId.ToString("D");
+}
 
 public sealed record QueryProjectionActivation(
     QueryBaseProjection BaseProjection,

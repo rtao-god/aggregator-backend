@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +13,7 @@ using RabbitMQ.Client.Events;
 
 namespace Aggregator.Query.Worker;
 
+/// <summary>Consumes Catalog safety events and executes the Query block-first projection protocol.</summary>
 public sealed class VisibilitySafetyProjectionWorker : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
@@ -41,35 +41,30 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
             Uri = _options.BrokerUri,
             AutomaticRecoveryEnabled = true,
             TopologyRecoveryEnabled = true,
-            ClientProvidedName = "query-catalog-visibility-safety-worker",
+            ClientProvidedName = "query-visibility-safety-worker",
             RequestedHeartbeat = TimeSpan.FromSeconds(30),
         };
         _connection = await factory.CreateConnectionAsync(
-            "query-catalog-visibility-safety-worker",
+            "query-visibility-safety-worker",
             stoppingToken);
         _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
         await DeclareTopologyAsync(_channel, stoppingToken);
         await _channel.BasicQosAsync(
-            prefetchSize: 0,
-            prefetchCount: _options.PrefetchCount,
+            0,
+            _options.PrefetchCount,
             global: false,
             cancellationToken: stoppingToken);
-
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += OnMessageAsync;
         _ = await _channel.BasicConsumeAsync(
-            queue: _options.Queue,
+            _options.Queue,
             autoAck: false,
-            consumer: consumer,
+            consumer,
             cancellationToken: stoppingToken);
-        if (_logger.IsEnabled(LogLevel.Information))
-        {
-            _logger.LogInformation(
-                "Query visibility safety worker is consuming {RoutingKey} from {Queue}",
-                _options.RoutingKey,
-                _options.Queue);
-        }
-
+        _logger.LogInformation(
+            "Query visibility worker is consuming {RoutingKey} from {Queue}",
+            _options.RoutingKey,
+            _options.Queue);
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
 
@@ -98,13 +93,20 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
         var cancellationToken = eventArgs.CancellationToken;
         try
         {
+            var redeliveryCount = GetRedeliveryCount(eventArgs);
+            if (redeliveryCount >= _options.DeliveryLimit)
+            {
+                throw new JsonException(
+                    $"Catalog visibility event exceeded delivery limit '{_options.DeliveryLimit}'.");
+            }
+
             if (!string.Equals(
                     eventArgs.BasicProperties.Type,
                     CatalogIntegrationEventContracts.PublicVisibilitySuppressionChanged,
                     StringComparison.Ordinal))
             {
                 throw new JsonException(
-                    $"Catalog visibility message contract '{eventArgs.BasicProperties.Type}' is unsupported.");
+                    $"Catalog visibility event contract '{eventArgs.BasicProperties.Type}' is unsupported.");
             }
 
             var payloadDigest = ReadRequiredHeader(
@@ -118,58 +120,46 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
             ValidateMessageIdentity(change.EventId, eventArgs.BasicProperties.MessageId);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<VisibilitySafetyProjectionService>();
-            var result = await service.ApplyAsync(change, payloadDigest, cancellationToken);
+            var result = await service.ApplyAsync(
+                change,
+                payloadDigest,
+                ReadRequiredCorrelationId(eventArgs.BasicProperties.CorrelationId),
+                cancellationToken);
             await channel.BasicAckAsync(
-                deliveryTag: eventArgs.DeliveryTag,
+                eventArgs.DeliveryTag,
                 multiple: false,
                 cancellationToken: cancellationToken);
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation(
-                    "Applied Catalog visibility suppression {SuppressionId} revision {SuppressionRevision} to public read revision {PublicReadRevisionId}; disposition={Disposition}",
-                    change.SuppressionId,
-                    change.AggregateRevision,
-                    result.PublicReadRevision.Id,
-                    result.Disposition);
-            }
+            _logger.LogInformation(
+                "Applied Catalog visibility suppression {SuppressionId} revision {Revision} as public read revision {PublicReadRevisionId}; disposition={Disposition}",
+                change.SuppressionId,
+                change.AggregateRevision,
+                result.PublicReadRevision.Id,
+                result.Disposition);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception exception) when (IsRetryableProjectionFailure(exception))
+        catch (Exception exception) when (IsRetryable(exception))
         {
             _logger.LogWarning(
                 exception,
-                "Requeueing transient Catalog visibility message {MessageId}; catalog remains blocked",
+                "Requeueing transient Catalog visibility event {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await Task.Delay(_options.RetryDelay, cancellationToken);
             await channel.BasicRejectAsync(
-                deliveryTag: eventArgs.DeliveryTag,
+                eventArgs.DeliveryTag,
                 requeue: true,
-                cancellationToken: cancellationToken);
-        }
-        catch (Exception exception) when (
-            exception is QueryProjectionException or JsonException or ArgumentException)
-        {
-            _logger.LogError(
-                exception,
-                "Dead-lettering invalid Catalog visibility message {MessageId}; any durable visibility block remains active",
-                eventArgs.BasicProperties.MessageId);
-            await channel.BasicNackAsync(
-                deliveryTag: eventArgs.DeliveryTag,
-                multiple: false,
-                requeue: false,
                 cancellationToken: cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _logger.LogError(
                 exception,
-                "Dead-lettering non-transient Catalog visibility message {MessageId}; any durable visibility block remains active",
+                "Dead-lettering Catalog visibility event {MessageId}",
                 eventArgs.BasicProperties.MessageId);
             await channel.BasicNackAsync(
-                deliveryTag: eventArgs.DeliveryTag,
+                eventArgs.DeliveryTag,
                 multiple: false,
                 requeue: false,
                 cancellationToken: cancellationToken);
@@ -179,16 +169,16 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
     private async Task DeclareTopologyAsync(IChannel channel, CancellationToken cancellationToken)
     {
         await channel.ExchangeDeclareAsync(
-            exchange: _options.Exchange,
-            type: ExchangeType.Topic,
+            _options.Exchange,
+            ExchangeType.Topic,
             durable: true,
             autoDelete: false,
             arguments: null,
             noWait: false,
             cancellationToken: cancellationToken);
         await channel.ExchangeDeclareAsync(
-            exchange: _options.DeadLetterExchange,
-            type: ExchangeType.Topic,
+            _options.DeadLetterExchange,
+            ExchangeType.Topic,
             durable: true,
             autoDelete: false,
             arguments: null,
@@ -199,16 +189,16 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
             ["x-queue-type"] = "quorum",
         };
         await channel.QueueDeclareAsync(
-            queue: _options.DeadLetterQueue,
+            _options.DeadLetterQueue,
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: deadLetterQueueArguments,
             cancellationToken: cancellationToken);
         await channel.QueueBindAsync(
-            queue: _options.DeadLetterQueue,
-            exchange: _options.DeadLetterExchange,
-            routingKey: _options.RoutingKey,
+            _options.DeadLetterQueue,
+            _options.DeadLetterExchange,
+            _options.RoutingKey,
             arguments: null,
             cancellationToken: cancellationToken);
         var queueArguments = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -219,28 +209,25 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
             ["x-dead-letter-routing-key"] = _options.RoutingKey,
         };
         await channel.QueueDeclareAsync(
-            queue: _options.Queue,
+            _options.Queue,
             durable: true,
             exclusive: false,
             autoDelete: false,
             arguments: queueArguments,
             cancellationToken: cancellationToken);
         await channel.QueueBindAsync(
-            queue: _options.Queue,
-            exchange: _options.Exchange,
-            routingKey: _options.RoutingKey,
+            _options.Queue,
+            _options.Exchange,
+            _options.RoutingKey,
             arguments: null,
             cancellationToken: cancellationToken);
     }
 
-    internal static void VerifyPayloadIntegrity(
-        ReadOnlySpan<byte> payload,
-        string expectedDigest)
+    internal static void VerifyPayloadIntegrity(ReadOnlySpan<byte> payload, string expectedDigest)
     {
         if (string.IsNullOrWhiteSpace(expectedDigest) ||
             expectedDigest.Length != 64 ||
-            expectedDigest.Any(character =>
-                character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+            expectedDigest.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
         {
             throw new JsonException("Catalog visibility payload digest header is invalid.");
         }
@@ -251,7 +238,7 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
         if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
         {
             throw new JsonException(
-                "Catalog visibility payload digest does not match the received message body.");
+                "Catalog visibility payload digest does not match the message body.");
         }
     }
 
@@ -266,40 +253,74 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
         }
     }
 
-    internal static bool IsRetryableProjectionFailure(Exception exception)
+    internal static bool IsRetryable(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
         return exception is QueryProjectionException { StatusCode: 503 } ||
                exception is DbException { IsTransient: true } ||
                exception is TimeoutException ||
                exception is IOException ||
-               exception.InnerException is not null &&
-               IsRetryableProjectionFailure(exception.InnerException);
+               exception.InnerException is not null && IsRetryable(exception.InnerException);
+    }
+
+    internal static int GetRedeliveryCount(BasicDeliverEventArgs eventArgs)
+    {
+        ArgumentNullException.ThrowIfNull(eventArgs);
+        if (eventArgs.BasicProperties.Headers is not { } headers ||
+            !headers.TryGetValue("x-delivery-count", out var rawValue) ||
+            rawValue is null)
+        {
+            return eventArgs.Redelivered ? 1 : 0;
+        }
+
+        return rawValue switch
+        {
+            byte value => value,
+            sbyte value => value,
+            short value => value,
+            int value => value,
+            long value when value <= int.MaxValue => (int)value,
+            byte[] bytes when int.TryParse(
+                Encoding.UTF8.GetString(bytes),
+                System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsed) => parsed,
+            _ => throw new JsonException("RabbitMQ x-delivery-count header is invalid."),
+        };
+    }
+
+
+    private static string ReadRequiredCorrelationId(string? correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128)
+        {
+            throw new JsonException(
+                "RabbitMQ correlation ID is absent or exceeds the Query contract limit.");
+        }
+
+        return correlationId.Trim();
     }
 
     private static string ReadRequiredHeader(
         IDictionary<string, object?>? headers,
         string name)
     {
-        if (headers is null || !headers.TryGetValue(name, out var rawValue) || rawValue is null)
+        if (headers is null || !headers.TryGetValue(name, out var raw) || raw is null)
         {
             throw new JsonException($"Required RabbitMQ header '{name}' is absent.");
         }
 
-        var value = rawValue switch
+        var value = raw switch
         {
             byte[] bytes => Encoding.UTF8.GetString(bytes),
             ReadOnlyMemory<byte> memory => Encoding.UTF8.GetString(memory.Span),
             string text => text,
             _ => throw new JsonException(
-                $"RabbitMQ header '{name}' has an unsupported value type."),
+                $"RabbitMQ header '{name}' has an unsupported type."),
         };
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new JsonException($"RabbitMQ header '{name}' is empty.");
-        }
-
-        return value;
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new JsonException($"RabbitMQ header '{name}' is empty.")
+            : value;
     }
 
     private static JsonSerializerOptions CreateSerializerOptions()
@@ -309,10 +330,9 @@ public sealed class VisibilitySafetyProjectionWorker : BackgroundService
             PropertyNameCaseInsensitive = false,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         };
-        options.Converters.Add(
-            new JsonStringEnumConverter(
-                JsonNamingPolicy.CamelCase,
-                allowIntegerValues: false));
+        options.Converters.Add(new JsonStringEnumConverter(
+            JsonNamingPolicy.CamelCase,
+            allowIntegerValues: false));
         return options;
     }
 }

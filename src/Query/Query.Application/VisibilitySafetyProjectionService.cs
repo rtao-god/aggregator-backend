@@ -13,7 +13,11 @@ public enum VisibilitySafetyProjectionDisposition
 public sealed record VisibilitySuppressionInboxMessage(
     Guid EventId,
     string PayloadDigest,
-    DateTimeOffset ReceivedAtUtc);
+    DateTimeOffset ReceivedAtUtc)
+{
+    /// <summary>Correlation chain preserved from the producer message or started by a direct owner call.</summary>
+    public string CorrelationId { get; init; } = EventId.ToString("D");
+}
 
 public sealed record VisibilitySafetyProjectionMaterialization(
     QueryOverlayRevision Overlay,
@@ -44,6 +48,18 @@ public sealed class VisibilitySafetyProjectionService(
     public Task<VisibilitySafetyProjectionResult> ApplyAsync(
         CatalogPublicVisibilitySuppressionChanged change,
         string payloadDigest,
+        CancellationToken cancellationToken) =>
+        ApplyAsync(
+            change,
+            payloadDigest,
+            change?.EventId.ToString("D")
+                ?? throw new ArgumentNullException(nameof(change)),
+            cancellationToken);
+
+    public Task<VisibilitySafetyProjectionResult> ApplyAsync(
+        CatalogPublicVisibilitySuppressionChanged change,
+        string payloadDigest,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(change);
@@ -52,8 +68,25 @@ public sealed class VisibilitySafetyProjectionService(
         var inbox = new VisibilitySuppressionInboxMessage(
             change.EventId,
             payloadDigest,
-            RequireUtc(clock.GetUtcNow(), "Query visibility inbox clock"));
+            RequireUtc(clock.GetUtcNow(), "Query visibility inbox clock"))
+        {
+            CorrelationId = NormalizeCorrelationId(correlationId),
+        };
         return store.ApplyAsync(suppression, inbox, cancellationToken);
+    }
+
+    private static string NormalizeCorrelationId(string correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128)
+        {
+            throw Failure(
+                "QUERY_VISIBILITY_CORRELATION_INVALID",
+                422,
+                "Catalog visibility message correlation ID is missing or too long.",
+                "Republish the Catalog event with a bounded correlation identity.");
+        }
+
+        return correlationId.Trim();
     }
 
     private static QueryVisibilitySuppression ToDomain(
@@ -182,16 +215,28 @@ public static class VisibilitySafetyProjectionBuilder
                 !string.Equals(item.CatalogKey, currentRevision.CatalogKey, StringComparison.Ordinal)))
         {
             throw Failure(
-                "QUERY_VISIBILITY_ACTIVE_SET_INVALID",
-                "Visibility safety overlay input contains a non-active or foreign-catalog suppression.");
+                "QUERY_VISIBILITY_OVERLAY_INPUT_INVALID",
+                "Visibility safety overlay input contains a non-active or foreign suppression.");
         }
 
         var overlayDigest = QueryCanonicalJson.ComputeDigest(new
         {
-            currentRevision.CatalogKey,
-            kind = QueryOverlayKind.VisibilitySafety,
-            sourceRevision = nextSafetySourceRevision,
-            items = suppressions.Select(ToDigestItem).ToArray(),
+            CatalogKey = currentRevision.CatalogKey,
+            Kind = QueryOverlayKind.VisibilitySafety,
+            SourceRevision = nextSafetySourceRevision,
+            Suppressions = suppressions.Select(item => new
+            {
+                item.SuppressionId,
+                TargetKind = item.TargetKind.ToString(),
+                item.ListingId,
+                item.TargetKey,
+                item.PublicReasonClass,
+                ResponseMode = item.ResponseMode.ToString(),
+                item.StartsAtUtc,
+                item.ExpiresAtUtc,
+                item.AggregateRevision,
+                item.OccurredAtUtc,
+            }).ToArray(),
         });
         var overlay = QueryOverlayRevision.Create(
             overlayId,
@@ -203,10 +248,14 @@ public static class VisibilitySafetyProjectionBuilder
             suppressions.Length);
         var publicReadDigest = QueryCanonicalJson.ComputeDigest(new
         {
-            baseProjectionDigest,
-            promotionOverlayDigest,
-            safetyOverlayDigest = overlay.ContentDigest,
+            currentRevision.CatalogKey,
+            currentRevision.BaseProjectionId,
+            currentRevision.PromotionOverlayId,
+            SafetyOverlayId = overlay.Id,
             currentRevision.SourcePublicationId,
+            BaseProjectionDigest = baseProjectionDigest,
+            PromotionOverlayDigest = promotionOverlayDigest,
+            SafetyOverlayDigest = overlay.ContentDigest,
         });
         var publicReadRevision = PublicReadRevision.Restore(
             publicReadRevisionId,
@@ -223,25 +272,13 @@ public static class VisibilitySafetyProjectionBuilder
             Array.AsReadOnly(suppressions));
     }
 
-    private static object ToDigestItem(QueryVisibilitySuppression item) => new
-    {
-        item.SuppressionId,
-        item.TargetKind,
-        item.ListingId,
-        item.TargetKey,
-        item.PublicReasonClass,
-        item.ResponseMode,
-        item.StartsAtUtc,
-        item.ExpiresAtUtc,
-        item.AggregateRevision,
-        item.OccurredAtUtc,
-    };
-
-    private static QueryProjectionException Failure(string code, string message) =>
+    private static QueryProjectionException Failure(
+        string code,
+        string message) =>
         new(
             "Query.VisibilitySafety",
             code,
             500,
             message,
-            "Correct the Query visibility safety projection input before activation.");
+            "Keep the catalog blocked and repair the Query safety projection input.");
 }

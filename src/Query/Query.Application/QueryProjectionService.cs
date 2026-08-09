@@ -9,9 +9,21 @@ public sealed class QueryProjectionService(
     IQueryClock clock,
     IQueryIdFactory idFactory)
 {
+    public Task<QueryProjectionActivationResult> ApplyPublicationAsync(
+        CatalogPublicationActivated activation,
+        string eventPayloadDigest,
+        CancellationToken cancellationToken) =>
+        ApplyPublicationAsync(
+            activation,
+            eventPayloadDigest,
+            activation?.EventId.ToString("D")
+                ?? throw new ArgumentNullException(nameof(activation)),
+            cancellationToken);
+
     public async Task<QueryProjectionActivationResult> ApplyPublicationAsync(
         CatalogPublicationActivated activation,
         string eventPayloadDigest,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(activation);
@@ -54,8 +66,26 @@ public sealed class QueryProjectionService(
             CatalogIntegrationEventTypes.PublicationActivated,
             eventPayloadDigest,
             activation.ActivationRevision,
-            builtAtUtc);
+            builtAtUtc)
+        {
+            CorrelationId = NormalizeCorrelationId(correlationId),
+        };
         return await projectionStore.ActivateAsync(projection, inbox, cancellationToken);
+    }
+
+    private static string NormalizeCorrelationId(string correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128)
+        {
+            throw new QueryProjectionException(
+                "Query.Inbox",
+                "QUERY_CORRELATION_ID_INVALID",
+                422,
+                "Catalog publication event correlation ID is missing or too long.",
+                "Republish the Catalog event with a bounded correlation identity.");
+        }
+
+        return correlationId.Trim();
     }
 
     private static void ValidateActivation(CatalogPublicationActivated activation)

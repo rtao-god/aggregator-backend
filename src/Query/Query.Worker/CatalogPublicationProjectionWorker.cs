@@ -121,6 +121,7 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
             var result = await service.ApplyPublicationAsync(
                 activation,
                 payloadDigest,
+                ReadRequiredCorrelationId(eventArgs.BasicProperties.CorrelationId),
                 cancellationToken);
             await channel.BasicAckAsync(
                 deliveryTag: eventArgs.DeliveryTag,
@@ -277,6 +278,18 @@ public sealed class CatalogPublicationProjectionWorker : BackgroundService
                exception is IOException ||
                exception.InnerException is not null &&
                IsRetryableProjectionFailure(exception.InnerException);
+    }
+
+
+    private static string ReadRequiredCorrelationId(string? correlationId)
+    {
+        if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 128)
+        {
+            throw new JsonException(
+                "RabbitMQ correlation ID is absent or exceeds the Query contract limit.");
+        }
+
+        return correlationId.Trim();
     }
 
     private static string ReadRequiredHeader(
