@@ -11,6 +11,7 @@ public static class IngestionApplicationServiceCollectionExtensions
         services.AddScoped<ReadIngestionBatchService>();
         services.AddIngestionProcessingApplication();
         services.AddScoped<ProcessIngestionCatalogDeliveriesService>();
+        services.AddScoped<ReadIngestionCatalogDeliveriesService>();
         services.AddScoped<PrepareIngestionUploadService>();
         services.AddScoped<CompleteIngestionUploadService>();
         return services;
