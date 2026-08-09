@@ -87,6 +87,17 @@
         "long ActivationRevision,",
         "PublicationActivationKindContract ActivationKind,"
       ]
+    },
+    {
+      "name": "catalog-publication-operation",
+      "file": "src/Catalog/Catalog.Contracts/CatalogPublicationOperationContracts.cs",
+      "required": [
+        "public enum CatalogOperationStateContract",
+        "public sealed record CatalogOperationFailureContract(",
+        "public sealed record CatalogPublicationOperationResponse(",
+        "CatalogOperationStateContract State,",
+        "CatalogOperationFailureContract? Failure);"
+      ]
     }
   ],
   "http": [
@@ -139,6 +150,25 @@
         "var result = await service.SearchAsync(",
         "result.Sponsored.Min(item => item.HardExpiryAtUtc)",
         "allowStaleWhileRevalidate: result.Sponsored.Count == 0"
+      ]
+    },
+    {
+      "file": "src/Catalog/Catalog.Api/CatalogPublicationsController.cs",
+      "required": [
+        "[HttpPost(\"publication-requests\", Name = CatalogOperationIds.CreatePublication)]",
+        "[ProducesResponseType<CatalogPublicationOperationResponse>(StatusCodes.Status202Accepted)]",
+        "var response = await operationService.EnqueueAsync(",
+        "return Accepted(",
+        "$\"/api/catalog-command/operations/{response.OperationId:D}\","
+      ]
+    },
+    {
+      "file": "src/Catalog/Catalog.Api/CatalogOperationsController.cs",
+      "required": [
+        "[Route(\"api/catalog-command/operations\")]",
+        "[HttpGet(\"{operationId:guid}\", Name = CatalogOperationIds.GetOperation)]",
+        "[ProducesResponseType<CatalogPublicationOperationResponse>(StatusCodes.Status200OK)]",
+        "operationService.GetAsync("
       ]
     }
   ],

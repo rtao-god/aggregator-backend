@@ -11,15 +11,17 @@ namespace Aggregator.Catalog.Api;
 [Route("api/catalog-command/catalogs/{catalogKey}")]
 [EnableRateLimiting(CatalogRateLimitPolicies.Command)]
 public sealed class CatalogPublicationsController(
-    CatalogPublicationService service,
+    CatalogPublicationOperationService operationService,
+    CatalogPublicationService publicationService,
     ICorrelationContextAccessor correlation) : ControllerBase
 {
     [HttpPost("publication-requests", Name = CatalogOperationIds.CreatePublication)]
     [Authorize(Policy = CatalogAuthorizationPolicies.Publish)]
-    [ProducesResponseType<CatalogPublicationResponse>(StatusCodes.Status201Created)]
-    public async Task<ActionResult<CatalogPublicationResponse>> PublishAsync(
+    [ProducesResponseType<CatalogPublicationOperationResponse>(StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<CatalogPublicationOperationResponse>> PublishAsync(
         string catalogKey,
         [FromBody] CreateCatalogPublicationRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string idempotencyKey,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -30,12 +32,15 @@ public sealed class CatalogPublicationsController(
                 "The route catalog key must match the publication request catalog key.");
         }
 
-        var response = await service.PublishAsync(
+        var response = await operationService.EnqueueAsync(
             request,
             CatalogActorAccessor.Require(HttpContext),
             CatalogEventContextAccessor.Require(correlation),
+            idempotencyKey,
             cancellationToken);
-        return StatusCode(StatusCodes.Status201Created, response);
+        return Accepted(
+            $"/api/catalog-command/operations/{response.OperationId:D}",
+            response);
     }
 
     [HttpPost("publication-rollbacks", Name = CatalogOperationIds.RollbackPublication)]
@@ -47,7 +52,7 @@ public sealed class CatalogPublicationsController(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Ok(await service.RollbackAsync(
+        return Ok(await publicationService.RollbackAsync(
             catalogKey,
             request,
             CatalogActorAccessor.Require(HttpContext),

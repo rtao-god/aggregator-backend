@@ -23,6 +23,7 @@ public static class CatalogOperationIds
     public const string RejectListingRevision = "RejectCatalogListingRevision";
     public const string ArchiveListing = "ArchiveCatalogListing";
     public const string CreatePublication = "CreateCatalogPublication";
+    public const string GetOperation = "GetCatalogOperation";
     public const string RollbackPublication = "RollbackCatalogPublication";
     public const string CreateVisibilitySuppression = "CreateCatalogVisibilitySuppression";
     public const string ResolveVisibilitySuppression = "ResolveCatalogVisibilitySuppression";
