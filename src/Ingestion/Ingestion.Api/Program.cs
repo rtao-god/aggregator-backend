@@ -1,101 +1,138 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
+using Aggregator.Ingestion.Api;
 using Aggregator.Ingestion.Application;
 using Aggregator.Ingestion.Infrastructure;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.Net.Http.Headers;
 using Platform.Observability;
-using Platform.ProblemDetails;
-using Platform.Security;
 
-namespace Aggregator.Ingestion.Api;
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddProblemDetails();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+        options.InvalidModelStateResponseFactory = IngestionModelStateProblemFactory.Create);
+builder.Services.Configure<JsonOptions>(options =>
+    IngestionApiJson.Configure(options.SerializerOptions));
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
+builder.Services.AddIngestionApplication();
+builder.Services.AddIngestionInfrastructure(builder.Configuration);
+builder.Services.AddIngestionObjectStorage(builder.Configuration);
+builder.Services.AddPlatformObservability(builder.Configuration, "ingestion-api");
 
-public partial class Program
+var authority = builder.Configuration["Authentication:Authority"];
+if (string.IsNullOrWhiteSpace(authority))
 {
-    public static void Main(string[] args)
-    {
-        var application = CreateApplication(args);
-        application.Run();
-    }
-
-    public static WebApplication CreateApplication(string[] args)
-    {
-        ArgumentNullException.ThrowIfNull(args);
-        var builder = WebApplication.CreateBuilder(args);
-        builder.WebHost.ConfigureKestrel(options =>
-            options.Limits.MaxRequestBodySize = 8 * 1024 * 1024);
-        builder.Services
-            .AddControllers()
-            .AddJsonOptions(options =>
-            {
-                options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-                options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
-                options.JsonSerializerOptions.Converters.Add(
-                    new JsonStringEnumConverter(
-                        JsonNamingPolicy.CamelCase,
-                        allowIntegerValues: false));
-            });
-        builder.Services.Configure<ApiBehaviorOptions>(options =>
-            options.InvalidModelStateResponseFactory = IngestionModelStateProblemFactory.Create);
-        builder.Services.AddOpenApi("ingestion");
-        builder.Services.AddOwnerProblemDetails();
-        builder.Services.AddIngestionApplication();
-        builder.Services.AddIngestionInfrastructure(builder.Configuration);
-        builder.Services.AddIngestionObjectStorage(builder.Configuration);
-        builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);
-        builder.Services.AddIngestionCatalogDeliveryQueryInfrastructure();
-        builder.Services.AddPlatformObservability(builder.Configuration, "ingestion-api");
-        builder.Services.AddRateLimiter(options =>
-            options.AddFixedWindowLimiter(
-                IngestionRateLimitPolicies.BatchCommands,
-                limiter =>
-                {
-                    limiter.PermitLimit = 30;
-                    limiter.QueueLimit = 0;
-                    limiter.Window = TimeSpan.FromMinutes(1);
-                    limiter.AutoReplenishment = true;
-                }));
-
-        var authorization = builder.Services.AddPlatformJwtAuthentication(
-            builder.Configuration,
-            audience: "aggregator-ingestion");
-        authorization
-            .AddRequiredScopePolicy(
-                IngestionAuthorizationPolicies.Upload,
-                IngestionAuthorizationPolicies.Upload)
-            .AddRequiredScopePolicy(
-                IngestionAuthorizationPolicies.Read,
-                IngestionAuthorizationPolicies.Read)
-            .AddRequiredScopePolicy(
-                IngestionAuthorizationPolicies.TestContracts,
-                IngestionAuthorizationPolicies.TestContracts)
-            .AddRequiredScopePolicy(
-                IngestionProcessingAuthorizationPolicies.Review,
-                IngestionProcessingAuthorizationPolicies.Review)
-            .AddRequiredScopePolicy(
-                IngestionProcessingAuthorizationPolicies.Commit,
-                IngestionProcessingAuthorizationPolicies.Commit);
-
-        var application = builder.Build();
-        application.UseOwnerProblemDetails();
-        application.UseStatusCodePages(IngestionAuthorizationStatusCodeWriter.WriteAsync);
-        application.UseMiddleware<IngestionFailureMiddleware>();
-        application.UseRateLimiter();
-        application.UseAuthentication();
-        application.UseAuthorization();
-        application.MapGet("/health/live", IngestionHealthEndpoints.Live)
-            .AllowAnonymous()
-            .WithName("IngestionLive");
-        application.MapGet("/health/ready", IngestionHealthEndpoints.ReadyAsync)
-            .AllowAnonymous()
-            .WithName("IngestionReady");
-        application.MapControllers();
-        if (application.Environment.IsDevelopment())
-        {
-            application.MapOpenApi("/openapi/{documentName}.json")
-                .RequireAuthorization(IngestionAuthorizationPolicies.TestContracts);
-        }
-
-        return application;
-    }
+    throw new InvalidOperationException("Authentication:Authority is required.");
 }
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = authority;
+        options.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateAudience = false,
+            NameClaimType = "sub",
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = context =>
+                IngestionAuthorizationStatusCodeWriter.WriteAsync(
+                    context.HttpContext,
+                    StatusCodes.Status401Unauthorized,
+                    "AUTHENTICATION_REQUIRED",
+                    "A valid bearer token is required.",
+                    "Provide a valid service access token.",
+                    context.RequestAborted),
+            OnForbidden = context =>
+                IngestionAuthorizationStatusCodeWriter.WriteAsync(
+                    context.HttpContext,
+                    StatusCodes.Status403Forbidden,
+                    "AUTHORIZATION_DENIED",
+                    "The caller lacks the required Ingestion scope.",
+                    "Acquire the exact operation scope before retrying.",
+                    context.RequestAborted),
+        };
+    });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.Submit,
+        policy => policy.RequireClaim("scope", IngestionScopes.Submit));
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.Read,
+        policy => policy.RequireClaim("scope", IngestionScopes.Read));
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.Review,
+        policy => policy.RequireClaim("scope", IngestionScopes.Review));
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.Commit,
+        policy => policy.RequireClaim("scope", IngestionScopes.Commit));
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.DeliverCatalog,
+        policy => policy.RequireClaim("scope", IngestionScopes.DeliverCatalog));
+    options.AddPolicy(
+        IngestionAuthorizationPolicies.ManageProducers,
+        policy => policy.RequireClaim("scope", IngestionScopes.ManageProducers));
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var key = context.User.FindFirst("sub")?.Value
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(
+            key,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 120,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            });
+    });
+});
+
+var app = builder.Build();
+app.UseExceptionHandler();
+app.UseMiddleware<IngestionFailureMiddleware>();
+app.Use(async (context, next) =>
+{
+    if (context.Request.ContentLength is > 1_048_576)
+    {
+        context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+        await context.Response.WriteAsJsonAsync(
+            new
+            {
+                owner = "Ingestion.Transport",
+                code = "REQUEST_TOO_LARGE",
+                detail = "The request body exceeds the Ingestion API limit.",
+                requiredAction = "Upload large package payloads through the object-storage upload contract.",
+            },
+            cancellationToken: context.RequestAborted);
+        return;
+    }
+
+    await next(context);
+});
+app.UseAuthentication();
+app.UseRateLimiter();
+app.UseAuthorization();
+app.MapIngestionHealthEndpoints();
+app.MapOpenApi().RequireAuthorization();
+app.MapControllers();
+app.Run();
+
+public partial class Program;

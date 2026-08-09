@@ -2,6 +2,7 @@ namespace Aggregator.Ingestion.Contracts;
 
 /// <summary>Creates or revises one exact producer authorization registration.</summary>
 public sealed record PutIngestionProducerRegistrationRequest(
+    string ProducerIdentity,
     long ExpectedAggregateRevision,
     bool Active,
     IReadOnlyList<int> SupportedContractRevisions,
