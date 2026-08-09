@@ -48,6 +48,40 @@ public sealed partial class EfPromotionRepository
             cancellationToken);
         try
         {
+            var listingStream = $"{eligibility.CatalogKey}:{eligibility.ListingId:D}";
+            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({listingStream}, 2));",
+                cancellationToken);
+            var currentEligibility = await _dbContext.ListingEligibility
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    row =>
+                        row.CatalogKey == eligibility.CatalogKey &&
+                        row.ListingId == eligibility.ListingId,
+                    cancellationToken)
+                ?? throw Failure(
+                    "Promotion.EligibilityReconciliation",
+                    "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_MISSING",
+                    500,
+                    "Promotion cannot reconcile placements because the current eligibility projection is absent.",
+                    "Restore the current Catalog eligibility checkpoint before replaying the event.");
+            if (currentEligibility.SourceRevision > eligibility.SourceRevision)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return 0;
+            }
+
+            if (currentEligibility.SourceRevision < eligibility.SourceRevision)
+            {
+                throw Failure(
+                    "Promotion.EligibilityReconciliation",
+                    "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_BEHIND",
+                    503,
+                    $"Promotion eligibility checkpoint '{currentEligibility.SourceRevision}' trails reconciliation revision '{eligibility.SourceRevision}'.",
+                    "Apply the exact missing Catalog eligibility revisions before reconciling placements.");
+            }
+
+            EnsureCurrentEligibilityMatches(currentEligibility, eligibility);
             var placementRows = await _dbContext.Placements
                 .Where(row =>
                     row.ListingId == eligibility.ListingId &&
@@ -155,6 +189,34 @@ public sealed partial class EfPromotionRepository
         {
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    private static void EnsureCurrentEligibilityMatches(
+        ListingPromotionEligibilityRow current,
+        ListingPromotionEligibility expected)
+    {
+        var currentCapabilities = PromotionPersistenceJson.DeserializeStringSet(
+                current.ContactCapabilitiesJson)
+            .ToHashSet(StringComparer.Ordinal);
+        var currentCategories = PromotionPersistenceJson.DeserializeStringSet(
+                current.CategoryKeysJson)
+            .ToHashSet(StringComparer.Ordinal);
+        if (current.IsPublished != expected.IsPublished ||
+            current.IsArchived != expected.IsArchived ||
+            current.HasBlockingDispute != expected.HasBlockingDispute ||
+            current.HasVerifiedContact != expected.HasVerifiedContact ||
+            !currentCapabilities.SetEquals(expected.ContactCapabilities) ||
+            !currentCategories.SetEquals(expected.CategoryKeys) ||
+            !string.Equals(current.DistrictKey, expected.DistrictKey, StringComparison.Ordinal) ||
+            current.ChangedAtUtc != expected.ChangedAtUtc)
+        {
+            throw Failure(
+                "Promotion.EligibilityReconciliation",
+                "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_DIVERGED",
+                500,
+                "Promotion current eligibility facts diverge from the event selected for placement reconciliation.",
+                "Stop placement mutations and rebuild the Promotion eligibility projection from Catalog events.");
         }
     }
 }
