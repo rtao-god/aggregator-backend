@@ -1,18 +1,20 @@
 # Query module
 
+Status: in development
+
 ## Owner
 
-Query is the canonical owner of rebuildable public documents, facets, routes, SEO projection, immutable promotion and visibility-safety overlay components, composite `PublicReadRevision`, current public-read pointer, durable projection inboxes/blocks, and the public read-only API. It does not own Catalog editorial meaning, Catalog private suppression evidence, or Promotion entitlement/schedule decisions.
+Query is the canonical owner of rebuildable public documents, facets, routes, SEO projection, immutable promotion and visibility-safety overlay components, composite `PublicReadRevision`, current public-read pointer, durable projection inboxes/blocks, the producer-owned public-read activation outbox, and the public read-only API. It does not own Catalog editorial meaning, Catalog private suppression evidence, or Promotion entitlement/schedule decisions.
 
 ## Projects
 
 - `Query.Domain`: immutable base/overlay/public-read identities, exact suppression projections, and state contracts.
-- `Query.Contracts`: public response, metadata, cursor, sponsored, organic, facet, and detail contracts.
-- `Query.Application`: exact publication build, promotion and safety materialization, revision-bound reads, cursor validation, and fail-closed projection errors.
-- `Query.Infrastructure`: Query-only PostgreSQL stores, durable inbox/checkpoints/visibility blocks, atomic pointer switching, exact artifact reads, and safety-aware public reads.
+- `Query.Contracts`: public response, metadata, cursor, sponsored, organic, facet, detail, and producer-owned `PublicReadRevisionActivated` event contracts.
+- `Query.Application`: exact publication build, promotion and safety materialization, deterministic public-membership event construction, revision-bound reads, cursor validation, and fail-closed projection errors.
+- `Query.Infrastructure`: Query-only PostgreSQL stores, durable inbox/checkpoints/visibility blocks, atomic pointer-and-outbox switching, exact artifact reads, and safety-aware public reads.
 - `Query.Api`: public read-only search/detail/facet/SEO transport; it resolves one revision snapshot per request.
-- `Query.Worker`: the composition root for Catalog publication, Catalog visibility-safety, and Promotion placement consumers.
-- `Query.Migrations`: one-shot Query schema owner; runtime hosts never apply DDL.
+- `Query.Worker`: the composition root for Catalog publication, Catalog visibility-safety, and Promotion placement consumers plus the Query outbox dispatcher.
+- `Query.Migrations`: one-shot Query schema owner, including durable public-read outbox storage; runtime hosts never apply DDL.
 
 ## Active flows
 
@@ -52,6 +54,19 @@ catalog.public-visibility-suppression.changed
 
 Each safety event owns a separate durable block. Completing one event removes only its block, so another pending or failed event keeps the catalog unavailable. A failed second phase cannot expose the stale public revision.
 
+```text
+any successful PublicReadRevision pointer switch
+→ canonical sorted public listing membership after safety suppression
+→ exact sponsored placement references and hard-expiry intervals
+→ deterministic membership digest
+→ Query-owned PublicReadRevisionActivated payload
+→ pointer state + outbox message in the same PostgreSQL transaction
+→ publisher-confirmed RabbitMQ delivery
+→ Analytics inbox and local public-reference projection
+```
+
+The event is minimal: it carries identities, membership, placement attribution references, digests, and activation time, never full `ListingDocument` content or private suppression evidence. Every pointer-writing path uses the same outbox writer. Publication recomposition emits only after its block is removed in the same transaction, so Analytics cannot accept a revision that Query still considers unavailable.
+
 ## Public-read invariant
 
 At request start, Query resolves one current `PublicReadRevision` and its exact base, promotion, and safety component IDs. Search, sponsored rows, organic rows, facets, details, cache metadata, and cursors remain bound to that snapshot until response completion. No request may read an independent Promotion pointer or compose domain meaning in a frontend.
@@ -66,7 +81,7 @@ Sponsored rows preserve campaign/placement identities, slot position, disclosure
 
 Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its publication pointer and outbox. Query accepts the first Catalog activation only at revision `1`, then requires every subsequent checkpoint transition to be exactly `last + 1`. Stale lower revisions may be recorded as ignored only after a later contiguous checkpoint is already proven. A forward gap cannot switch the public pointer or advance the checkpoint.
 
-`Query.Migrations/V008__catalog_activation_revision_contiguity.sql` introduces the durable checkpoint invariant and rejects upgrades whose checkpoint claims revisions absent from the durable inbox. `V010__catalog_activation_upsert_contiguity.sql` preserves the same invariant for the repository's `INSERT ... ON CONFLICT DO UPDATE` checkpoint write: the trigger reads the existing owner row before validating the incoming revision. Recovery remains an explicit replay or rebuild operation, never a silent checkpoint reset.
+`Query.Migrations/V008__catalog_activation_revision_contiguity.sql` introduces the durable Catalog-source checkpoint invariant and rejects upgrades whose checkpoint claims revisions absent from the durable inbox. `V010__catalog_activation_upsert_contiguity.sql` preserves the same invariant for the repository's `INSERT ... ON CONFLICT DO UPDATE` checkpoint write: the trigger reads the existing owner row before validating the incoming revision. Query separately allocates a monotonic per-catalog public-read activation revision whenever the composite pointer changes; this revision is serialized into the producer event and persisted in the outbox. Recovery remains an explicit replay or rebuild operation, never a silent checkpoint reset.
 
 ## Failure behavior
 
@@ -83,8 +98,9 @@ Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its
 ## Proof
 
 - Domain/application tests cover immutable components, exact suppression mapping, deterministic safety digests, publication overlay recomposition, replay/conflict, validation, and component preservation.
-- Worker tests cover strict payload integrity, producer event identity, retry classification, bounded options, RabbitMQ redelivery, and non-retryable dead-letter behavior while the event-scoped block remains active.
+- Worker tests cover strict inbound payload integrity, producer event identity, retry classification, bounded options, RabbitMQ redelivery, Query outbox delivery limits, and non-retryable dead-letter behavior while the event-scoped block remains active.
 - Real PostgreSQL tests prove initial activation revision `1`, exact contiguous checkpoint advancement, transaction rollback of a forward gap, checkpoint UPSERT ordering, and fail-closed migration when historical inbox coverage is incomplete.
 - Migration/schema tests prove exact immutable overlay reinsertion is idempotent while same-ID changed state fails with a typed PostgreSQL owner error.
 - Recomposition integration proof verifies a new Catalog base preserves the exact active Promotion and safety overlays, performs one activation revision transition, updates inbox/checkpoint/pointer consistently, and removes only its own recomposition block.
 - Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while any relevant block remains.
+- Architecture tests require every public-read pointer writer to create the producer outbox message, require a real dispatcher in `Query.Worker`, and prohibit a hidden direct Query-to-Analytics persistence path.
