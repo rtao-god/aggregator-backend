@@ -10,9 +10,7 @@ internal sealed class EfAnalyticsRepository(
     AnalyticsDbContext dbContext) :
     IAnalyticsEventStore,
     IPublicReadReferenceStore,
-    IListingMetricsAccessProjectionWriter,
-    IDailyListingMetricsStore,
-    IListingMetricsAuthorizer
+    IDailyListingMetricsStore
 {
     private const string SemanticEventKeyConstraint =
         "ux_analytics_interaction_event_semantic_key";
@@ -210,72 +208,6 @@ internal sealed class EfAnalyticsRepository(
             placement.ScopeKey);
     }
 
-    public async Task ApplyAsync(
-        ListingMetricsAccessProjection projection,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(projection);
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-        var row = await dbContext.ListingAccessProjections
-            .SingleOrDefaultAsync(
-                candidate =>
-                    candidate.ListingId == projection.ListingId &&
-                    candidate.ActorId == projection.ActorId,
-                cancellationToken);
-        if (row is null)
-        {
-            if (projection.SourceAggregateRevision != 1)
-            {
-                throw AccessRevisionGap(projection, currentRevision: 0);
-            }
-
-            dbContext.ListingAccessProjections.Add(new AnalyticsListingAccessProjectionRow
-            {
-                ListingId = projection.ListingId,
-                ActorId = projection.ActorId,
-                CanViewAnalytics = projection.CanViewAnalytics,
-                SourceAggregateRevision = projection.SourceAggregateRevision,
-                SourcePayloadDigest = projection.SourcePayloadDigest,
-                ChangedAtUtc = projection.ChangedAtUtc,
-            });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        if (projection.SourceAggregateRevision == row.SourceAggregateRevision)
-        {
-            EnsureSameAccessProjection(row, projection);
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        if (projection.SourceAggregateRevision < row.SourceAggregateRevision)
-        {
-            throw new AnalyticsCommandException(
-                "Analytics.AccessProjection",
-                "ANALYTICS_ACCESS_REVISION_STALE",
-                409,
-                "A stale listing access revision cannot replace the Analytics authorization projection.",
-                "Replay from the expected Catalog aggregate revision without resetting the current projection.",
-                AccessRevisionContext(projection, row.SourceAggregateRevision));
-        }
-
-        if (projection.SourceAggregateRevision != row.SourceAggregateRevision + 1)
-        {
-            throw AccessRevisionGap(projection, row.SourceAggregateRevision);
-        }
-
-        row.CanViewAnalytics = projection.CanViewAnalytics;
-        row.SourceAggregateRevision = projection.SourceAggregateRevision;
-        row.SourcePayloadDigest = projection.SourcePayloadDigest;
-        row.ChangedAtUtc = projection.ChangedAtUtc;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-    }
-
     public async Task<IReadOnlyList<DailyListingMetrics>> GetRangeAsync(
         string catalogKey,
         Guid listingId,
@@ -295,85 +227,6 @@ internal sealed class EfAnalyticsRepository(
             .OrderBy(row => row.MetricDate)
             .ToArrayAsync(cancellationToken);
         return rows.Select(RestoreMetrics).ToArray();
-    }
-
-    public async Task AuthorizeAsync(
-        Guid actorId,
-        Guid listingId,
-        CancellationToken cancellationToken)
-    {
-        AnalyticsDomainRules.RequireIdentifier(actorId, nameof(actorId));
-        AnalyticsDomainRules.RequireIdentifier(listingId, nameof(listingId));
-        var permission = await dbContext.ListingAccessProjections
-            .AsNoTracking()
-            .Where(row => row.ActorId == actorId && row.ListingId == listingId)
-            .Select(row => (bool?)row.CanViewAnalytics)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (permission is not true)
-        {
-            throw new AnalyticsCommandException(
-                "Analytics.AccessProjection",
-                "ANALYTICS_LISTING_METRICS_FORBIDDEN",
-                403,
-                "The actor has no local Analytics permission for this listing.",
-                "Verify the Catalog listing access grant and consume its exact projection revision.",
-                new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["actorId"] = actorId,
-                    ["listingId"] = listingId,
-                });
-        }
-    }
-
-    private async Task<InteractionEvent> RestoreEventAsync(
-        AnalyticsInteractionEventRow row,
-        CancellationToken cancellationToken)
-    {
-        var parameterRows = await dbContext.InteractionCampaignParameters
-            .AsNoTracking()
-            .Where(parameter => parameter.EventId == row.Id)
-            .OrderBy(parameter => parameter.ParameterKey)
-            .ToArrayAsync(cancellationToken);
-        var parameters = parameterRows.ToDictionary(
-            parameter => parameter.ParameterKey,
-            parameter => parameter.ParameterValue,
-            StringComparer.Ordinal);
-        try
-        {
-            var interactionEvent = InteractionEvent.CreateAccepted(
-                row.Id,
-                row.ClientEventId,
-                (InteractionEventKind)row.EventKind,
-                row.CatalogKey,
-                row.ListingId,
-                row.PublicReadRevisionId,
-                row.OccurredAtUtc,
-                row.ReceivedAtUtc,
-                row.PageContext,
-                PlacementContext.Create(
-                    (PlacementExposureKind)row.PlacementExposureKind,
-                    row.PlacementId,
-                    row.PlacementScopeKey),
-                (ReferrerClass)row.ReferrerClass,
-                parameters,
-                (ConsentMode)row.ConsentMode,
-                row.PayloadDigest);
-            var qualityState = (TrafficQualityState)row.QualityState;
-            if (qualityState != TrafficQualityState.Accepted)
-            {
-                interactionEvent.ClassifyTraffic(qualityState);
-            }
-
-            return interactionEvent;
-        }
-        catch (AnalyticsDomainException exception)
-        {
-            throw PersistenceCorruption(
-                "ANALYTICS_EVENT_ROW_CORRUPT",
-                $"Persisted interaction event '{row.Id:D}' violates the Analytics domain contract: {exception.Message}",
-                "Stop interaction reads and repair the persisted event from a verified source.",
-                exception);
-        }
     }
 
     private static AnalyticsInteractionEventRow ToRow(InteractionEvent interactionEvent) =>
@@ -451,62 +304,6 @@ internal sealed class EfAnalyticsRepository(
         value ?? throw new AnalyticsDomainException(
             "ANALYTICS_AGGREGATE_COUNT_REQUIRED",
             $"Complete persisted aggregate is missing '{valueName}'.");
-
-    private static void EnsureSameAccessProjection(
-        AnalyticsListingAccessProjectionRow persisted,
-        ListingMetricsAccessProjection incoming)
-    {
-        if (persisted.CanViewAnalytics == incoming.CanViewAnalytics &&
-            string.Equals(
-                persisted.SourcePayloadDigest,
-                incoming.SourcePayloadDigest,
-                StringComparison.Ordinal) &&
-            persisted.ChangedAtUtc == incoming.ChangedAtUtc)
-        {
-            return;
-        }
-
-        throw new AnalyticsCommandException(
-            "Analytics.AccessProjection",
-            "ANALYTICS_ACCESS_REVISION_DIGEST_CONFLICT",
-            409,
-            "The listing access revision is already projected with a different payload.",
-            "Stop Catalog access event consumption and inspect the conflicting producer messages.",
-            AccessRevisionContext(incoming, persisted.SourceAggregateRevision));
-    }
-
-    private static AnalyticsCommandException AccessRevisionGap(
-        ListingMetricsAccessProjection incoming,
-        long currentRevision) =>
-        new(
-            "Analytics.AccessProjection",
-            "ANALYTICS_ACCESS_REVISION_GAP",
-            409,
-            "The listing access projection cannot apply a revision gap.",
-            "Replay Catalog listing access events beginning with the next expected aggregate revision.",
-            AccessRevisionContext(incoming, currentRevision));
-
-    private static Dictionary<string, object?> AccessRevisionContext(
-        ListingMetricsAccessProjection incoming,
-        long currentRevision) =>
-        new(StringComparer.Ordinal)
-        {
-            ["listingId"] = incoming.ListingId,
-            ["actorId"] = incoming.ActorId,
-            ["currentRevision"] = currentRevision,
-            ["incomingRevision"] = incoming.SourceAggregateRevision,
-            ["incomingPayloadDigest"] = incoming.SourcePayloadDigest,
-        };
-
-    private static bool IsUniqueViolation(
-        DbUpdateException exception,
-        string? constraintName = null) =>
-        exception.InnerException is PostgresException
-        {
-            SqlState: PostgresErrorCodes.UniqueViolation,
-        } postgresException &&
-        (constraintName is null ||
-         string.Equals(postgresException.ConstraintName, constraintName, StringComparison.Ordinal));
 
     private static AnalyticsCommandException PersistenceFailure(
         string code,
