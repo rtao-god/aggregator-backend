@@ -81,10 +81,12 @@ public sealed class SubmitInteractionEventService(
             request.ClientEventId,
             request.OccurredAtUtc,
             cancellationToken);
-        var membership = await publicReadReferences.ValidateMembershipAsync(
+        var membership = await publicReadReferences.ValidateInteractionAsync(
             request.PublicReadRevisionId,
             interactionEvent.CatalogKey,
             interactionEvent.ListingId,
+            interactionEvent.PlacementContext,
+            interactionEvent.OccurredAtUtc,
             cancellationToken);
         EnsureKnownMembership(membership, interactionEvent);
 
@@ -201,6 +203,34 @@ public sealed class SubmitInteractionEventService(
                     "Send the exact public listing identity associated with the interaction.",
                     membership,
                     interactionEvent);
+            case PublicReadMembershipState.SponsoredPlacementNotPublic:
+                throw MembershipFailure(
+                    "ANALYTICS_SPONSORED_PLACEMENT_UNKNOWN",
+                    "The supplied sponsored placement is not present in the exact public-read revision.",
+                    "Send the Query-owned placement identity published with the exact public-read revision.",
+                    membership,
+                    interactionEvent);
+            case PublicReadMembershipState.SponsoredPlacementListingMismatch:
+                throw MembershipFailure(
+                    "ANALYTICS_SPONSORED_PLACEMENT_LISTING_MISMATCH",
+                    "The supplied sponsored placement belongs to another public listing.",
+                    "Send the listing identity bound to the exact Query sponsored placement reference.",
+                    membership,
+                    interactionEvent);
+            case PublicReadMembershipState.SponsoredPlacementScopeMismatch:
+                throw MembershipFailure(
+                    "ANALYTICS_SPONSORED_PLACEMENT_SCOPE_MISMATCH",
+                    "The supplied sponsored placement scope does not match the exact Query reference.",
+                    "Send the scope key published for the exact sponsored placement.",
+                    membership,
+                    interactionEvent);
+            case PublicReadMembershipState.SponsoredPlacementInactive:
+                throw MembershipFailure(
+                    "ANALYTICS_SPONSORED_PLACEMENT_INACTIVE",
+                    "The sponsored placement was not active at the interaction occurrence time.",
+                    "Do not attribute interactions outside the Query-owned placement interval.",
+                    membership,
+                    interactionEvent);
             default:
                 throw new AnalyticsCommandException(
                     "Analytics.PublicReference",
@@ -230,6 +260,11 @@ public sealed class SubmitInteractionEventService(
                 ["requestedListingId"] = interactionEvent.ListingId,
                 ["actualCatalogKey"] = membership.ActualCatalogKey,
                 ["actualListingId"] = membership.ActualListingId,
+                ["requestedPlacementId"] = interactionEvent.PlacementContext.PlacementId,
+                ["requestedPlacementScopeKey"] = interactionEvent.PlacementContext.ScopeKey,
+                ["actualPlacementId"] = membership.ActualPlacementId,
+                ["actualPlacementListingId"] = membership.ActualPlacementListingId,
+                ["actualPlacementScopeKey"] = membership.ActualPlacementScopeKey,
             });
 
     private static AnalyticsCommandException DigestConflict(

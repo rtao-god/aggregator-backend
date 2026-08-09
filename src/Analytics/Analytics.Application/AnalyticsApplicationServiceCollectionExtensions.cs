@@ -9,6 +9,7 @@ public static class AnalyticsApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SubmitInteractionEventService>();
+        services.AddScoped<ApplyPublicReadRevisionActivationService>();
         services.AddScoped<ReadDailyListingMetricsService>();
         services.AddScoped<RebuildDailyAnalyticsMetricsService>();
         return services;

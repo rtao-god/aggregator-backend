@@ -15,7 +15,7 @@ internal static class AnalyticsCanonicalJson
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.PlacementContext);
         ArgumentNullException.ThrowIfNull(request.CampaignParameters);
-        var canonicalInput = new
+        return ComputeDigest(new
         {
             request.ClientEventId,
             request.EventKind,
@@ -30,8 +30,13 @@ internal static class AnalyticsCanonicalJson
                 .OrderBy(item => item.Key, StringComparer.Ordinal)
                 .ToArray(),
             request.ConsentMode,
-        };
-        var element = JsonSerializer.SerializeToElement(canonicalInput, SerializerOptions);
+        });
+    }
+
+    public static string ComputeDigest<T>(T value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        var element = JsonSerializer.SerializeToElement(value, SerializerOptions);
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
@@ -46,9 +51,13 @@ internal static class AnalyticsCanonicalJson
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNameCaseInsensitive = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = false,
         };
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter(
+            JsonNamingPolicy.CamelCase,
+            allowIntegerValues: false));
         return options;
     }
 
@@ -60,7 +69,7 @@ internal static class AnalyticsCanonicalJson
                 writer.WriteStartObject();
                 foreach (var property in element.EnumerateObject().OrderBy(item => item.Name, StringComparer.Ordinal))
                 {
-                    writer.WritePropertyName(property.Name);
+                    writer.WritePropertyName(property.Name.Normalize(NormalizationForm.FormC));
                     WriteCanonical(property.Value, writer);
                 }
 
@@ -91,7 +100,8 @@ internal static class AnalyticsCanonicalJson
                 writer.WriteNullValue();
                 break;
             default:
-                throw new InvalidOperationException($"JSON value kind '{element.ValueKind}' cannot be canonicalized.");
+                throw new InvalidOperationException(
+                    $"JSON value kind '{element.ValueKind}' cannot be canonicalized.");
         }
     }
 }
