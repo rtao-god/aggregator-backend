@@ -24,7 +24,15 @@ public static class CatalogInfrastructureServiceCollectionExtensions
 
         services.AddDbContext<CatalogDbContext>(options =>
             options.UseNpgsql(connectionString));
-        services.AddScoped<ICatalogRepository, EfCatalogRepository>();
+        services.AddScoped<EfCatalogRepository>();
+        services.AddScoped<ICatalogRepository>(serviceProvider =>
+            serviceProvider.GetRequiredService<EfCatalogRepository>());
+        services.AddScoped<ICatalogPublicationOperationCommitter>(serviceProvider =>
+            serviceProvider.GetRequiredService<EfCatalogRepository>());
+        services.AddScoped<ICatalogPublicationOperationStore, PostgresCatalogPublicationOperationStore>();
+        services.AddScoped<
+            ICatalogPublicationOperationFailureClassifier,
+            CatalogPublicationOperationFailureClassifier>();
         services.AddScoped<
             ICatalogVisibilitySuppressionRepository,
             PostgresCatalogVisibilitySuppressionRepository>();

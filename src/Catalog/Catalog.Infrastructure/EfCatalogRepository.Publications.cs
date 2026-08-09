@@ -98,69 +98,69 @@ public sealed partial class EfCatalogRepository
         ArgumentNullException.ThrowIfNull(outboxFactory);
         try
         {
+            await ExecuteInTransactionAsync(
+                innerCancellationToken => CommitNewPublicationAsync(
+                    publication,
+                    expectedCurrentPublicationId,
+                    listings,
+                    outboxFactory,
+                    operation: null,
+                    operationCompletedAtUtc: null,
+                    innerCancellationToken),
+                cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            if (TryTranslatePublicationActivationFailure(exception, publication, out var activationFailure))
+            {
+                throw activationFailure;
+            }
+
+            throw;
+        }
+    }
+
+    public async Task CommitAsync(
+        CatalogPreparedPublication preparedPublication,
+        CatalogPublicationOperationCompletion completion,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(preparedPublication);
+        ArgumentNullException.ThrowIfNull(completion);
+        if (completion.OperationId == Guid.Empty || completion.LeaseToken == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Publication operation and lease token IDs are required.",
+                nameof(completion));
+        }
+
+        if (completion.CompletedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                "Publication operation completion timestamp must be normalized to UTC.",
+                nameof(completion));
+        }
+
+        var publication = preparedPublication.Publication;
+        try
+        {
             await ExecuteInTransactionAsync(async innerCancellationToken =>
             {
-                var current = await _dbContext.CurrentPublications
+                var operation = await _dbContext.PublicationOperations
                     .SingleOrDefaultAsync(
-                        row => row.CatalogKey == publication.CatalogKey.Value,
-                        innerCancellationToken);
-                EnsurePublicationPointer(current?.PublicationId, expectedCurrentPublicationId, publication.CatalogKey);
-                var activationRevision = await AllocatePublicationActivationRevisionAsync(
-                    publication.CatalogKey,
+                        row => row.Id == completion.OperationId,
+                        innerCancellationToken)
+                    ?? throw new CatalogPublicationOperationLeaseLostException(
+                        completion.OperationId);
+                ValidatePublicationOperationLease(operation, publication, completion);
+                await CommitNewPublicationAsync(
+                    publication,
+                    preparedPublication.ExpectedCurrentPublicationId,
+                    preparedPublication.Listings,
+                    preparedPublication.OutboxFactory,
+                    operation,
+                    completion.CompletedAtUtc,
                     innerCancellationToken);
-                var outboxMessage = outboxFactory(activationRevision);
-
-                _dbContext.Publications.Add(new CatalogPublicationRow
-                {
-                    Id = publication.Id,
-                    CatalogKey = publication.CatalogKey.Value,
-                    ConfigurationRevisionId = publication.ConfigurationRevisionId,
-                    Sequence = publication.Sequence,
-                    ArtifactKey = publication.ArtifactKey,
-                    ArtifactDigest = publication.ArtifactDigest,
-                    CreatedByActorId = publication.CreatedByActorId,
-                    CreatedAtUtc = publication.CreatedAtUtc,
-                });
-                foreach (var entry in publication.Entries)
-                {
-                    _dbContext.PublicationEntries.Add(new CatalogPublicationEntryRow
-                    {
-                        PublicationId = publication.Id,
-                        ListingId = entry.ListingId,
-                        ListingRevisionId = entry.ListingRevisionId,
-                        SubjectRevisionId = entry.SubjectRevisionId,
-                        ContentDigest = entry.ContentDigest,
-                    });
-                }
-
-                foreach (var listing in listings)
-                {
-                    var listingRow = await RequireTrackedListingAsync(listing.Id, innerCancellationToken);
-                    ApplyListingMutation(listingRow, listing);
-                }
-
-                if (current is null)
-                {
-                    current = new CurrentCatalogPublicationRow
-                    {
-                        CatalogKey = publication.CatalogKey.Value,
-                        PublicationId = publication.Id,
-                        PublicationSequence = publication.Sequence,
-                        ActivatedAtUtc = publication.CreatedAtUtc,
-                        ActivatedByActorId = publication.CreatedByActorId,
-                    };
-                    _dbContext.CurrentPublications.Add(current);
-                }
-                else
-                {
-                    current.PublicationId = publication.Id;
-                    current.PublicationSequence = publication.Sequence;
-                    current.ActivatedAtUtc = publication.CreatedAtUtc;
-                    current.ActivatedByActorId = publication.CreatedByActorId;
-                }
-
-                AddOutbox(outboxMessage);
-                await _dbContext.SaveChangesAsync(innerCancellationToken);
             }, cancellationToken);
         }
         catch (DbUpdateException exception)
@@ -171,6 +171,130 @@ public sealed partial class EfCatalogRepository
             }
 
             throw;
+        }
+    }
+
+    private async Task CommitNewPublicationAsync(
+        CatalogPublication publication,
+        Guid? expectedCurrentPublicationId,
+        IReadOnlyList<Listing> listings,
+        CatalogPublicationActivationOutboxFactory outboxFactory,
+        CatalogPublicationOperationRow? operation,
+        DateTimeOffset? operationCompletedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var current = await _dbContext.CurrentPublications
+            .SingleOrDefaultAsync(
+                row => row.CatalogKey == publication.CatalogKey.Value,
+                cancellationToken);
+        EnsurePublicationPointer(
+            current?.PublicationId,
+            expectedCurrentPublicationId,
+            publication.CatalogKey);
+        var activationRevision = await AllocatePublicationActivationRevisionAsync(
+            publication.CatalogKey,
+            cancellationToken);
+        var outboxMessage = outboxFactory(activationRevision);
+
+        _dbContext.Publications.Add(new CatalogPublicationRow
+        {
+            Id = publication.Id,
+            CatalogKey = publication.CatalogKey.Value,
+            ConfigurationRevisionId = publication.ConfigurationRevisionId,
+            Sequence = publication.Sequence,
+            ArtifactKey = publication.ArtifactKey,
+            ArtifactDigest = publication.ArtifactDigest,
+            CreatedByActorId = publication.CreatedByActorId,
+            CreatedAtUtc = publication.CreatedAtUtc,
+        });
+        foreach (var entry in publication.Entries)
+        {
+            _dbContext.PublicationEntries.Add(new CatalogPublicationEntryRow
+            {
+                PublicationId = publication.Id,
+                ListingId = entry.ListingId,
+                ListingRevisionId = entry.ListingRevisionId,
+                SubjectRevisionId = entry.SubjectRevisionId,
+                ContentDigest = entry.ContentDigest,
+            });
+        }
+
+        foreach (var listing in listings)
+        {
+            var listingRow = await RequireTrackedListingAsync(listing.Id, cancellationToken);
+            ApplyListingMutation(listingRow, listing);
+        }
+
+        if (current is null)
+        {
+            current = new CurrentCatalogPublicationRow
+            {
+                CatalogKey = publication.CatalogKey.Value,
+                PublicationId = publication.Id,
+                PublicationSequence = publication.Sequence,
+                ActivatedAtUtc = publication.CreatedAtUtc,
+                ActivatedByActorId = publication.CreatedByActorId,
+            };
+            _dbContext.CurrentPublications.Add(current);
+        }
+        else
+        {
+            current.PublicationId = publication.Id;
+            current.PublicationSequence = publication.Sequence;
+            current.ActivatedAtUtc = publication.CreatedAtUtc;
+            current.ActivatedByActorId = publication.CreatedByActorId;
+        }
+
+        AddOutbox(outboxMessage);
+        if (operation is not null)
+        {
+            var completedAtUtc = operationCompletedAtUtc
+                ?? throw new InvalidOperationException(
+                    "Publication operation completion timestamp is required for an operation-owned commit.");
+            operation.State = (int)CatalogPublicationOperationState.Completed;
+            operation.ResultPublicationId = publication.Id;
+            operation.LeaseToken = null;
+            operation.LeasedBy = null;
+            operation.LeaseExpiresAtUtc = null;
+            operation.NextAttemptAtUtc = null;
+            operation.FailureOwner = null;
+            operation.FailureCode = null;
+            operation.FailureDetail = null;
+            operation.FailureRequiredAction = null;
+            operation.UpdatedAtUtc = completedAtUtc;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ValidatePublicationOperationLease(
+        CatalogPublicationOperationRow operation,
+        CatalogPublication publication,
+        CatalogPublicationOperationCompletion completion)
+    {
+        if (operation.State != (int)CatalogPublicationOperationState.Leased ||
+            operation.LeaseToken != completion.LeaseToken ||
+            operation.LeaseExpiresAtUtc is null ||
+            operation.LeaseExpiresAtUtc <= completion.CompletedAtUtc)
+        {
+            throw new CatalogPublicationOperationLeaseLostException(completion.OperationId);
+        }
+
+        if (operation.PublicationId != publication.Id ||
+            operation.PublicationSequence != publication.Sequence ||
+            !string.Equals(operation.CatalogKey, publication.CatalogKey.Value, StringComparison.Ordinal) ||
+            operation.ActorId != publication.CreatedByActorId)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_operation_effect_identity_mismatch",
+                $"Publication operation '{operation.Id}' does not own publication '{publication.Id}' sequence '{publication.Sequence}'.");
+        }
+
+        if (operation.ResultPublicationId is not null)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_operation_already_completed",
+                $"Publication operation '{operation.Id}' already has result publication '{operation.ResultPublicationId}'.");
         }
     }
 
@@ -297,58 +421,68 @@ public sealed partial class EfCatalogRepository
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(publication);
-        var postgres = exception.InnerException as PostgresException
-            ?? exception.GetBaseException() as PostgresException;
-        if (postgres is null)
+        if (TryGetPostgresException(exception) is not { } postgresException)
         {
             activationFailure = null!;
             return false;
         }
 
-        var reason = postgres.SqlState switch
+        switch (postgresException.SqlState)
         {
-            PublicationPointerIdentityMismatchSqlState =>
-                CatalogPublicationActivationBlockReason.PointerIdentityMismatch,
-            PublicationMediaNotPublishableSqlState =>
-                CatalogPublicationActivationBlockReason.MediaNotPublishable,
-            PublicationVisibilitySuppressionSqlState =>
-                CatalogPublicationActivationBlockReason.PublicVisibilitySuppression,
-            _ => (CatalogPublicationActivationBlockReason?)null,
-        };
-        if (reason is null)
+            case PublicationPointerIdentityMismatchSqlState:
+                activationFailure = new CatalogPublicationActivationBlockedException(
+                    publication.CatalogKey.Value,
+                    publication.Id,
+                    CatalogPublicationActivationBlockReason.PointerIdentityMismatch,
+                    "Reload the exact current Catalog publication pointer before retrying activation.",
+                    postgresException.MessageText);
+                return true;
+            case PublicationMediaNotPublishableSqlState:
+                activationFailure = new CatalogPublicationActivationBlockedException(
+                    publication.CatalogKey.Value,
+                    publication.Id,
+                    CatalogPublicationActivationBlockReason.MediaNotPublishable,
+                    "Resolve the revoked, expired, unapproved, or mismatched media binding and create a new Catalog publication.",
+                    postgresException.MessageText);
+                return true;
+            case PublicationVisibilitySuppressionSqlState:
+                activationFailure = new CatalogPublicationActivationBlockedException(
+                    publication.CatalogKey.Value,
+                    publication.Id,
+                    CatalogPublicationActivationBlockReason.PublicVisibilitySuppression,
+                    "Resolve the active public visibility suppression at its Catalog owner or create a new publication without the suppressed content.",
+                    postgresException.MessageText);
+                return true;
+            default:
+                activationFailure = null!;
+                return false;
+        }
+    }
+
+    private static PostgresException? TryGetPostgresException(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
         {
-            activationFailure = null!;
-            return false;
+            if (current is PostgresException postgresException)
+            {
+                return postgresException;
+            }
         }
 
-        var requiredAction = postgres.Hint ?? reason.Value switch
-        {
-            CatalogPublicationActivationBlockReason.PointerIdentityMismatch =>
-                "Reload the exact Catalog publication and its current pointer identity before retrying.",
-            CatalogPublicationActivationBlockReason.MediaNotPublishable =>
-                "Create and approve a new listing revision from current rights-active Catalog Media output.",
-            CatalogPublicationActivationBlockReason.PublicVisibilitySuppression =>
-                "Create a replacement publication without the suppressed target or resolve the suppression through Catalog.",
-            _ => throw new InvalidOperationException("Publication activation block reason is unsupported."),
-        };
-        activationFailure = new CatalogPublicationActivationBlockedException(
-            publication.CatalogKey,
-            publication.Id,
-            reason.Value,
-            postgres.MessageText,
-            requiredAction);
-        return true;
+        return null;
     }
 
     private static void EnsurePublicationPointer(
-        Guid? actualPublicationId,
-        Guid? expectedPublicationId,
+        Guid? actualCurrentPublicationId,
+        Guid? expectedCurrentPublicationId,
         CatalogKey catalogKey)
     {
-        if (actualPublicationId != expectedPublicationId)
+        if (actualCurrentPublicationId != expectedCurrentPublicationId)
         {
             throw new CatalogConflictException(
-                $"Catalog '{catalogKey}' expected current publication '{expectedPublicationId?.ToString() ?? "absent"}' but is at '{actualPublicationId?.ToString() ?? "absent"}'.");
+                $"Catalog '{catalogKey}' current publication changed from expected " +
+                $"'{expectedCurrentPublicationId?.ToString() ?? "absent"}' to " +
+                $"'{actualCurrentPublicationId?.ToString() ?? "absent"}'.");
         }
     }
 }

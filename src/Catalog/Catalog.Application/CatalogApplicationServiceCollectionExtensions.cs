@@ -11,6 +11,8 @@ public static class CatalogApplicationServiceCollectionExtensions
         services.AddScoped<CatalogConfigurationService>();
         services.AddScoped<CatalogListingService>();
         services.AddScoped<CatalogPublicationService>();
+        services.AddScoped<CatalogPublicationOperationService>();
+        services.AddScoped<CatalogPublicationOperationExecutor>();
         services.AddScoped<CatalogClaimService>();
         services.AddScoped<CatalogVisibilitySuppressionService>();
         return services;
