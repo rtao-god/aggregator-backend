@@ -61,6 +61,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IIngestionPayloadStore>();
             services.RemoveAll<IIngestionProducerRegistry>();
             services.RemoveAll<ICatalogIngestionReferenceReader>();
+            services.RemoveAll<IIngestionCatalogDeliveryReader>();
             services.RemoveAll<IIngestionClock>();
             services.RemoveAll<IIngestionIdSource>();
             services.AddSingleton<IIngestionBatchRepository>(Backend);
@@ -68,6 +69,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IIngestionPayloadStore>(Backend);
             services.AddSingleton<IIngestionProducerRegistry>(Backend);
             services.AddSingleton<ICatalogIngestionReferenceReader>(Backend);
+            services.AddSingleton<IIngestionCatalogDeliveryReader>(Backend);
             services.AddSingleton<IIngestionClock>(Backend);
             services.AddSingleton<IIngestionIdSource>(Backend);
             services
@@ -102,6 +104,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         IIngestionPayloadStore,
         IIngestionProducerRegistry,
         ICatalogIngestionReferenceReader,
+        IIngestionCatalogDeliveryReader,
         IIngestionClock,
         IIngestionIdSource
     {
@@ -109,6 +112,7 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
         private readonly Dictionary<Guid, IngestionBatchSnapshot> _batches = [];
         private readonly Dictionary<(string Scope, string Key), StoredCommand> _commands = [];
         private readonly Dictionary<(string Producer, Guid CollectorExportId), Guid> _exports = [];
+        private readonly Dictionary<Guid, IngestionCatalogDeliveryCollection> _deliveryLedgers = [];
         private int _uploadAuthorizationCount;
         private int _uploadVerificationCount;
 
@@ -203,6 +207,34 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                 return Task.FromResult(
                     _batches.TryGetValue(batchId.Value, out var batch)
                         ? batch
+                        : null);
+            }
+        }
+
+        public void SetCatalogDeliveries(IngestionCatalogDeliveryCollection deliveries)
+        {
+            ArgumentNullException.ThrowIfNull(deliveries);
+            lock (_gate)
+            {
+                _deliveryLedgers[deliveries.BatchId] = deliveries;
+            }
+        }
+
+        public Task<IngestionCatalogDeliveryCollection?> ReadAsync(
+            Guid batchId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                if (_deliveryLedgers.TryGetValue(batchId, out var deliveries))
+                {
+                    return Task.FromResult<IngestionCatalogDeliveryCollection?>(deliveries);
+                }
+
+                return Task.FromResult<IngestionCatalogDeliveryCollection?>(
+                    _batches.ContainsKey(batchId)
+                        ? new IngestionCatalogDeliveryCollection(batchId, [])
                         : null);
             }
         }
@@ -407,10 +439,10 @@ public sealed class IngestionApiFactory : WebApplicationFactory<Program>
                 claims.Add(new Claim("scope", scopes.ToString()));
             }
 
-            var identity = new ClaimsIdentity(claims, AuthenticationSchemeName);
+            var identity = new ClaimsIdentity(claims, TestAuthenticationHandler.AuthenticationSchemeName);
             var principal = new ClaimsPrincipal(identity);
             return Task.FromResult(AuthenticateResult.Success(
-                new AuthenticationTicket(principal, AuthenticationSchemeName)));
+                new AuthenticationTicket(principal, TestAuthenticationHandler.AuthenticationSchemeName)));
         }
     }
 }
