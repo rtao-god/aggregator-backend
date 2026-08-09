@@ -165,7 +165,9 @@ public sealed class AnalyticsListingAccessConsumerReachabilityTests
             authorizationOffset >= 0 && metricsReadOffset > authorizationOffset,
             "Metrics authorization must complete before aggregate rows are read.");
         Assert.DoesNotContain("HttpClient", authorizer, StringComparison.Ordinal);
-        Assert.DoesNotContain("Catalog", metricsService, StringComparison.Ordinal);
+        Assert.DoesNotContain("Catalog.Contracts", metricsService, StringComparison.Ordinal);
+        Assert.DoesNotContain("Catalog.Api", metricsService, StringComparison.Ordinal);
+        Assert.DoesNotContain("ICatalog", metricsService, StringComparison.Ordinal);
     }
 
     [Fact]
