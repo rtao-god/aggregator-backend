@@ -127,7 +127,7 @@ public sealed class ApplyCatalogListingAccessGrantChangedServiceTests
             CatalogIntegrationEventContracts.ListingAccessGrantChanged,
             new string('a', 64),
             "analytics-access-test",
-            causationId: null,
+            CausationId: null,
             new CatalogListingAccessGrantChanged(
                 MessageId,
                 GrantId,
