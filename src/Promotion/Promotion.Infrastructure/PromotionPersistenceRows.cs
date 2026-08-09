@@ -149,6 +149,8 @@ internal sealed class ListingPromotionEligibilityRow
 
     public Guid ListingId { get; set; }
 
+    public Guid? PublishedListingRevisionId { get; set; }
+
     public bool IsPublished { get; set; }
 
     public bool IsArchived { get; set; }
@@ -166,6 +168,20 @@ internal sealed class ListingPromotionEligibilityRow
     public long SourceRevision { get; set; }
 
     public DateTimeOffset ChangedAtUtc { get; set; }
+
+    public Guid SourceMessageId { get; set; }
+
+    public required string SourceContractIdentity { get; set; }
+
+    public required string SourcePayloadDigest { get; set; }
+
+    public required string ProjectionDigest { get; set; }
+
+    public required string CorrelationId { get; set; }
+
+    public Guid? CausationId { get; set; }
+
+    public DateTimeOffset ReceivedAtUtc { get; set; }
 }
 
 internal sealed class PromotionCommandRow
