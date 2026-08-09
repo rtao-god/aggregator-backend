@@ -82,12 +82,11 @@ public sealed class IngestionProducerRegistrationService(
         var reason = RequireReason(command.Reason, producerIdentity);
         var updatedAtUtc = RequireUtc(clock.GetUtcNow());
         var aggregateRevision = checked(command.ExpectedAggregateRevision + 1);
-        var contentDocument = new ProducerRegistrationContentDocument(
+        var contentDigest = ComputeContentDigest(
             producerIdentity,
             command.Active,
             supportedRevisions,
             aggregateRevision);
-        var contentDigest = IngestionCanonicalJson.ComputeDigest(contentDocument);
         var requestDocument = new ProducerRegistrationRequestDocument(
             producerIdentity,
             command.ExpectedAggregateRevision,
@@ -123,6 +122,28 @@ public sealed class IngestionProducerRegistrationService(
         store.ReadAsync(
             RequireIdentity(producerIdentity, "producer identity", 400),
             cancellationToken);
+
+    /// <summary>Computes the one canonical identity of a producer-registration revision.</summary>
+    public static string ComputeContentDigest(
+        string producerIdentity,
+        bool active,
+        IReadOnlyList<int> supportedContractRevisions,
+        long aggregateRevision)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(producerIdentity);
+        ArgumentNullException.ThrowIfNull(supportedContractRevisions);
+        if (aggregateRevision <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(aggregateRevision));
+        }
+
+        return IngestionCanonicalJson.ComputeDigest(
+            new ProducerRegistrationContentDocument(
+                producerIdentity,
+                active,
+                supportedContractRevisions,
+                aggregateRevision));
+    }
 
     public static IngestionProducerRegistrationDto ToDto(
         IngestionProducerRegistrationSnapshot registration)
