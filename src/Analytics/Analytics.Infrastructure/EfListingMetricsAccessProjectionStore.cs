@@ -63,12 +63,9 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
         if (existingInbox is not null)
         {
             EnsureSameInbox(existingInbox, change);
-            var currentProjection = await RequireProjectionAsync(
-                existingInbox.GrantId,
-                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new ListingMetricsAccessProjectionResult(
-                currentProjection,
+                change.Projection,
                 ListingMetricsAccessProjectionDisposition.Replayed);
         }
 
@@ -126,7 +123,6 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
 
         dbContext.ListingAccessInboxMessages.Add(ToInboxRow(
             change,
-            resultProjection,
             disposition,
             receivedAtUtc));
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -146,22 +142,6 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
         _ = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({grantIdentity}, 4));",
             cancellationToken);
-    }
-
-    private async Task<ListingMetricsAccessProjection> RequireProjectionAsync(
-        Guid grantId,
-        CancellationToken cancellationToken)
-    {
-        var row = await dbContext.ListingAccessProjections
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                candidate => candidate.GrantId == grantId,
-                cancellationToken)
-            ?? throw PersistenceCorruption(
-                "ANALYTICS_ACCESS_INBOX_RESULT_MISSING",
-                $"Access inbox references missing grant projection '{grantId:D}'.",
-                "Stop owner-report reads and rebuild the Analytics access projection from Catalog events.");
-        return RestoreProjection(row);
     }
 
     private static ListingMetricsAccessProjection RestoreProjection(
@@ -236,7 +216,6 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
 
     private static AnalyticsListingAccessGrantInboxRow ToInboxRow(
         ListingMetricsAccessProjectionChange change,
-        ListingMetricsAccessProjection resultProjection,
         ListingMetricsAccessProjectionDisposition disposition,
         DateTimeOffset receivedAtUtc) =>
         new()
@@ -253,7 +232,7 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
             CorrelationId = change.CorrelationId,
             CausationId = change.CausationId,
             Disposition = (int)disposition,
-            ResultProjectionDigest = resultProjection.ProjectionDigest,
+            ResultProjectionDigest = change.ProjectionDigest,
             ProcessedAtUtc = receivedAtUtc,
         };
 
@@ -270,6 +249,10 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
             persisted.SourceAggregateRevision == incoming.Projection.SourceAggregateRevision &&
             string.Equals(persisted.CorrelationId, incoming.CorrelationId, StringComparison.Ordinal) &&
             persisted.CausationId == incoming.CausationId &&
+            string.Equals(
+                persisted.ResultProjectionDigest,
+                incoming.ProjectionDigest,
+                StringComparison.Ordinal) &&
             Enum.IsDefined((ListingMetricsAccessProjectionDisposition)persisted.Disposition))
         {
             return;
@@ -336,7 +319,7 @@ public sealed class EfListingMetricsAccessProjectionStore(AnalyticsAccessProject
         long currentRevision) =>
         Failure(
             "ANALYTICS_ACCESS_REVISION_GAP",
-            409,
+            503,
             "The Catalog listing access projection cannot apply a revision gap.",
             "Replay Catalog listing access events beginning with the next expected grant revision.",
             change,
