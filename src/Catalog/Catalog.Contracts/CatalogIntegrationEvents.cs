@@ -6,6 +6,7 @@ public static class CatalogIntegrationEventTypes
     public const string PublicationActivated = "catalog.publication.activated";
     public const string ListingClaimVerified = "catalog.listing-claim.verified";
     public const string ListingClaimRevoked = "catalog.listing-claim.revoked";
+    public const string ListingAccessGrantChanged = "catalog.listing-access-grant.changed";
     public const string ListingPromotionEligibilityChanged =
         "catalog.listing-promotion-eligibility.changed";
     public const string PublicVisibilitySuppressionChanged =
@@ -18,6 +19,8 @@ public static class CatalogIntegrationEventContracts
     public const string PublicationActivated = "aggregator.catalog.publication-activated@2";
     public const string ListingClaimVerified = "aggregator.catalog.listing-claim-verified@1";
     public const string ListingClaimRevoked = "aggregator.catalog.listing-claim-revoked@1";
+    public const string ListingAccessGrantChanged =
+        "aggregator.catalog.listing-access-grant-changed@1";
     public const string ListingPromotionEligibilityChanged =
         "aggregator.catalog.listing-promotion-eligibility-changed@1";
     public const string PublicVisibilitySuppressionChanged =
@@ -73,6 +76,28 @@ public sealed record CatalogListingClaimRevoked(
     Guid ClaimId,
     Guid ListingId,
     Guid ActorId,
+    DateTimeOffset OccurredAtUtc);
+
+public enum CatalogListingAccessGrantStateContract
+{
+    Active = 1,
+    Revoked = 2,
+}
+
+/// <summary>
+/// Minimal Catalog-owned resource permission change projected by Analytics and Promotion.
+/// Claim evidence, JWT data, email, and reviewer notes never cross this boundary.
+/// </summary>
+public sealed record CatalogListingAccessGrantChanged(
+    Guid EventId,
+    Guid GrantId,
+    Guid ListingId,
+    Guid ActorId,
+    IReadOnlyList<ListingAccessScopeContract> Permissions,
+    CatalogListingAccessGrantStateContract State,
+    DateTimeOffset GrantedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    long AggregateRevision,
     DateTimeOffset OccurredAtUtc);
 
 /// <summary>Stable verified contact capability keys published by the Catalog owner.</summary>

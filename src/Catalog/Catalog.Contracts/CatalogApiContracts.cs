@@ -120,6 +120,9 @@ public enum ListingAccessScopeContract
     ProposeRevision = 2,
     ManageContacts = 3,
     ManageMedia = 4,
+    ViewAnalytics = 5,
+    ManagePromotion = 6,
+    ManageMembers = 7,
 }
 
 public sealed record ImportProductConfigurationRequest(

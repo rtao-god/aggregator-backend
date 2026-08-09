@@ -16,6 +16,9 @@ public enum ListingAccessScope
     ProposeRevision = 2,
     ManageContacts = 3,
     ManageMedia = 4,
+    ViewAnalytics = 5,
+    ManagePromotion = 6,
+    ManageMembers = 7,
 }
 
 public sealed class ListingClaim
@@ -243,7 +246,8 @@ public sealed record ListingAccessGrant
         Guid claimId,
         DateTimeOffset? revokedAtUtc,
         Guid? revokedByActorId,
-        string? revocationReason)
+        string? revocationReason,
+        long aggregateRevision)
     {
         Id = id;
         ListingId = listingId;
@@ -255,6 +259,7 @@ public sealed record ListingAccessGrant
         RevokedAtUtc = revokedAtUtc;
         RevokedByActorId = revokedByActorId;
         RevocationReason = revocationReason;
+        AggregateRevision = aggregateRevision;
     }
 
     public Guid Id { get; }
@@ -276,6 +281,8 @@ public sealed record ListingAccessGrant
     public Guid? RevokedByActorId { get; private set; }
 
     public string? RevocationReason { get; private set; }
+
+    public long AggregateRevision { get; private set; }
 
     public bool IsActiveAt(DateTimeOffset timestampUtc)
     {
@@ -313,8 +320,116 @@ public sealed record ListingAccessGrant
         RevokedAtUtc = revokedAtUtc;
         RevokedByActorId = actorId;
         RevocationReason = reason.Trim();
+        AggregateRevision++;
         return this;
     }
+
+    public static ListingAccessGrant Restore(ListingAccessGrantSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Id == Guid.Empty ||
+            snapshot.ListingId == Guid.Empty ||
+            snapshot.ActorId == Guid.Empty ||
+            snapshot.ClaimId == Guid.Empty)
+        {
+            throw new ArgumentException("Listing access grant snapshot is invalid.", nameof(snapshot));
+        }
+
+        ArgumentNullException.ThrowIfNull(snapshot.Scopes);
+        CatalogClock.RequireUtc(snapshot.GrantedAtUtc, nameof(snapshot));
+        if (snapshot.ExpiresAtUtc is not null)
+        {
+            CatalogClock.RequireUtc(snapshot.ExpiresAtUtc.Value, nameof(snapshot));
+            if (snapshot.ExpiresAtUtc <= snapshot.GrantedAtUtc)
+            {
+                throw new ArgumentException(
+                    "Listing access grant expiration must follow grant creation.",
+                    nameof(snapshot));
+            }
+        }
+
+        if (snapshot.RevokedAtUtc is not null)
+        {
+            CatalogClock.RequireUtc(snapshot.RevokedAtUtc.Value, nameof(snapshot));
+            if (snapshot.RevokedAtUtc < snapshot.GrantedAtUtc)
+            {
+                throw new ArgumentException(
+                    "Listing access grant revocation cannot precede grant creation.",
+                    nameof(snapshot));
+            }
+        }
+
+        if (snapshot.AggregateRevision < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(snapshot),
+                "Listing access grant aggregate revision must be positive.");
+        }
+
+        var scopeSet = snapshot.Scopes.ToHashSet();
+        if (scopeSet.Count == 0 || scopeSet.Any(scope => !Enum.IsDefined(scope)))
+        {
+            throw new ArgumentException(
+                "Listing access grant snapshot must contain supported scopes.",
+                nameof(snapshot));
+        }
+
+        var hasCompleteRevocation =
+            snapshot.RevokedAtUtc is not null &&
+            snapshot.RevokedByActorId is not null &&
+            !string.IsNullOrWhiteSpace(snapshot.RevocationReason);
+        var hasNoRevocation =
+            snapshot.RevokedAtUtc is null &&
+            snapshot.RevokedByActorId is null &&
+            snapshot.RevocationReason is null;
+        if (!hasCompleteRevocation && !hasNoRevocation)
+        {
+            throw new ArgumentException(
+                "Listing access grant revocation snapshot is inconsistent.",
+                nameof(snapshot));
+        }
+
+        if (snapshot.RevokedByActorId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Revoked listing access grant snapshot requires a non-empty actor.",
+                nameof(snapshot));
+        }
+
+        if (snapshot.RevokedAtUtc is not null && snapshot.AggregateRevision < 2)
+        {
+            throw new ArgumentException(
+                "Revoked listing access grant snapshot must include the revocation revision.",
+                nameof(snapshot));
+        }
+
+        return new ListingAccessGrant(
+            snapshot.Id,
+            snapshot.ListingId,
+            snapshot.ActorId,
+            new ReadOnlySet<ListingAccessScope>(scopeSet),
+            snapshot.GrantedAtUtc,
+            snapshot.ExpiresAtUtc,
+            snapshot.ClaimId,
+            snapshot.RevokedAtUtc,
+            snapshot.RevokedByActorId,
+            snapshot.RevocationReason?.Trim(),
+            snapshot.AggregateRevision);
+    }
+
+    public ListingAccessGrantSnapshot ToSnapshot() =>
+        new(
+            Id,
+            ListingId,
+            ActorId,
+            Scopes,
+            GrantedAtUtc,
+            ExpiresAtUtc,
+            ClaimId,
+            RevokedAtUtc,
+            RevokedByActorId,
+            RevocationReason,
+            AggregateRevision);
 
     internal static ListingAccessGrant Create(
         Guid id,
@@ -348,9 +463,11 @@ public sealed record ListingAccessGrant
         ArgumentNullException.ThrowIfNull(scopes);
         CatalogClock.RequireUtc(grantedAtUtc, nameof(grantedAtUtc));
         var scopeSet = scopes.ToHashSet();
-        if (scopeSet.Count == 0)
+        if (scopeSet.Count == 0 || scopeSet.Any(scope => !Enum.IsDefined(scope)))
         {
-            throw new ArgumentException("A listing access grant must contain at least one scope.", nameof(scopes));
+            throw new ArgumentException(
+                "A listing access grant must contain at least one supported scope.",
+                nameof(scopes));
         }
 
         return new ListingAccessGrant(
@@ -363,9 +480,23 @@ public sealed record ListingAccessGrant
             claimId,
             revokedAtUtc: null,
             revokedByActorId: null,
-            revocationReason: null);
+            revocationReason: null,
+            aggregateRevision: 1);
     }
 }
+
+public sealed record ListingAccessGrantSnapshot(
+    Guid Id,
+    Guid ListingId,
+    Guid ActorId,
+    IReadOnlySet<ListingAccessScope> Scopes,
+    DateTimeOffset GrantedAtUtc,
+    DateTimeOffset? ExpiresAtUtc,
+    Guid ClaimId,
+    DateTimeOffset? RevokedAtUtc,
+    Guid? RevokedByActorId,
+    string? RevocationReason,
+    long AggregateRevision);
 
 public sealed class CatalogAuthorizationException : InvalidOperationException
 {
