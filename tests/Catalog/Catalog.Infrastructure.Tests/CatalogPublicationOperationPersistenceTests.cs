@@ -37,6 +37,15 @@ public sealed class CatalogPublicationOperationPersistenceTests
         Assert.Equal(first.PlannedPublicationSequence, replay.PlannedPublicationSequence);
         Assert.Equal(CatalogPublicationOperationState.Pending, replay.State);
 
+        var next = await store.RegisterAsync(
+            CreateRegistration(
+                Guid.Parse("0198a222-0000-7000-8000-000000000008"),
+                Guid.Parse("0198a222-0000-7000-8000-000000000009"),
+                "publication-idempotency-0001-next",
+                "request-next"),
+            CancellationToken.None);
+        Assert.Equal(first.PlannedPublicationSequence + 1, next.PlannedPublicationSequence);
+
         var conflict = await Assert.ThrowsAsync<CatalogConflictException>(() =>
             store.RegisterAsync(
                 CreateRegistration(
@@ -46,6 +55,50 @@ public sealed class CatalogPublicationOperationPersistenceTests
                     "request-two"),
                 CancellationToken.None));
         Assert.Contains("different Catalog publication request", conflict.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConcurrentRegistrationReplayCreatesOneOperationAndConsumesOneSequence()
+    {
+        await using var database = await CatalogPostgresTestDatabase.CreateAsync();
+        await database.ApplyAllCatalogMigrationsAsync();
+        var firstRegistration = CreateRegistration(
+            Guid.Parse("0198a222-0000-7000-8000-000000000030"),
+            Guid.Parse("0198a222-0000-7000-8000-000000000031"),
+            "publication-idempotency-concurrent",
+            "concurrent-request");
+        var secondRegistration = CreateRegistration(
+            Guid.Parse("0198a222-0000-7000-8000-000000000032"),
+            Guid.Parse("0198a222-0000-7000-8000-000000000033"),
+            firstRegistration.IdempotencyKey,
+            "concurrent-request");
+
+        await using var firstContext = database.CreateContext();
+        await using var secondContext = database.CreateContext();
+        var firstStore = new PostgresCatalogPublicationOperationStore(firstContext);
+        var secondStore = new PostgresCatalogPublicationOperationStore(secondContext);
+        var registrations = await Task.WhenAll(
+            firstStore.RegisterAsync(firstRegistration, CancellationToken.None),
+            secondStore.RegisterAsync(secondRegistration, CancellationToken.None));
+
+        Assert.Equal(registrations[0].OperationId, registrations[1].OperationId);
+        Assert.Equal(registrations[0].PlannedPublicationId, registrations[1].PlannedPublicationId);
+        Assert.Equal(
+            registrations[0].PlannedPublicationSequence,
+            registrations[1].PlannedPublicationSequence);
+
+        await using var nextContext = database.CreateContext();
+        var nextStore = new PostgresCatalogPublicationOperationStore(nextContext);
+        var next = await nextStore.RegisterAsync(
+            CreateRegistration(
+                Guid.Parse("0198a222-0000-7000-8000-000000000034"),
+                Guid.Parse("0198a222-0000-7000-8000-000000000035"),
+                "publication-idempotency-concurrent-next",
+                "concurrent-next-request"),
+            CancellationToken.None);
+        Assert.Equal(
+            registrations[0].PlannedPublicationSequence + 1,
+            next.PlannedPublicationSequence);
     }
 
     [Fact]
