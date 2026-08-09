@@ -25,6 +25,49 @@ public sealed record CatalogConfigurationProjection(
     DateTimeOffset ActivatedAtUtc,
     string ProjectionDigest);
 
+/// <summary>Owns the canonical digest of the Ingestion-local Catalog configuration projection.</summary>
+public static class CatalogConfigurationProjectionDigest
+{
+    public static string Compute(
+        string siteKey,
+        string catalogKey,
+        Guid configurationRevisionId,
+        Guid? previousConfigurationRevisionId,
+        string configurationDigest,
+        string marketAreaKey,
+        IReadOnlyList<IngestionEntityKindContract> supportedListingKinds,
+        long aggregateRevision,
+        Guid sourceEventId,
+        string sourcePayloadDigest,
+        DateTimeOffset activatedAtUtc) =>
+        IngestionCanonicalJson.ComputeDigest(
+            new DigestDocument(
+                siteKey,
+                catalogKey,
+                configurationRevisionId,
+                previousConfigurationRevisionId,
+                configurationDigest,
+                marketAreaKey,
+                supportedListingKinds,
+                aggregateRevision,
+                sourceEventId,
+                sourcePayloadDigest,
+                activatedAtUtc));
+
+    private sealed record DigestDocument(
+        string SiteKey,
+        string CatalogKey,
+        Guid ConfigurationRevisionId,
+        Guid? PreviousConfigurationRevisionId,
+        string ConfigurationDigest,
+        string MarketAreaKey,
+        IReadOnlyList<IngestionEntityKindContract> SupportedListingKinds,
+        long AggregateRevision,
+        Guid SourceEventId,
+        string SourcePayloadDigest,
+        DateTimeOffset ActivatedAtUtc);
+}
+
 /// <summary>Broker metadata retained by the Ingestion inbox for one Catalog configuration event.</summary>
 public sealed record CatalogConfigurationInboxMessage(
     Guid EventId,
@@ -158,18 +201,6 @@ public sealed class ApplyCatalogConfigurationActivationService(
             previousNumericKind = numericKind;
         }
 
-        var digestDocument = new CatalogConfigurationProjectionDigestDocument(
-            siteKey,
-            catalogKey,
-            activation.ConfigurationRevisionId,
-            activation.PreviousConfigurationRevisionId,
-            configurationDigest,
-            marketAreaKey,
-            listingKinds,
-            activation.AggregateRevision,
-            activation.EventId,
-            exactPayloadDigest,
-            activatedAtUtc);
         return new CatalogConfigurationProjection(
             siteKey,
             catalogKey,
@@ -182,7 +213,18 @@ public sealed class ApplyCatalogConfigurationActivationService(
             activation.EventId,
             exactPayloadDigest,
             activatedAtUtc,
-            IngestionCanonicalJson.ComputeDigest(digestDocument));
+            CatalogConfigurationProjectionDigest.Compute(
+                siteKey,
+                catalogKey,
+                activation.ConfigurationRevisionId,
+                activation.PreviousConfigurationRevisionId,
+                configurationDigest,
+                marketAreaKey,
+                listingKinds,
+                activation.AggregateRevision,
+                activation.EventId,
+                exactPayloadDigest,
+                activatedAtUtc));
     }
 
     private static string RequireKey(string value, string meaning)
@@ -269,17 +311,4 @@ public sealed class ApplyCatalogConfigurationActivationService(
                 ["catalogKey"] = catalogKey,
                 ["aggregateRevision"] = aggregateRevision,
             });
-
-    private sealed record CatalogConfigurationProjectionDigestDocument(
-        string SiteKey,
-        string CatalogKey,
-        Guid ConfigurationRevisionId,
-        Guid? PreviousConfigurationRevisionId,
-        string ConfigurationDigest,
-        string MarketAreaKey,
-        IReadOnlyList<IngestionEntityKindContract> SupportedListingKinds,
-        long AggregateRevision,
-        Guid SourceEventId,
-        string SourcePayloadDigest,
-        DateTimeOffset ActivatedAtUtc);
 }
