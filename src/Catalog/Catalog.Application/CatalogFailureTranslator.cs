@@ -49,6 +49,21 @@ public static class CatalogFailureTranslator
                         ["actualVersion"] = concurrency.ActualVersion,
                     });
                 return true;
+            case CatalogListingDisputeConcurrencyException concurrency:
+                failure = Create(
+                    "Catalog.ListingDisputes",
+                    "LISTING_DISPUTE_REVISION_CONFLICT",
+                    "Listing dispute revision conflict",
+                    409,
+                    concurrency.Message,
+                    "Reload the current listing dispute revision before submitting another transition.",
+                    new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["disputeId"] = concurrency.DisputeId,
+                        ["expectedRevision"] = concurrency.ExpectedRevision,
+                        ["actualRevision"] = concurrency.ActualRevision,
+                    });
+                return true;
             case CatalogSuppressionConcurrencyException concurrency:
                 failure = Create(
                     "Catalog.VisibilitySuppression",
