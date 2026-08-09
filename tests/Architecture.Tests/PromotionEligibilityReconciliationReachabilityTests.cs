@@ -110,6 +110,41 @@ public sealed class PromotionEligibilityReconciliationReachabilityTests
     }
 
     [Fact]
+    public void ScheduledActivationReadsCurrentLocalEligibilityBeforeTransition()
+    {
+        var repository = RepositoryModel.Load();
+        var scheduling = Read(
+            repository,
+            "src/Promotion/Promotion.Infrastructure/EfPromotionRepository.Scheduling.cs");
+        var policy = Read(
+            repository,
+            "src/Promotion/Promotion.Application/PromotionScheduledPlacementPolicy.cs");
+
+        Assert.Contains("GetEligibilityAsync(", scheduling, StringComparison.Ordinal);
+        Assert.Contains(
+            "PromotionScheduledPlacementPolicy.Synchronize(",
+            scheduling,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "placement.SynchronizeTime(placement.AggregateRevision, nowUtc)",
+            scheduling,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "catalog eligibility projection is unavailable at scheduled activation",
+            policy,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "entitlement.IsEffectiveAt(changedAtUtc)",
+            policy,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "placement.PauseWhenCatalogIneligible(",
+            policy,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(".Resume(", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PromotionWorkerHasNoCatalogDatabaseCredential()
     {
         var repository = RepositoryModel.Load();
