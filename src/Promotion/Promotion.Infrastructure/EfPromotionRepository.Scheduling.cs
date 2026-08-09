@@ -1,4 +1,3 @@
-using System.Data;
 using Aggregator.Promotion.Application;
 using Aggregator.Promotion.Contracts;
 using Aggregator.Promotion.Domain;
@@ -9,8 +8,8 @@ namespace Aggregator.Promotion.Infrastructure;
 public sealed partial class EfPromotionRepository
 {
     /// <summary>
-    /// Advances due entitlement and placement clocks and persists each resulting producer event in the
-    /// Promotion outbox in the same owner transaction.
+    /// Advances due entitlement and placement clocks as independent owner transactions. A corrupt later
+    /// schedule item cannot roll back already committed transitions or their matching outbox messages.
     /// </summary>
     public async Task<int> SynchronizeDueAsync(
         DateTimeOffset nowUtc,
@@ -18,6 +17,297 @@ public sealed partial class EfPromotionRepository
         int batchSize,
         IPromotionIdSource idSource,
         CancellationToken cancellationToken)
+    {
+        ValidateSchedulerInput(nowUtc, systemActorId, batchSize, idSource);
+        var commandContext = PromotionCommandContext.Start(
+            PromotionActor.Create(systemActorId),
+            $"promotion-scheduler:{nowUtc:yyyyMMddHHmmssfffffff}");
+        var changed = 0;
+
+        var entitlementIds = await _dbContext.Entitlements
+            .AsNoTracking()
+            .Where(row =>
+                row.State == (int)PromotionEntitlementState.Scheduled &&
+                row.StartsAtUtc <= nowUtc ||
+                row.State == (int)PromotionEntitlementState.Active &&
+                row.EndsAtUtc <= nowUtc)
+            .OrderBy(row => row.EndsAtUtc)
+            .ThenBy(row => row.StartsAtUtc)
+            .ThenBy(row => row.Id)
+            .Select(row => row.Id)
+            .Take(batchSize)
+            .ToArrayAsync(cancellationToken);
+        foreach (var entitlementId in entitlementIds)
+        {
+            changed += await SynchronizeEntitlementAsync(
+                entitlementId,
+                nowUtc,
+                commandContext,
+                idSource,
+                cancellationToken);
+            if (changed == batchSize)
+            {
+                return changed;
+            }
+        }
+
+        _dbContext.ChangeTracker.Clear();
+        var remaining = batchSize - changed;
+        var placementCandidates = await (
+                from placement in _dbContext.Placements.AsNoTracking()
+                join revision in _dbContext.PlacementRevisions.AsNoTracking()
+                    on placement.CurrentRevisionId equals revision.Id
+                where
+                    (placement.State == (int)SponsoredPlacementState.Scheduled ||
+                     placement.State == (int)SponsoredPlacementState.Active) &&
+                    (
+                        placement.State == (int)SponsoredPlacementState.Scheduled &&
+                        revision.StartsAtUtc <= nowUtc ||
+                        revision.EndsAtUtc <= nowUtc ||
+                        !_dbContext.Entitlements.Any(entitlement =>
+                            entitlement.Id == placement.EntitlementId &&
+                            entitlement.State == (int)PromotionEntitlementState.Active &&
+                            entitlement.StartsAtUtc <= nowUtc &&
+                            entitlement.EndsAtUtc > nowUtc) ||
+                        !_dbContext.Products.Any(product =>
+                            product.ProductKey == placement.ProductKey &&
+                            product.State == (int)PromotionProductState.Active)
+                    )
+                orderby revision.EndsAtUtc, revision.StartsAtUtc, placement.Id
+                select new PlacementScheduleCandidate(
+                    placement.Id,
+                    placement.ListingId,
+                    revision.CatalogKey))
+            .Take(remaining)
+            .ToArrayAsync(cancellationToken);
+        foreach (var candidate in placementCandidates)
+        {
+            changed += await SynchronizePlacementAsync(
+                candidate,
+                nowUtc,
+                systemActorId,
+                commandContext,
+                idSource,
+                cancellationToken);
+        }
+
+        return changed;
+    }
+
+    private async Task<int> SynchronizeEntitlementAsync(
+        Guid entitlementId,
+        DateTimeOffset nowUtc,
+        PromotionCommandContext commandContext,
+        IPromotionIdSource idSource,
+        CancellationToken cancellationToken)
+    {
+        _dbContext.ChangeTracker.Clear();
+        try
+        {
+            return await ExecuteInTransactionAsync(async innerCancellationToken =>
+            {
+                var row = await _dbContext.Entitlements
+                    .FromSqlInterpolated($$"""
+                        SELECT *
+                        FROM entitlements.promotion_entitlement
+                        WHERE id = {{entitlementId}}
+                        FOR UPDATE
+                        """)
+                    .SingleOrDefaultAsync(innerCancellationToken)
+                    ?? throw Failure(
+                        "Promotion.Scheduling",
+                        "PROMOTION_SCHEDULE_ENTITLEMENT_MISSING",
+                        500,
+                        $"Due entitlement '{entitlementId}' no longer exists.",
+                        "Restore the exact Promotion entitlement before resuming scheduled transitions.");
+                var entitlement = RestoreEntitlement(row);
+                if (!entitlement.SynchronizeTime(entitlement.AggregateRevision, nowUtc))
+                {
+                    return 0;
+                }
+
+                Apply(row, entitlement);
+                var eventId = idSource.CreateId();
+                var integrationEvent = PromotionContractMapper.ToEvent(entitlement, eventId, nowUtc);
+                AddOutbox(PromotionOutboxMessageFactory.Create(
+                    eventId,
+                    PromotionIntegrationEventTypes.EntitlementChanged,
+                    PromotionIntegrationEventContracts.EntitlementChanged,
+                    integrationEvent,
+                    nowUtc,
+                    commandContext));
+                await _dbContext.SaveChangesAsync(innerCancellationToken);
+                return 1;
+            }, cancellationToken);
+        }
+        finally
+        {
+            _dbContext.ChangeTracker.Clear();
+        }
+    }
+
+    private async Task<int> SynchronizePlacementAsync(
+        PlacementScheduleCandidate candidate,
+        DateTimeOffset nowUtc,
+        Guid systemActorId,
+        PromotionCommandContext commandContext,
+        IPromotionIdSource idSource,
+        CancellationToken cancellationToken)
+    {
+        _dbContext.ChangeTracker.Clear();
+        var listingStream = $"{candidate.CatalogKey}:{candidate.ListingId:D}";
+        var connectionOpened = false;
+        var streamLockAcquired = false;
+        try
+        {
+            await _dbContext.Database.OpenConnectionAsync(cancellationToken);
+            connectionOpened = true;
+            _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_lock(hashtextextended({listingStream}, 2));",
+                cancellationToken);
+            streamLockAcquired = true;
+            return await ExecuteInTransactionAsync(async innerCancellationToken =>
+            {
+                var row = await _dbContext.Placements
+                    .FromSqlInterpolated($$"""
+                        SELECT *
+                        FROM placements.sponsored_placement
+                        WHERE id = {{candidate.PlacementId}}
+                        FOR UPDATE
+                        """)
+                    .SingleOrDefaultAsync(innerCancellationToken)
+                    ?? throw Failure(
+                        "Promotion.Scheduling",
+                        "PROMOTION_SCHEDULE_PLACEMENT_MISSING",
+                        500,
+                        $"Due placement '{candidate.PlacementId}' no longer exists.",
+                        "Restore the exact Promotion placement before resuming scheduled transitions.");
+                if (row.State is not (
+                        (int)SponsoredPlacementState.Scheduled or
+                        (int)SponsoredPlacementState.Active))
+                {
+                    return 0;
+                }
+
+                var placement = await RestorePlacementAsync(row, innerCancellationToken);
+                if (!string.Equals(
+                        placement.CurrentRevision.CatalogKey,
+                        candidate.CatalogKey,
+                        StringComparison.Ordinal) ||
+                    placement.ListingId != candidate.ListingId)
+                {
+                    throw Failure(
+                        "Promotion.Scheduling",
+                        "PROMOTION_SCHEDULE_CANDIDATE_IDENTITY_DIVERGED",
+                        500,
+                        $"Placement '{placement.Id}' changed Catalog or listing identity after scheduler selection.",
+                        "Stop the scheduler and repair the immutable placement owner identity.");
+                }
+
+                var entitlementRow = await _dbContext.Entitlements
+                    .FromSqlInterpolated($$"""
+                        SELECT *
+                        FROM entitlements.promotion_entitlement
+                        WHERE id = {{placement.EntitlementId}}
+                        FOR SHARE
+                        """)
+                    .SingleOrDefaultAsync(innerCancellationToken)
+                    ?? throw Failure(
+                        "Promotion.Scheduling",
+                        "PROMOTION_SCHEDULE_ENTITLEMENT_MISSING",
+                        500,
+                        $"Placement '{placement.Id}' references missing entitlement '{placement.EntitlementId}'.",
+                        "Restore the exact Promotion entitlement before resuming scheduled transitions.");
+                var entitlement = RestoreEntitlement(entitlementRow);
+                var productRow = await _dbContext.Products
+                    .FromSqlInterpolated($$"""
+                        SELECT *
+                        FROM products.promotion_product
+                        WHERE product_key = {{placement.ProductKey}}
+                        FOR SHARE
+                        """)
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(innerCancellationToken)
+                    ?? throw Failure(
+                        "Promotion.Scheduling",
+                        "PROMOTION_SCHEDULE_PRODUCT_MISSING",
+                        500,
+                        $"Placement '{placement.Id}' references missing product '{placement.ProductKey}'.",
+                        "Restore the exact Promotion product before resuming scheduled transitions.");
+                var product = await RestoreProductAsync(productRow, innerCancellationToken);
+                var eligibility = await GetEligibilityAsync(
+                    placement.CurrentRevision.CatalogKey,
+                    placement.ListingId,
+                    innerCancellationToken);
+                if (!PromotionScheduledPlacementPolicy.Synchronize(
+                        placement,
+                        entitlement,
+                        product,
+                        eligibility,
+                        systemActorId,
+                        nowUtc))
+                {
+                    return 0;
+                }
+
+                row.State = (int)placement.State;
+                row.ChangedAtUtc = placement.ChangedAtUtc;
+                row.AuditReason = placement.AuditReason;
+                row.AggregateRevision = placement.AggregateRevision;
+                var capacityRows = await _dbContext.PlacementCapacity
+                    .Where(existing => existing.PlacementId == placement.Id)
+                    .ToArrayAsync(innerCancellationToken);
+                _dbContext.PlacementCapacity.RemoveRange(capacityRows);
+                AddCapacityRows(placement);
+                var eventId = idSource.CreateId();
+                var integrationEvent = PromotionContractMapper.ToEvent(placement, eventId, nowUtc);
+                AddOutbox(PromotionOutboxMessageFactory.Create(
+                    eventId,
+                    PromotionIntegrationEventTypes.PlacementChanged,
+                    PromotionIntegrationEventContracts.PlacementChanged,
+                    integrationEvent,
+                    nowUtc,
+                    commandContext));
+                await _dbContext.SaveChangesAsync(innerCancellationToken);
+                return 1;
+            }, cancellationToken);
+        }
+        finally
+        {
+            if (streamLockAcquired)
+            {
+                try
+                {
+                    _ = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT pg_advisory_unlock(hashtextextended({listingStream}, 2));",
+                        CancellationToken.None);
+                }
+                catch
+                {
+                    if (connectionOpened)
+                    {
+                        await _dbContext.Database.CloseConnectionAsync();
+                        connectionOpened = false;
+                    }
+
+                    throw;
+                }
+            }
+
+            if (connectionOpened)
+            {
+                await _dbContext.Database.CloseConnectionAsync();
+            }
+
+            _dbContext.ChangeTracker.Clear();
+        }
+    }
+
+    private static void ValidateSchedulerInput(
+        DateTimeOffset nowUtc,
+        Guid systemActorId,
+        int batchSize,
+        IPromotionIdSource idSource)
     {
         if (nowUtc.Offset != TimeSpan.Zero)
         {
@@ -48,147 +338,10 @@ public sealed partial class EfPromotionRepository
         }
 
         ArgumentNullException.ThrowIfNull(idSource);
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-        try
-        {
-            var changed = 0;
-            var remaining = batchSize;
-            var commandContext = PromotionCommandContext.Start(
-                PromotionActor.Create(systemActorId),
-                $"promotion-scheduler:{nowUtc:yyyyMMddHHmmssfffffff}");
-
-            var entitlementRows = await _dbContext.Entitlements
-                .Where(row =>
-                    row.State != (int)PromotionEntitlementState.Paused &&
-                    row.State != (int)PromotionEntitlementState.Revoked &&
-                    row.State != (int)PromotionEntitlementState.Expired &&
-                    (row.StartsAtUtc <= nowUtc || row.EndsAtUtc <= nowUtc))
-                .OrderBy(row => row.EndsAtUtc)
-                .ThenBy(row => row.StartsAtUtc)
-                .ThenBy(row => row.Id)
-                .Take(remaining)
-                .ToArrayAsync(cancellationToken);
-            foreach (var row in entitlementRows)
-            {
-                var entitlement = RestoreEntitlement(row);
-                if (!entitlement.SynchronizeTime(entitlement.AggregateRevision, nowUtc))
-                {
-                    continue;
-                }
-
-                Apply(row, entitlement);
-                var eventId = idSource.CreateId();
-                var integrationEvent = PromotionContractMapper.ToEvent(entitlement, eventId, nowUtc);
-                AddOutbox(PromotionOutboxMessageFactory.Create(
-                    eventId,
-                    PromotionIntegrationEventTypes.EntitlementChanged,
-                    PromotionIntegrationEventContracts.EntitlementChanged,
-                    integrationEvent,
-                    nowUtc,
-                    commandContext));
-                changed++;
-                remaining--;
-                if (remaining == 0)
-                {
-                    break;
-                }
-            }
-
-            if (remaining > 0)
-            {
-                var placementRows = await _dbContext.Placements
-                    .Where(row =>
-                        row.State != (int)SponsoredPlacementState.Paused &&
-                        row.State != (int)SponsoredPlacementState.Ended &&
-                        row.State != (int)SponsoredPlacementState.Revoked)
-                    .OrderBy(row => row.ChangedAtUtc)
-                    .ThenBy(row => row.Id)
-                    .Take(remaining)
-                    .ToArrayAsync(cancellationToken);
-                foreach (var row in placementRows)
-                {
-                    var placement = await RestorePlacementAsync(row, cancellationToken);
-                    var revision = placement.CurrentRevision;
-                    if (revision.EffectiveWindow.StartsAtUtc > nowUtc &&
-                        revision.EffectiveWindow.EndsAtUtc > nowUtc)
-                    {
-                        continue;
-                    }
-
-                    var entitlementRow = await _dbContext.Entitlements
-                        .SingleOrDefaultAsync(
-                            candidate => candidate.Id == placement.EntitlementId,
-                            cancellationToken)
-                        ?? throw Failure(
-                            "Promotion.Scheduling",
-                            "PROMOTION_SCHEDULE_ENTITLEMENT_MISSING",
-                            500,
-                            $"Placement '{placement.Id}' references missing entitlement '{placement.EntitlementId}'.",
-                            "Restore the exact Promotion entitlement before resuming scheduled transitions.");
-                    var entitlement = RestoreEntitlement(entitlementRow);
-                    var productRow = await _dbContext.Products
-                        .AsNoTracking()
-                        .SingleOrDefaultAsync(
-                            candidate => candidate.ProductKey == placement.ProductKey,
-                            cancellationToken)
-                        ?? throw Failure(
-                            "Promotion.Scheduling",
-                            "PROMOTION_SCHEDULE_PRODUCT_MISSING",
-                            500,
-                            $"Placement '{placement.Id}' references missing product '{placement.ProductKey}'.",
-                            "Restore the exact Promotion product before resuming scheduled transitions.");
-                    var product = await RestoreProductAsync(productRow, cancellationToken);
-                    var eligibility = await GetEligibilityAsync(
-                        revision.CatalogKey,
-                        placement.ListingId,
-                        cancellationToken);
-                    if (!PromotionScheduledPlacementPolicy.Synchronize(
-                            placement,
-                            entitlement,
-                            product,
-                            eligibility,
-                            systemActorId,
-                            nowUtc))
-                    {
-                        continue;
-                    }
-
-                    row.State = (int)placement.State;
-                    row.ChangedAtUtc = placement.ChangedAtUtc;
-                    row.AuditReason = placement.AuditReason;
-                    row.AggregateRevision = placement.AggregateRevision;
-                    var capacityRows = await _dbContext.PlacementCapacity
-                        .Where(candidate => candidate.PlacementId == placement.Id)
-                        .ToArrayAsync(cancellationToken);
-                    _dbContext.PlacementCapacity.RemoveRange(capacityRows);
-                    AddCapacityRows(placement);
-                    var eventId = idSource.CreateId();
-                    var integrationEvent = PromotionContractMapper.ToEvent(placement, eventId, nowUtc);
-                    AddOutbox(PromotionOutboxMessageFactory.Create(
-                        eventId,
-                        PromotionIntegrationEventTypes.PlacementChanged,
-                        PromotionIntegrationEventContracts.PlacementChanged,
-                        integrationEvent,
-                        nowUtc,
-                        commandContext));
-                    changed++;
-                }
-            }
-
-            if (changed > 0)
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
-            }
-
-            await transaction.CommitAsync(cancellationToken);
-            return changed;
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            throw;
-        }
     }
+
+    private sealed record PlacementScheduleCandidate(
+        Guid PlacementId,
+        Guid ListingId,
+        string CatalogKey);
 }
