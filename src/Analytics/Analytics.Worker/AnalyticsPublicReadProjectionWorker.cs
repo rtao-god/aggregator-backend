@@ -1,5 +1,3 @@
-using System.Data.Common;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -251,45 +249,20 @@ public sealed class AnalyticsPublicReadProjectionWorker : BackgroundService
 
     internal static void VerifyPayloadIntegrity(
         ReadOnlySpan<byte> payload,
-        string expectedDigest)
-    {
-        if (string.IsNullOrWhiteSpace(expectedDigest) ||
-            expectedDigest.Length != 64 ||
-            expectedDigest.Any(character =>
-                character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
-        {
-            throw new JsonException("Query public-read payload digest header is invalid.");
-        }
+        string expectedDigest) =>
+        AnalyticsMessageEnvelopeValidation.VerifyPayloadIntegrity(
+            payload,
+            expectedDigest,
+            "Query public-read activation");
 
-        var actualDigest = Convert
-            .ToHexString(SHA256.HashData(payload))
-            .ToLowerInvariant();
-        if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
-        {
-            throw new JsonException(
-                "Query public-read payload digest does not match the message body.");
-        }
-    }
+    internal static void ValidateMessageIdentity(Guid eventId, string? messageId) =>
+        AnalyticsMessageEnvelopeValidation.ValidateMessageIdentity(
+            eventId,
+            messageId,
+            "Query public-read activation");
 
-    internal static void ValidateMessageIdentity(Guid eventId, string? messageId)
-    {
-        if (eventId == Guid.Empty ||
-            !Guid.TryParse(messageId, out var parsedMessageId) ||
-            parsedMessageId != eventId)
-        {
-            throw new JsonException(
-                "Query public-read message ID must match the producer-owned event identity.");
-        }
-    }
-
-    internal static bool IsRetryable(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        return exception is AnalyticsCommandException { StatusCode: 503 } ||
-               exception is DbException { IsTransient: true } ||
-               exception is TimeoutException or IOException ||
-               exception.InnerException is not null && IsRetryable(exception.InnerException);
-    }
+    internal static bool IsRetryable(Exception exception) =>
+        AnalyticsMessageEnvelopeValidation.IsRetryable(exception);
 
     private static string ReadRequiredCorrelationId(string? correlationId)
     {
