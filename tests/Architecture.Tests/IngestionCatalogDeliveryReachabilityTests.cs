@@ -75,6 +75,44 @@ public sealed class IngestionCatalogDeliveryReachabilityTests
     }
 
     [Fact]
+    public void ApiRegistersReadOnlyLedgerWithoutCatalogCommandAdapter()
+    {
+        var repository = RepositoryModel.Load();
+        var program = Read(repository, "src/Ingestion/Ingestion.Api/Program.cs");
+        var queryComposition = Read(
+            repository,
+            "src/Ingestion/Ingestion.Infrastructure/IngestionCatalogDeliveryQueryInfrastructureExtensions.cs");
+        var controller = Read(
+            repository,
+            "src/Ingestion/Ingestion.Api/IngestionProcessingController.cs");
+
+        Assert.Contains(
+            "AddIngestionCatalogDeliveryQueryInfrastructure()",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AddIngestionCatalogDeliveryInfrastructure(",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IIngestionCatalogDeliveryReader, PostgresIngestionCatalogDeliveryReader",
+            queryComposition,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[HttpGet(\"deliveries\", Name = IngestionProcessingOperationIds.ReadDeliveries)]",
+            controller,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[Authorize(Policy = IngestionAuthorizationPolicies.Read)]",
+            controller,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "IIngestionCatalogCommandClient",
+            controller,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ObsoletePublisherAndProcessingStoreDeliveryPathsAreAbsent()
     {
         var repository = RepositoryModel.Load();
