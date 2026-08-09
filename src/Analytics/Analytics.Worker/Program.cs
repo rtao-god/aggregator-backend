@@ -1,13 +1,14 @@
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Infrastructure;
+using Aggregator.Platform.Observability;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Platform.Observability;
 
 namespace Aggregator.Analytics.Worker;
 
-public partial class Program
+public static class Program
 {
     public static async Task Main(string[] args)
     {
@@ -30,9 +31,16 @@ public partial class Program
             ?? throw new InvalidOperationException(
                 $"Configuration section '{AnalyticsPublicReadProjectionWorkerOptions.SectionName}' is required.");
         publicReadOptions.Validate();
+        var listingAccessOptions = builder.Configuration
+            .GetSection(AnalyticsListingAccessProjectionWorkerOptions.SectionName)
+            .Get<AnalyticsListingAccessProjectionWorkerOptions>()
+            ?? throw new InvalidOperationException(
+                $"Configuration section '{AnalyticsListingAccessProjectionWorkerOptions.SectionName}' is required.");
+        listingAccessOptions.Validate();
 
         builder.Services.AddSingleton(aggregationOptions);
         builder.Services.AddSingleton(publicReadOptions);
+        builder.Services.AddSingleton(listingAccessOptions);
         builder.Services.AddAnalyticsApplication();
         builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(
@@ -40,6 +48,7 @@ public partial class Program
             "analytics-worker");
         builder.Services.AddHostedService<AnalyticsAggregationWorker>();
         builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();
+        builder.Services.AddHostedService<AnalyticsListingAccessProjectionWorker>();
         return builder.Build();
     }
 }
