@@ -16,6 +16,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../../src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <ProjectReference Include="../../../src/Promotion/Promotion.Application/Promotion.Application.csproj" />
     <ProjectReference Include="../../../src/Promotion/Promotion.Contracts/Promotion.Contracts.csproj" />
     <ProjectReference Include="../../../src/Promotion/Promotion.Domain/Promotion.Domain.csproj" />
