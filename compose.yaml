@@ -184,7 +184,7 @@ services:
       <<: [*api-env, *media-store]
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Catalog__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
       Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Catalog__ObjectStorage__ForcePathStyle: "true"
@@ -199,7 +199,7 @@ services:
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      CatalogWorker__DispatcherIdentity: catalog-outbox
+      CatalogWorker__DispatcherIdentity: catalog-worker
       CatalogWorker__OutboxBatchSize: "50"
       CatalogWorker__MaximumDeliveryAttempts: "8"
       CatalogWorker__LeaseDurationSeconds: "120"
@@ -207,7 +207,7 @@ services:
       CatalogWorker__MaximumPublicationAttempts: "5"
       CatalogWorker__PublicationLeaseDurationSeconds: "300"
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Catalog__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
       Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Catalog__ObjectStorage__ForcePathStyle: "true"
@@ -228,6 +228,8 @@ services:
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
       CatalogMediaWorker__WorkerIdentity: catalog-media-worker
       CatalogMediaWorker__SystemActorId: '${CATALOG_MEDIA_SYSTEM_ACTOR_ID:?CATALOG_MEDIA_SYSTEM_ACTOR_ID is required}'
+      CatalogMediaWorker__ClamAvHost: clamav
+      CatalogMediaWorker__ClamAvPort: "3310"
       CatalogMediaWorker__MaximumAttempts: "8"
       CatalogMediaWorker__OutboxBatchSize: "50"
       CatalogMediaWorker__LeaseDurationSeconds: "300"
@@ -261,21 +263,6 @@ services:
       Query__PromotionWorker__PrefetchCount: "8"
       Query__PromotionWorker__DeliveryLimit: "8"
       Query__PromotionWorker__RetryDelayMilliseconds: "500"
-      Query__VisibilityWorker__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Query__VisibilityWorker__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Query__VisibilityWorker__Queue: query.catalog-visibility-safety
-      Query__VisibilityWorker__DeadLetterExchange: aggregator.dead-letter
-      Query__VisibilityWorker__DeadLetterQueue: query.catalog-visibility-safety.dead-letter
-      Query__VisibilityWorker__RoutingKey: catalog.public-visibility-suppression.changed
-      Query__VisibilityWorker__PrefetchCount: "4"
-      Query__VisibilityWorker__DeliveryLimit: "8"
-      Query__VisibilityWorker__RetryDelayMilliseconds: "500"
-      Query__Outbox__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Query__Outbox__DispatcherIdentity: query-public-read-outbox
-      Query__Outbox__BatchSize: "50"
-      Query__Outbox__MaximumDeliveryAttempts: "8"
-      Query__Outbox__LeaseDurationSeconds: "120"
-      Query__Outbox__EmptyDelayMilliseconds: "2000"
       Query__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Query__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
       Query__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
@@ -309,36 +296,13 @@ services:
       IngestionWorker__ValidationBatchSize: "10"
       IngestionWorker__LeaseDuration: "00:05:00"
       IngestionWorker__EmptyDelay: "00:00:02"
-      IngestionWorker__CatalogDeliveryWorkerIdentity: ingestion-catalog-delivery-worker
-      IngestionWorker__CatalogDeliveryBatchSize: "20"
-      IngestionWorker__CatalogDeliveryLeaseDuration: "00:02:00"
-      IngestionWorker__CatalogDeliveryMaximumAttempts: "8"
-      IngestionWorker__CatalogDeliveryEmptyDelay: "00:00:02"
-      Ingestion__CatalogProjection__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Ingestion__CatalogProjection__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Ingestion__CatalogProjection__Queue: ingestion.catalog-configuration-projection
-      Ingestion__CatalogProjection__DeadLetterExchange: aggregator.dead-letter
-      Ingestion__CatalogProjection__DeadLetterQueue: ingestion.catalog-configuration-projection.dead-letter
-      Ingestion__CatalogProjection__RoutingKey: catalog.configuration.activated
-      Ingestion__CatalogProjection__PrefetchCount: "8"
-      Ingestion__CatalogProjection__DeliveryLimit: "8"
-      Ingestion__CatalogProjection__RetryDelay: "00:00:00.500"
-      Ingestion__CatalogCommand__BaseAddress: http://catalog-api:8080/
-      Ingestion__CatalogCommand__TokenEndpoint: '${INGESTION_CATALOG_TOKEN_ENDPOINT:?INGESTION_CATALOG_TOKEN_ENDPOINT is required}'
-      Ingestion__CatalogCommand__ClientId: '${INGESTION_CATALOG_CLIENT_ID:?INGESTION_CATALOG_CLIENT_ID is required}'
-      Ingestion__CatalogCommand__ClientSecret: '${INGESTION_CATALOG_CLIENT_SECRET:?INGESTION_CATALOG_CLIENT_SECRET is required}'
-      Ingestion__CatalogCommand__Scope: '${INGESTION_CATALOG_SCOPE:-catalog.ingestion}'
-      Ingestion__CatalogCommand__RequestTimeout: "00:00:30"
-      Ingestion__CatalogCommand__RefreshSkew: "00:00:30"
-      Ingestion__CatalogCommand__AllowInsecureHttp: "true"
       Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Ingestion__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
       Ingestion__ObjectStorage__Bucket: '${INGESTION_BUCKET:-ingestion-packages}'
       Ingestion__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Ingestion__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Ingestion__ObjectStorage__ForcePathStyle: "true"
-    networks: [backend, egress]
-    depends_on: {ingestion-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}, seaweedfs: {condition: service_healthy}, catalog-api: {condition: service_healthy}}
+    depends_on: {ingestion-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}}
   analytics-api:
     <<: *api
     build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Analytics/Analytics.Api/Analytics.Api.csproj, APP_DLL: Analytics.Api.dll}}
@@ -357,16 +321,7 @@ services:
       Analytics__Aggregation__PollInterval: "00:30:00"
       Analytics__Aggregation__FailureDelay: "00:00:10"
       Analytics__Aggregation__MaximumConsecutiveFailures: "5"
-      Analytics__PublicReadProjection__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Analytics__PublicReadProjection__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Analytics__PublicReadProjection__Queue: analytics.query-public-read-projection
-      Analytics__PublicReadProjection__DeadLetterExchange: aggregator.dead-letter
-      Analytics__PublicReadProjection__DeadLetterQueue: analytics.query-public-read-projection.dead-letter
-      Analytics__PublicReadProjection__RoutingKey: query.public-read-revision.activated
-      Analytics__PublicReadProjection__PrefetchCount: "8"
-      Analytics__PublicReadProjection__DeliveryLimit: "8"
-      Analytics__PublicReadProjection__RetryDelay: "00:00:00.500"
-    depends_on: {analytics-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
+    depends_on: {analytics-grants: {condition: service_completed_successfully}}
   promotion-api:
     <<: *api
     build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Promotion/Promotion.Api/Promotion.Api.csproj, APP_DLL: Promotion.Api.dll}}
@@ -390,6 +345,13 @@ services:
       PromotionWorker__MaximumDeliveryAttempts: "8"
       PromotionWorker__LeaseDurationSeconds: "120"
       PromotionWorker__PollDelayMilliseconds: "2000"
+      Promotion__EligibilityProjection__Queue: promotion.catalog-listing-eligibility
+      Promotion__EligibilityProjection__DeadLetterExchange: aggregator.dead-letter
+      Promotion__EligibilityProjection__DeadLetterQueue: promotion.catalog-listing-eligibility.dead-letter
+      Promotion__EligibilityProjection__RoutingKey: catalog.listing-promotion-eligibility.changed
+      Promotion__EligibilityProjection__PrefetchCount: "8"
+      Promotion__EligibilityProjection__DeliveryLimit: "8"
+      Promotion__EligibilityProjection__RetryDelayMilliseconds: "500"
     depends_on: {promotion-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
 
   reverse-proxy:
