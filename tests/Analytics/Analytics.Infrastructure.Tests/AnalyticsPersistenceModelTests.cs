@@ -42,7 +42,7 @@ public sealed class AnalyticsPersistenceModelTests
     }
 
     [Fact]
-    public void PublicAndAccessProjectionsRemainLocalAndRevisioned()
+    public void PublicAndAccessProjectionsRemainLocalRevisionedAndMessageBacked()
     {
         using var context = CreateContext();
         var model = context.GetService<IDesignTimeModel>().Model;
@@ -50,21 +50,40 @@ public sealed class AnalyticsPersistenceModelTests
             model,
             "access_projection",
             "public_listing_reference");
+        using var accessContext = CreateAccessContext();
+        var accessModel = accessContext.GetService<IDesignTimeModel>().Model;
         var access = FindTable(
-            model,
+            accessModel,
             "access_projection",
-            "listing_access_projection");
+            "listing_access_grant_projection");
+        var inbox = FindTable(
+            accessModel,
+            "messaging",
+            "listing_access_grant_inbox");
 
         var publicReadForeignKey = Assert.Single(publicListing.GetForeignKeys());
         Assert.Equal(DeleteBehavior.Restrict, publicReadForeignKey.DeleteBehavior);
+        var accessPrimaryKey = Assert.IsAssignableFrom<IKey>(access.FindPrimaryKey());
+        Assert.Equal(
+            ["GrantId"],
+            accessPrimaryKey.Properties.Select(property => property.Name).ToArray());
         var sourceRevision = access.FindProperty("SourceAggregateRevision");
         Assert.NotNull(sourceRevision);
         Assert.True(sourceRevision.IsConcurrencyToken);
+        var checkNames = access.GetCheckConstraints()
+            .Select(check => check.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("ck_analytics_listing_access_grant_revision", checkNames);
+        Assert.Contains("ck_analytics_listing_access_grant_revocation", checkNames);
+        Assert.Contains("ck_analytics_listing_access_grant_digests", checkNames);
+        var inboxForeignKey = Assert.Single(inbox.GetForeignKeys());
+        Assert.Equal(DeleteBehavior.Restrict, inboxForeignKey.DeleteBehavior);
+        Assert.Equal(access, inboxForeignKey.PrincipalEntityType);
         Assert.Contains(
-            access.GetCheckConstraints(),
+            inbox.GetCheckConstraints(),
             check => string.Equals(
                 check.Name,
-                "ck_analytics_listing_access_revision",
+                "ck_analytics_access_grant_inbox_digests",
                 StringComparison.Ordinal));
     }
 
@@ -183,6 +202,14 @@ public sealed class AnalyticsPersistenceModelTests
             .UseNpgsql("Host=localhost;Database=analytics_db;Username=analytics_app;Password=test")
             .Options;
         return new AnalyticsDbContext(options);
+    }
+
+    private static AnalyticsAccessProjectionDbContext CreateAccessContext()
+    {
+        var options = new DbContextOptionsBuilder<AnalyticsAccessProjectionDbContext>()
+            .UseNpgsql("Host=localhost;Database=analytics_db;Username=analytics_app;Password=test")
+            .Options;
+        return new AnalyticsAccessProjectionDbContext(options);
     }
 
     private static IEntityType FindTable(IModel model, string schema, string tableName) =>
