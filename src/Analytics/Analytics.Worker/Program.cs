@@ -31,15 +31,19 @@ public static class Program
             ?? throw new InvalidOperationException(
                 $"Configuration section '{AnalyticsPublicReadProjectionWorkerOptions.SectionName}' is required.");
         publicReadOptions.Validate();
-        var listingAccessOptions = builder.Configuration
+        var listingAccessSettings = builder.Configuration
             .GetSection(AnalyticsListingAccessProjectionWorkerOptions.SectionName)
             .Get<AnalyticsListingAccessProjectionWorkerOptions>()
             ?? new AnalyticsListingAccessProjectionWorkerOptions
             {
                 BrokerUri = publicReadOptions.BrokerUri,
-                Exchange = publicReadOptions.Exchange,
-                DeadLetterExchange = publicReadOptions.DeadLetterExchange,
             };
+        var listingAccessOptions = listingAccessSettings with
+        {
+            BrokerUri = publicReadOptions.BrokerUri,
+            Exchange = publicReadOptions.Exchange,
+            DeadLetterExchange = publicReadOptions.DeadLetterExchange,
+        };
         listingAccessOptions.Validate();
 
         builder.Services.AddSingleton(aggregationOptions);
