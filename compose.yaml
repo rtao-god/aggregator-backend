@@ -184,7 +184,7 @@ services:
       <<: [*api-env, *media-store]
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
       Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Catalog__ObjectStorage__ForcePathStyle: "true"
@@ -199,15 +199,15 @@ services:
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      CatalogWorker__DispatcherIdentity: catalog-worker
-      CatalogWorker__BatchSize: "50"
+      CatalogWorker__DispatcherIdentity: catalog-outbox
+      CatalogWorker__OutboxBatchSize: "50"
       CatalogWorker__MaximumDeliveryAttempts: "8"
       CatalogWorker__LeaseDurationSeconds: "120"
       CatalogWorker__EmptyDelayMilliseconds: "2000"
       CatalogWorker__MaximumPublicationAttempts: "5"
       CatalogWorker__PublicationLeaseDurationSeconds: "300"
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
       Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Catalog__ObjectStorage__ForcePathStyle: "true"
@@ -228,8 +228,6 @@ services:
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
       CatalogMediaWorker__WorkerIdentity: catalog-media-worker
       CatalogMediaWorker__SystemActorId: '${CATALOG_MEDIA_SYSTEM_ACTOR_ID:?CATALOG_MEDIA_SYSTEM_ACTOR_ID is required}'
-      CatalogMediaWorker__ClamAvHost: clamav
-      CatalogMediaWorker__ClamAvPort: "3310"
       CatalogMediaWorker__MaximumAttempts: "8"
       CatalogMediaWorker__OutboxBatchSize: "50"
       CatalogMediaWorker__LeaseDurationSeconds: "300"
@@ -263,6 +261,21 @@ services:
       Query__PromotionWorker__PrefetchCount: "8"
       Query__PromotionWorker__DeliveryLimit: "8"
       Query__PromotionWorker__RetryDelayMilliseconds: "500"
+      Query__VisibilityWorker__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
+      Query__VisibilityWorker__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
+      Query__VisibilityWorker__Queue: query.catalog-visibility-safety
+      Query__VisibilityWorker__DeadLetterExchange: aggregator.dead-letter
+      Query__VisibilityWorker__DeadLetterQueue: query.catalog-visibility-safety.dead-letter
+      Query__VisibilityWorker__RoutingKey: catalog.public-visibility-suppression.changed
+      Query__VisibilityWorker__PrefetchCount: "4"
+      Query__VisibilityWorker__DeliveryLimit: "8"
+      Query__VisibilityWorker__RetryDelayMilliseconds: "500"
+      Query__Outbox__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
+      Query__Outbox__DispatcherIdentity: query-public-read-outbox
+      Query__Outbox__BatchSize: "50"
+      Query__Outbox__MaximumDeliveryAttempts: "8"
+      Query__Outbox__LeaseDurationSeconds: "120"
+      Query__Outbox__EmptyDelayMilliseconds: "2000"
       Query__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Query__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
       Query__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
