@@ -130,7 +130,7 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
                     correlationId,
                     causationId,
                     integrationEvent),
-                _ownerOptions.SystemActorId,
+                PromotionActor.Create(_ownerOptions.SystemActorId),
                 cancellationToken);
             await channel.BasicAckAsync(
                 deliveryTag: eventArgs.DeliveryTag,
@@ -267,22 +267,25 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
         ReadOnlySpan<byte> payload,
         string expectedDigest)
     {
-        if (string.IsNullOrWhiteSpace(expectedDigest) ||
-            expectedDigest.Length != 64 ||
-            expectedDigest.Any(character =>
-                character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
+        if (expectedDigest.Length != 64 || expectedDigest.Any(character => !Uri.IsHexDigit(character)))
         {
-            throw new JsonException(
-                "Catalog listing eligibility payload digest header is invalid.");
+            throw new JsonException("Catalog eligibility payload digest is invalid.");
         }
 
-        var actualDigest = Convert
-            .ToHexString(SHA256.HashData(payload))
-            .ToLowerInvariant();
-        if (!string.Equals(actualDigest, expectedDigest, StringComparison.Ordinal))
+        var computedDigest = SHA256.HashData(payload);
+        byte[] expectedBytes;
+        try
         {
-            throw new JsonException(
-                "Catalog listing eligibility payload digest does not match the message body.");
+            expectedBytes = Convert.FromHexString(expectedDigest);
+        }
+        catch (FormatException exception)
+        {
+            throw new JsonException("Catalog eligibility payload digest is invalid.", exception);
+        }
+
+        if (!CryptographicOperations.FixedTimeEquals(computedDigest, expectedBytes))
+        {
+            throw new JsonException("Catalog eligibility payload digest does not match the exact message bytes.");
         }
     }
 
@@ -290,10 +293,11 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
     {
         if (eventId == Guid.Empty ||
             !Guid.TryParse(messageId, out var parsedMessageId) ||
+            parsedMessageId == Guid.Empty ||
             parsedMessageId != eventId)
         {
             throw new JsonException(
-                "Catalog listing eligibility message ID must match the producer-owned event identity.");
+                "RabbitMQ message ID must match the Catalog eligibility event ID.");
         }
 
         return parsedMessageId;
@@ -387,40 +391,40 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
 internal static partial class PromotionEligibilityProjectionWorkerLog
 {
     [LoggerMessage(
-        EventId = 4101,
+        EventId = 4100,
         Level = LogLevel.Information,
-        Message = "Promotion eligibility consumer is reading {RoutingKey} from {Queue}.")]
+        Message = "Promotion eligibility consumer started for routing key {RoutingKey} on queue {Queue}")]
     public static partial void ConsumerStarted(
         ILogger logger,
         string routingKey,
         string queue);
 
     [LoggerMessage(
-        EventId = 4102,
+        EventId = 4101,
         Level = LogLevel.Information,
-        Message = "Promotion applied Catalog eligibility revision {EligibilityRevision} for {CatalogKey}/{ListingId}; disposition={Disposition}; event={EventId}; correlation={CorrelationId}.")]
+        Message = "Promotion eligibility {ApplyResult} for {CatalogKey}/{ListingId} revision {EligibilityRevision}; message {MessageId}; correlation {CorrelationId}")]
     public static partial void EligibilityApplied(
         ILogger logger,
         string catalogKey,
         Guid listingId,
         long eligibilityRevision,
-        PromotionEligibilityProjectionApplyResult disposition,
-        Guid eventId,
+        PromotionEligibilityProjectionApplyResult applyResult,
+        Guid messageId,
         string correlationId);
 
     [LoggerMessage(
-        EventId = 4103,
+        EventId = 4102,
         Level = LogLevel.Warning,
-        Message = "Promotion is requeueing transient Catalog eligibility event {MessageId}.")]
+        Message = "Promotion eligibility message {MessageId} hit a transient failure and will be requeued")]
     public static partial void TransientFailure(
         ILogger logger,
         Exception exception,
         string? messageId);
 
     [LoggerMessage(
-        EventId = 4104,
+        EventId = 4103,
         Level = LogLevel.Error,
-        Message = "Promotion dead-lettered invalid or non-transient Catalog eligibility event {MessageId}.")]
+        Message = "Promotion eligibility message {MessageId} was dead-lettered")]
     public static partial void MessageDeadLettered(
         ILogger logger,
         Exception exception,

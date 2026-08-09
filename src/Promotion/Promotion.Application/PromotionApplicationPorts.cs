@@ -92,6 +92,24 @@ public sealed record PromotionCommandContext(
 
         return new PromotionCommandContext(actor, normalizedCorrelation, CausationId: null);
     }
+
+    public static PromotionCommandContext Continue(
+        PromotionActor actor,
+        string correlationId,
+        Guid causationId)
+    {
+        if (causationId == Guid.Empty)
+        {
+            throw new PromotionApplicationException(
+                "Promotion.Commands",
+                "PROMOTION_CAUSATION_INVALID",
+                500,
+                "Promotion continuation requires one non-empty causation identity.",
+                "Propagate the exact producer message identity before creating Promotion effects.");
+        }
+
+        return Start(actor, correlationId) with { CausationId = causationId };
+    }
 }
 
 public sealed record PromotionOutboxMessage(
