@@ -51,18 +51,30 @@ public interface IPromotionEligibilityPlacementReconciler
 }
 
 /// <summary>
-/// Validates the producer-owned Catalog contract before Promotion persists any eligibility meaning.
+/// Validates the producer-owned Catalog contract, persists its local projection, and applies fail-closed placement effects.
 /// </summary>
 public sealed class ApplyCatalogListingPromotionEligibilityService(
     IPromotionEligibilityProjectionStore store,
-    IPromotionClock clock)
+    IPromotionEligibilityPlacementReconciler placementReconciler,
+    IPromotionClock clock,
+    IPromotionIdSource idSource)
 {
     public async Task<PromotionEligibilityProjectionApplyResult> ApplyAsync(
         PromotionEligibilityProjectionMessage message,
+        Guid systemActorId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
         ArgumentNullException.ThrowIfNull(message.Event);
+        if (systemActorId == Guid.Empty)
+        {
+            throw Failure(
+                "PROMOTION_ELIGIBILITY_SYSTEM_ACTOR_INVALID",
+                500,
+                "Promotion eligibility reconciliation requires one non-empty system actor identity.",
+                "Configure PromotionWorker:SystemActorId before resuming the Catalog eligibility consumer.");
+        }
+
         ValidateEnvelope(message);
         var eligibility = ListingPromotionEligibility.Create(
             message.Event.CatalogKey,
@@ -101,7 +113,7 @@ public sealed class ApplyCatalogListingPromotionEligibilityService(
                 "Correct the Promotion clock adapter before resuming the consumer.");
         }
 
-        return await store.ApplyAsync(
+        var result = await store.ApplyAsync(
             new PromotionEligibilityProjectionChange(
                 message.MessageId,
                 message.ContractIdentity,
@@ -113,6 +125,17 @@ public sealed class ApplyCatalogListingPromotionEligibilityService(
                 projectionDigest),
             receivedAtUtc,
             cancellationToken);
+        var commandContext = new PromotionCommandContext(
+            PromotionActor.Create(systemActorId),
+            message.CorrelationId,
+            message.Event.EventId);
+        _ = await placementReconciler.PauseIneligiblePlacementsAsync(
+            eligibility,
+            commandContext,
+            receivedAtUtc,
+            idSource,
+            cancellationToken);
+        return result;
     }
 
     private static void ValidateEnvelope(PromotionEligibilityProjectionMessage message)
