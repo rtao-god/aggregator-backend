@@ -12,14 +12,10 @@ public sealed partial class EfPromotionRepository :
     IPromotionEligibilityPlacementReconciler
 {
     private readonly PromotionDbContext _dbContext;
-    private readonly IPromotionIdSource _idSource;
 
-    public EfPromotionRepository(
-        PromotionDbContext dbContext,
-        IPromotionIdSource idSource)
+    public EfPromotionRepository(PromotionDbContext dbContext)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _idSource = idSource ?? throw new ArgumentNullException(nameof(idSource));
     }
 
     private async Task<PromotionCommandResult<TAggregate>> ExecuteCommandAsync<TAggregate>(

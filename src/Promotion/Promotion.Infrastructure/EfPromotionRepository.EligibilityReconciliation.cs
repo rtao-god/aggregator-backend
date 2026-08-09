@@ -3,109 +3,93 @@ using Aggregator.Promotion.Application;
 using Aggregator.Promotion.Contracts;
 using Aggregator.Promotion.Domain;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Aggregator.Promotion.Infrastructure;
 
 public sealed partial class EfPromotionRepository
 {
     /// <summary>
-    /// Pauses every active or scheduled placement invalidated by the current Catalog eligibility revision.
-    /// The placement transitions, capacity release, and Promotion outbox messages commit atomically.
+    /// Pauses active or scheduled placements invalidated by one exact Catalog eligibility revision.
+    /// Eligibility recovery never resumes a placement; resume remains an explicit Promotion command.
     /// </summary>
     public async Task<int> PauseIneligiblePlacementsAsync(
-        PromotionEligibilityPlacementReconciliationRequest request,
+        ListingPromotionEligibility eligibility,
+        PromotionCommandContext commandContext,
+        DateTimeOffset changedAtUtc,
+        IPromotionIdSource idSource,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.Eligibility);
-        ValidateEligibilityReconciliationRequest(request);
+        ArgumentNullException.ThrowIfNull(eligibility);
+        ArgumentNullException.ThrowIfNull(commandContext);
+        ArgumentNullException.ThrowIfNull(idSource);
+        if (changedAtUtc.Offset != TimeSpan.Zero || changedAtUtc < eligibility.ChangedAtUtc)
+        {
+            throw Failure(
+                "Promotion.EligibilityReconciliation",
+                "PROMOTION_ELIGIBILITY_RECONCILIATION_TIMESTAMP_INVALID",
+                500,
+                "Promotion eligibility reconciliation requires a UTC timestamp not earlier than the Catalog event.",
+                "Correct Promotion worker clock synchronization before replaying the event.");
+        }
+
+        if (commandContext.CausationId is not { } causationId || causationId == Guid.Empty)
+        {
+            throw Failure(
+                "Promotion.EligibilityReconciliation",
+                "PROMOTION_ELIGIBILITY_RECONCILIATION_CAUSATION_REQUIRED",
+                500,
+                "Promotion eligibility reconciliation requires the exact Catalog message identity as causation.",
+                "Propagate the producer message ID before creating automatic placement effects.");
+        }
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
         try
         {
-            var currentEligibility = await _dbContext.ListingEligibility
-                .AsNoTracking()
-                .SingleOrDefaultAsync(
-                    row =>
-                        row.CatalogKey == request.Eligibility.CatalogKey &&
-                        row.ListingId == request.Eligibility.ListingId,
-                    cancellationToken)
-                ?? throw new PromotionApplicationException(
-                    "Promotion.EligibilityProjection",
-                    "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_MISSING",
-                    500,
-                    "Promotion cannot reconcile placements because the current eligibility projection is absent.",
-                    "Restore the current Catalog eligibility checkpoint before replaying the event.");
-            if (currentEligibility.SourceRevision > request.Eligibility.SourceRevision)
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return 0;
-            }
-
-            if (currentEligibility.SourceRevision < request.Eligibility.SourceRevision)
-            {
-                throw new PromotionApplicationException(
-                    "Promotion.EligibilityProjection",
-                    "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_BEHIND",
-                    503,
-                    $"Promotion eligibility checkpoint '{currentEligibility.SourceRevision}' trails reconciliation revision '{request.Eligibility.SourceRevision}'.",
-                    "Apply the exact missing Catalog eligibility revisions before reconciling placements.");
-            }
-
-            EnsureCurrentEligibilityMatches(currentEligibility, request.Eligibility);
             var placementRows = await _dbContext.Placements
                 .Where(row =>
-                    row.ListingId == request.Eligibility.ListingId &&
+                    row.ListingId == eligibility.ListingId &&
                     (row.State == (int)SponsoredPlacementState.Scheduled ||
                      row.State == (int)SponsoredPlacementState.Active))
                 .OrderBy(row => row.Id)
                 .ToArrayAsync(cancellationToken);
             var products = new Dictionary<string, PromotionProduct>(StringComparer.Ordinal);
-            var commandContext = new PromotionCommandContext(
-                PromotionActor.Create(request.SystemActorId),
-                request.CorrelationId,
-                request.CausationId);
             var changed = 0;
             foreach (var row in placementRows)
             {
                 var placement = await RestorePlacementAsync(row, cancellationToken);
-                if (request.ChangedAtUtc < placement.ChangedAtUtc)
+                if (!string.Equals(
+                        placement.CurrentRevision.CatalogKey,
+                        eligibility.CatalogKey,
+                        StringComparison.Ordinal))
                 {
-                    throw new PromotionApplicationException(
-                        "Promotion.EligibilityProjection",
-                        "PROMOTION_ELIGIBILITY_RECONCILIATION_TIME_REGRESSION",
-                        503,
-                        $"Catalog eligibility reconciliation time precedes placement '{placement.Id}' state time.",
-                        "Retry the exact Catalog event after the Promotion owner clock advances.",
-                        new Dictionary<string, object?>(StringComparer.Ordinal)
-                        {
-                            ["placementId"] = placement.Id,
-                            ["placementChangedAtUtc"] = placement.ChangedAtUtc,
-                            ["reconciliationChangedAtUtc"] = request.ChangedAtUtc,
-                            ["eligibilityRevision"] = request.Eligibility.SourceRevision,
-                        });
+                    continue;
                 }
 
                 if (!products.TryGetValue(placement.ProductKey, out var product))
                 {
-                    product = await GetProductByKeyAsync(
-                        placement.ProductKey,
-                        cancellationToken)
-                        ?? throw new PromotionApplicationException(
-                            "Promotion.Products",
+                    var productRow = await _dbContext.Products
+                        .AsNoTracking()
+                        .SingleOrDefaultAsync(
+                            candidate => candidate.ProductKey == placement.ProductKey,
+                            cancellationToken)
+                        ?? throw Failure(
+                            "Promotion.EligibilityReconciliation",
                             "PROMOTION_ELIGIBILITY_PRODUCT_MISSING",
                             500,
                             $"Placement '{placement.Id}' references missing product '{placement.ProductKey}'.",
-                            "Restore the exact Promotion product before replaying Catalog eligibility events.");
+                            "Restore the exact Promotion product before replaying the Catalog eligibility event.");
+                    product = await RestoreProductAsync(productRow, cancellationToken);
                     products.Add(product.Key, product);
                 }
 
                 if (!placement.PauseWhenCatalogIneligible(
-                        request.Eligibility,
+                        eligibility,
                         product,
-                        request.SystemActorId,
-                        request.ChangedAtUtc))
+                        commandContext.Actor.Id,
+                        changedAtUtc))
                 {
                     continue;
                 }
@@ -118,17 +102,18 @@ public sealed partial class EfPromotionRepository
                     .Where(candidate => candidate.PlacementId == placement.Id)
                     .ToArrayAsync(cancellationToken);
                 _dbContext.PlacementCapacity.RemoveRange(capacityRows);
-                var eventId = _idSource.CreateId();
+
+                var eventId = idSource.CreateId();
                 var integrationEvent = PromotionContractMapper.ToEvent(
                     placement,
                     eventId,
-                    request.ChangedAtUtc);
+                    changedAtUtc);
                 AddOutbox(PromotionOutboxMessageFactory.Create(
                     eventId,
                     PromotionIntegrationEventTypes.PlacementChanged,
                     PromotionIntegrationEventContracts.PlacementChanged,
                     integrationEvent,
-                    request.ChangedAtUtc,
+                    changedAtUtc,
                     commandContext));
                 changed++;
             }
@@ -144,72 +129,32 @@ public sealed partial class EfPromotionRepository
         catch (DbUpdateConcurrencyException exception)
         {
             await transaction.RollbackAsync(CancellationToken.None);
-            throw new PromotionApplicationException(
-                "Promotion.EligibilityProjection",
+            _dbContext.ChangeTracker.Clear();
+            throw Failure(
+                "Promotion.EligibilityReconciliation",
                 "PROMOTION_ELIGIBILITY_RECONCILIATION_CONFLICT",
                 503,
-                "A placement changed concurrently with Catalog eligibility reconciliation.",
-                "Replay the exact Catalog eligibility event against the current Promotion state.",
-                innerException: exception);
+                "A Promotion placement changed while applying Catalog eligibility.",
+                "Replay the exact Catalog event after the concurrent placement command completes.",
+                exception);
+        }
+        catch (PostgresException exception)
+            when (exception.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            _dbContext.ChangeTracker.Clear();
+            throw Failure(
+                "Promotion.EligibilityReconciliation",
+                "PROMOTION_ELIGIBILITY_RECONCILIATION_SERIALIZATION_CONFLICT",
+                503,
+                "Promotion eligibility reconciliation conflicted with another serializable owner transaction.",
+                "Replay the exact Catalog event after the concurrent Promotion transaction completes.",
+                exception);
         }
         catch
         {
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
-        }
-    }
-
-    private static void EnsureCurrentEligibilityMatches(
-        ListingPromotionEligibilityRow current,
-        ListingPromotionEligibility expected)
-    {
-        var currentCapabilities = PromotionPersistenceJson.DeserializeStringSet(
-                current.ContactCapabilitiesJson)
-            .ToHashSet(StringComparer.Ordinal);
-        var currentCategories = PromotionPersistenceJson.DeserializeStringSet(
-                current.CategoryKeysJson)
-            .ToHashSet(StringComparer.Ordinal);
-        if (current.IsPublished != expected.IsPublished ||
-            current.IsArchived != expected.IsArchived ||
-            current.HasBlockingDispute != expected.HasBlockingDispute ||
-            current.HasVerifiedContact != expected.HasVerifiedContact ||
-            !currentCapabilities.SetEquals(expected.ContactCapabilities) ||
-            !currentCategories.SetEquals(expected.CategoryKeys) ||
-            !string.Equals(current.DistrictKey, expected.DistrictKey, StringComparison.Ordinal) ||
-            current.ChangedAtUtc != expected.ChangedAtUtc)
-        {
-            throw new PromotionApplicationException(
-                "Promotion.EligibilityProjection",
-                "PROMOTION_ELIGIBILITY_RECONCILIATION_PROJECTION_DIVERGED",
-                500,
-                "Promotion current eligibility facts diverge from the event selected for placement reconciliation.",
-                "Stop placement mutations and rebuild the Promotion eligibility projection from Catalog events.",
-                new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["catalogKey"] = expected.CatalogKey,
-                    ["listingId"] = expected.ListingId,
-                    ["eligibilityRevision"] = expected.SourceRevision,
-                });
-        }
-    }
-
-    private static void ValidateEligibilityReconciliationRequest(
-        PromotionEligibilityPlacementReconciliationRequest request)
-    {
-        if (request.SystemActorId == Guid.Empty ||
-            request.CausationId == Guid.Empty ||
-            string.IsNullOrWhiteSpace(request.CorrelationId) ||
-            request.CorrelationId.Length > 128 ||
-            request.CorrelationId.Any(char.IsControl) ||
-            request.ChangedAtUtc.Offset != TimeSpan.Zero ||
-            request.ChangedAtUtc < request.Eligibility.ChangedAtUtc)
-        {
-            throw new PromotionApplicationException(
-                "Promotion.EligibilityProjection",
-                "PROMOTION_ELIGIBILITY_RECONCILIATION_INPUT_INVALID",
-                500,
-                "Promotion eligibility reconciliation received invalid owner context.",
-                "Correct the Promotion worker composition before replaying the Catalog event.");
         }
     }
 }
