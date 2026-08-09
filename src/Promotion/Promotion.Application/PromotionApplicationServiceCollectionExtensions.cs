@@ -10,6 +10,7 @@ public static class PromotionApplicationServiceCollectionExtensions
         services.AddScoped<PromotionProductService>();
         services.AddScoped<PromotionEntitlementService>();
         services.AddScoped<PromotionPlacementService>();
+        services.AddScoped<ApplyCatalogListingPromotionEligibilityService>();
         return services;
     }
 }
