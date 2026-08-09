@@ -58,6 +58,11 @@ public sealed class IngestionCatalogCommandClientOptions
 
         ValidateSecret(ClientId, nameof(ClientId), 500);
         ValidateSecret(ClientSecret, nameof(ClientSecret), 2_000);
+        if (ClientSecret.StartsWith("CHANGE_ME", StringComparison.Ordinal))
+        {
+            throw InvalidConfiguration("ClientSecret still contains the repository placeholder value.");
+        }
+
         ValidateSecret(Scope, nameof(Scope), 500);
         if (RequestTimeout < TimeSpan.FromSeconds(1) || RequestTimeout > TimeSpan.FromMinutes(2))
         {

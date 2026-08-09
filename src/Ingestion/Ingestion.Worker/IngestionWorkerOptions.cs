@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Aggregator.Ingestion.Worker;
 
-/// <summary>Fail-fast bounded execution settings for the canonical Ingestion validation worker.</summary>
+/// <summary>Fail-fast bounded execution settings for Ingestion validation and Catalog delivery.</summary>
 public sealed record IngestionWorkerOptions
 {
     public const string SectionName = "IngestionWorker";
@@ -16,6 +16,16 @@ public sealed record IngestionWorkerOptions
 
     public required TimeSpan EmptyDelay { get; init; }
 
+    public required string CatalogDeliveryWorkerIdentity { get; init; }
+
+    public required int CatalogDeliveryBatchSize { get; init; }
+
+    public required TimeSpan CatalogDeliveryLeaseDuration { get; init; }
+
+    public required int CatalogDeliveryMaximumAttempts { get; init; }
+
+    public required TimeSpan CatalogDeliveryEmptyDelay { get; init; }
+
     public static IngestionWorkerOptions FromConfiguration(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -26,6 +36,11 @@ public sealed record IngestionWorkerOptions
             ValidationBatchSize = ReadInt32(section, nameof(ValidationBatchSize)),
             LeaseDuration = ReadTimeSpan(section, nameof(LeaseDuration)),
             EmptyDelay = ReadTimeSpan(section, nameof(EmptyDelay)),
+            CatalogDeliveryWorkerIdentity = ReadRequired(section, nameof(CatalogDeliveryWorkerIdentity)),
+            CatalogDeliveryBatchSize = ReadInt32(section, nameof(CatalogDeliveryBatchSize)),
+            CatalogDeliveryLeaseDuration = ReadTimeSpan(section, nameof(CatalogDeliveryLeaseDuration)),
+            CatalogDeliveryMaximumAttempts = ReadInt32(section, nameof(CatalogDeliveryMaximumAttempts)),
+            CatalogDeliveryEmptyDelay = ReadTimeSpan(section, nameof(CatalogDeliveryEmptyDelay)),
         };
         options.Validate();
         return options;
@@ -33,32 +48,53 @@ public sealed record IngestionWorkerOptions
 
     public void Validate()
     {
-        if (string.IsNullOrWhiteSpace(WorkerIdentity) ||
-  WorkerIdentity.Length > 200 ||
-  WorkerIdentity.Any(char.IsControl))
+        ValidateIdentity(WorkerIdentity, nameof(WorkerIdentity));
+        ValidateIdentity(CatalogDeliveryWorkerIdentity, nameof(CatalogDeliveryWorkerIdentity));
+        ValidateBatchSize(ValidationBatchSize, nameof(ValidationBatchSize));
+        ValidateBatchSize(CatalogDeliveryBatchSize, nameof(CatalogDeliveryBatchSize));
+        ValidateLease(LeaseDuration, nameof(LeaseDuration));
+        ValidateLease(CatalogDeliveryLeaseDuration, nameof(CatalogDeliveryLeaseDuration));
+        ValidateDelay(EmptyDelay, nameof(EmptyDelay));
+        ValidateDelay(CatalogDeliveryEmptyDelay, nameof(CatalogDeliveryEmptyDelay));
+        if (CatalogDeliveryMaximumAttempts is < 1 or > 100)
         {
-            throw new InvalidOperationException(
-                $"Configuration '{SectionName}:{nameof(WorkerIdentity)}' must be a stable non-empty identity of at most 200 characters.");
+            throw InvalidConfiguration(
+                nameof(CatalogDeliveryMaximumAttempts),
+                "an integer between 1 and 100");
         }
+    }
 
-        if (ValidationBatchSize is < 1 or > 100)
+    private static void ValidateIdentity(string value, string key)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length > 200 ||
+            value.Any(char.IsControl))
         {
-            throw new InvalidOperationException(
-                $"Configuration '{SectionName}:{nameof(ValidationBatchSize)}' must be between 1 and 100.");
+            throw InvalidConfiguration(key, "a stable non-empty identity of at most 200 characters");
         }
+    }
 
-        if (LeaseDuration < TimeSpan.FromSeconds(10) ||
-  LeaseDuration > TimeSpan.FromMinutes(15))
+    private static void ValidateBatchSize(int value, string key)
+    {
+        if (value is < 1 or > 100)
         {
-            throw new InvalidOperationException(
-                $"Configuration '{SectionName}:{nameof(LeaseDuration)}' must be between ten seconds and fifteen minutes.");
+            throw InvalidConfiguration(key, "an integer between 1 and 100");
         }
+    }
 
-        if (EmptyDelay < TimeSpan.FromMilliseconds(100) ||
-  EmptyDelay > TimeSpan.FromMinutes(1))
+    private static void ValidateLease(TimeSpan value, string key)
+    {
+        if (value < TimeSpan.FromSeconds(10) || value > TimeSpan.FromMinutes(15))
         {
-            throw new InvalidOperationException(
-                $"Configuration '{SectionName}:{nameof(EmptyDelay)}' must be between 100 milliseconds and one minute.");
+            throw InvalidConfiguration(key, "a duration between ten seconds and fifteen minutes");
+        }
+    }
+
+    private static void ValidateDelay(TimeSpan value, string key)
+    {
+        if (value < TimeSpan.FromMilliseconds(100) || value > TimeSpan.FromMinutes(1))
+        {
+            throw InvalidConfiguration(key, "a duration between 100 milliseconds and one minute");
         }
     }
 
@@ -66,12 +102,12 @@ public sealed record IngestionWorkerOptions
     {
         var value = ReadRequired(section, key);
         if (!int.TryParse(
-      value,
-      NumberStyles.None,
-      CultureInfo.InvariantCulture,
-      out var result))
+                value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var result))
         {
-            throw InvalidConfiguration(section, key, "an integer");
+            throw InvalidConfiguration(key, "an integer");
         }
 
         return result;
@@ -82,7 +118,7 @@ public sealed record IngestionWorkerOptions
         var value = ReadRequired(section, key);
         if (!TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var result))
         {
-            throw InvalidConfiguration(section, key, "a TimeSpan");
+            throw InvalidConfiguration(key, "a TimeSpan");
         }
 
         return result;
@@ -93,15 +129,12 @@ public sealed record IngestionWorkerOptions
         var value = section[key];
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw InvalidConfiguration(section, key, "a non-empty value");
+            throw InvalidConfiguration(key, "a non-empty value");
         }
 
-        return value;
+        return value.Trim();
     }
 
-    private static InvalidOperationException InvalidConfiguration(
-        IConfigurationSection section,
-        string key,
-        string expected) =>
-        new($"Configuration '{section.Path}:{key}' must be {expected}.");
+    private static InvalidOperationException InvalidConfiguration(string key, string expected) =>
+        new($"Configuration '{SectionName}:{key}' must be {expected}.");
 }
