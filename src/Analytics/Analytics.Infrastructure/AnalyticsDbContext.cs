@@ -25,9 +25,6 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
     internal DbSet<AnalyticsInboxMessageRow> PublicReadInboxMessages =>
         Set<AnalyticsInboxMessageRow>();
 
-    internal DbSet<AnalyticsListingAccessProjectionRow> ListingAccessProjections =>
-        Set<AnalyticsListingAccessProjectionRow>();
-
     internal DbSet<AnalyticsDailyListingMetricRow> DailyListingMetrics =>
         Set<AnalyticsDailyListingMetricRow>();
 
@@ -233,23 +230,6 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 row.ActivationRevision,
                 row.MessageId,
             });
-        });
-
-        modelBuilder.Entity<AnalyticsListingAccessProjectionRow>(entity =>
-        {
-            entity.ToTable("listing_access_projection", "access_projection", table =>
-            {
-                table.HasCheckConstraint(
-                    "ck_analytics_listing_access_revision",
-                    "source_aggregate_revision > 0");
-                table.HasCheckConstraint(
-                    "ck_analytics_listing_access_digest",
-                    "source_payload_digest ~ '^[0-9a-f]{64}$'");
-            });
-            entity.HasKey(row => new { row.ListingId, row.ActorId });
-            entity.Property(row => row.SourceAggregateRevision).IsConcurrencyToken();
-            entity.Property(row => row.SourcePayloadDigest).HasMaxLength(64).IsFixedLength();
-            entity.HasIndex(row => new { row.ActorId, row.CanViewAnalytics });
         });
 
         modelBuilder.Entity<AnalyticsDailyListingMetricRow>(entity =>
