@@ -45,21 +45,31 @@
       ]
     },
     {
+      "name": "catalog-configuration-activation",
+      "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
+      "required": [
+        "public const string ConfigurationActivated = \"catalog.configuration.activated\";",
+        "public const string ConfigurationActivated = \"aggregator.catalog.configuration-activated@1\";",
+        "public sealed record CatalogConfigurationActivated(",
+        "IReadOnlyList<SubjectKindContract> SupportedListingKinds,"
+      ]
+    },
+    {
       "name": "catalog-publication-activation",
       "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
       "required": [
         "public const string PublicationActivated = \"catalog.publication.activated\";",
-        "public const string PublicationActivated = \"aggregator.catalog.publication-activated@1\";",
+        "public const string PublicationActivated = \"aggregator.catalog.publication-activated@2\";",
         "public sealed record CatalogPublicationActivated("
       ]
     },
     {
       "name": "catalog-visibility-suppression",
-      "file": "src/Catalog/Catalog.Contracts/CatalogVisibilitySuppressionContracts.cs",
+      "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
       "required": [
-        "public const string VisibilitySuppressionChanged = \"catalog.public-visibility-suppression.changed\";",
-        "public const string VisibilitySuppressionChanged = \"aggregator.catalog.public-visibility-suppression-changed@1\";",
-        "public sealed record PublicVisibilitySuppressionChanged("
+        "\"catalog.public-visibility-suppression.changed\";",
+        "\"aggregator.catalog.public-visibility-suppression-changed@1\";",
+        "public sealed record CatalogPublicVisibilitySuppressionChanged("
       ]
     },
     {
@@ -327,6 +337,89 @@
         "ADD CONSTRAINT ck_ingestion_catalog_delivery_pending_shape",
         "ADD CONSTRAINT ck_ingestion_catalog_delivery_lease_time",
         "ADD CONSTRAINT ck_ingestion_catalog_delivery_success_attempt"
+      ]
+    },
+    {
+      "name": "catalog-configuration-activation-producer",
+      "file": "src/Catalog/Catalog.Application/CatalogConfigurationService.cs",
+      "required": [
+        "new CatalogConfigurationActivated(",
+        "CatalogIntegrationEventTypes.ConfigurationActivated,",
+        "CatalogIntegrationEventContracts.ConfigurationActivated,",
+        "await activationRepository.ActivateConfigurationAsync("
+      ]
+    },
+    {
+      "name": "catalog-configuration-activation-store",
+      "file": "src/Catalog/Catalog.Infrastructure/EfCatalogRepository.Configuration.cs",
+      "required": [
+        "CatalogConfigurationActivationOutboxFactory outboxFactory,",
+        "AddOutbox(outboxFactory(previousConfigurationRevisionId, aggregateRevision));",
+        "await _dbContext.SaveChangesAsync(innerCancellationToken);"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-composition",
+      "file": "src/Ingestion/Ingestion.Worker/Program.cs",
+      "required": [
+        ".GetSection(IngestionCatalogConfigurationProjectionWorkerOptions.SectionName)",
+        ".AddIngestionCatalogProjectionInfrastructure()",
+        ".AddIngestionWorker(options);"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-worker",
+      "file": "src/Ingestion/Ingestion.Worker/IngestionCatalogConfigurationProjectionWorker.cs",
+      "required": [
+        "CatalogIntegrationEventContracts.ConfigurationActivated",
+        "ApplyCatalogConfigurationActivationService",
+        "VerifyPayloadIntegrity(eventArgs.Body.Span, payloadDigest);",
+        "[\"x-delivery-limit\"] = _options.DeliveryLimit,",
+        "BasicAckAsync(",
+        "BasicNackAsync("
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-store",
+      "file": "src/Ingestion/Ingestion.Infrastructure/PostgresCatalogConfigurationProjectionStore.cs",
+      "required": [
+        ": ICatalogConfigurationProjectionStore",
+        "IsolationLevel.Serializable",
+        "pg_advisory_xact_lock",
+        "INSERT INTO messaging.catalog_configuration_inbox",
+        "CatalogConfigurationProjectionSequencePolicy.RequireNext("
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-reader",
+      "file": "src/Ingestion/Ingestion.Infrastructure/PostgresCatalogIngestionReferenceReader.cs",
+      "required": [
+        ": ICatalogIngestionReferenceReader",
+        "INNER JOIN messaging.catalog_configuration_inbox AS inbox",
+        "CatalogConfigurationProjectionDigest.Compute(",
+        "INGESTION_CATALOG_PROJECTION_CORRUPT"
+      ],
+      "forbidden": [
+        ".Order()"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-migration",
+      "file": "src/Ingestion/Ingestion.Migrations/Migrations/V007__catalog_configuration_projection_inbox.sql",
+      "required": [
+        "CREATE TABLE messaging.catalog_configuration_inbox",
+        "UNIQUE (catalog_key, aggregate_revision)",
+        "REFERENCES messaging.catalog_configuration_inbox(message_id)",
+        "INGESTION_CATALOG_PROJECTION_REBUILD_REQUIRED"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-configuration-projection-compose",
+      "file": "compose.yaml",
+      "required": [
+        "Ingestion__CatalogProjection__BrokerUri:",
+        "Ingestion__CatalogProjection__RoutingKey: catalog.configuration.activated",
+        "Ingestion__CatalogProjection__DeadLetterQueue:"
       ]
     }
   ]
