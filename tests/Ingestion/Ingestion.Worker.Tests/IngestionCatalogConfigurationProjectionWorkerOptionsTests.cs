@@ -1,5 +1,7 @@
 using Aggregator.Catalog.Contracts;
 using Aggregator.Ingestion.Worker;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Ingestion.Worker.Tests;
 
@@ -13,6 +15,21 @@ public sealed class IngestionCatalogConfigurationProjectionWorkerOptionsTests
         options.Validate();
 
         Assert.Equal(CatalogIntegrationEventTypes.ConfigurationActivated, options.RoutingKey);
+    }
+
+    [Fact]
+    public void CompositionRegistersOnlyTheCatalogProjectionConsumer()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddIngestionCatalogConfigurationProjectionWorker(CreateOptions());
+        using var provider = services.BuildServiceProvider();
+
+        var hosted = provider.GetServices<IHostedService>().ToArray();
+
+        Assert.Collection(
+            hosted,
+            service => Assert.IsType<IngestionCatalogConfigurationProjectionWorker>(service));
     }
 
     [Fact]
