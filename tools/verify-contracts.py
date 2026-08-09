@@ -44,7 +44,7 @@ def main() -> int:
     failures: list[str] = []
     identities: dict[str, str] = {}
 
-    for section in ("contracts", "http"):
+    for section in ("contracts", "http", "workers"):
         for entry in manifest.get(section, []):
             failures.extend(verify_required(entry))
             if section == "contracts":
@@ -82,8 +82,9 @@ def main() -> int:
 
     print(
         f"Runtime contract verification succeeded for "
-        f"{len(manifest.get('contracts', []))} contracts and "
-        f"{len(manifest.get('http', []))} HTTP boundaries."
+        f"{len(manifest.get('contracts', []))} contracts, "
+        f"{len(manifest.get('http', []))} HTTP boundaries, and "
+        f"{len(manifest.get('workers', []))} worker boundaries."
     )
     return 0
 

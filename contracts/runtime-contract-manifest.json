@@ -192,5 +192,58 @@
     "src/Analytics/Analytics.Api/Program.cs",
     "src/Promotion/Promotion.Api/Program.cs",
     "src/Query/Query.Api/Program.cs"
+  ],
+  "workers": [
+    {
+      "name": "query-public-read-outbox-dispatcher",
+      "file": "src/Query/Query.Worker/QueryWorkerServiceCollectionExtensions.cs",
+      "required": [
+        "services.AddSingleton<RabbitMqEventPublisher>();",
+        "services.AddSingleton<PostgresOutboxDispatcher>();",
+        "services.AddHostedService<QueryOutboxWorker>();"
+      ]
+    },
+    {
+      "name": "analytics-public-read-worker-host",
+      "file": "src/Analytics/Analytics.Worker/Program.cs",
+      "required": [
+        "builder.Services.AddAnalyticsApplication();",
+        "builder.Services.AddAnalyticsInfrastructure(builder.Configuration);",
+        "builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();"
+      ]
+    },
+    {
+      "name": "analytics-public-read-consumer",
+      "file": "src/Analytics/Analytics.Worker/AnalyticsPublicReadProjectionWorker.cs",
+      "required": [
+        "QueryIntegrationEventContracts.PublicReadRevisionActivated",
+        "\"payload-digest\"",
+        "\"causation-id\"",
+        "GetRequiredService<ApplyPublicReadRevisionActivationService>()",
+        "BasicAckAsync(",
+        "BasicNackAsync(",
+        "[\"x-delivery-limit\"] = _options.DeliveryLimit"
+      ]
+    },
+    {
+      "name": "analytics-public-read-projection-store",
+      "file": "src/Analytics/Analytics.Infrastructure/EfPublicReadActivationProjectionStore.cs",
+      "required": [
+        ": IPublicReadActivationProjectionStore",
+        "IsolationLevel.Serializable",
+        "ANALYTICS_INBOX_MESSAGE_CORRUPT",
+        "ANALYTICS_PUBLIC_ACTIVATION_REVISION_GAP"
+      ]
+    },
+    {
+      "name": "analytics-public-read-projection-migration",
+      "file": "src/Analytics/Analytics.Migrations/Migrations/V003__query_public_read_projection.sql",
+      "required": [
+        "CREATE TABLE access_projection.public_sponsored_placement_reference",
+        "CREATE TABLE access_projection.public_read_activation_checkpoint",
+        "CREATE TABLE messaging.inbox_message",
+        "fk_analytics_interaction_sponsored_placement"
+      ]
+    }
   ]
 }
