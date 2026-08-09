@@ -66,6 +66,85 @@ public sealed class AnalyticsPersistenceModelTests
     }
 
     [Fact]
+    public void QueryActivationsOwnMonotonicCheckpointInboxAndSponsoredMembership()
+    {
+        using var context = CreateContext();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        var publicRead = FindTable(
+            model,
+            "access_projection",
+            "public_read_reference");
+        var publicListing = FindTable(
+            model,
+            "access_projection",
+            "public_listing_reference");
+        var sponsoredPlacement = FindTable(
+            model,
+            "access_projection",
+            "public_sponsored_placement_reference");
+        var checkpoint = FindTable(
+            model,
+            "access_projection",
+            "public_read_activation_checkpoint");
+        var inbox = FindTable(model, "messaging", "inbox_message");
+        var interactionEvent = FindTable(model, "events", "interaction_event");
+
+        Assert.Contains(
+            publicRead.GetIndexes(),
+            index => index.IsUnique &&
+                index.Properties.Select(property => property.Name)
+                    .SequenceEqual(["CatalogKey", "ActivationRevision"]));
+        Assert.Contains(
+            publicRead.GetCheckConstraints(),
+            check => string.Equals(
+                check.Name,
+                "ck_analytics_public_read_projection_digest",
+                StringComparison.Ordinal));
+
+        Assert.Contains(
+            sponsoredPlacement.GetForeignKeys(),
+            foreignKey =>
+                foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual(["PublicReadRevisionId", "ListingId"]) &&
+                foreignKey.PrincipalEntityType == publicListing &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Contains(
+            sponsoredPlacement.GetForeignKeys(),
+            foreignKey =>
+                foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual(["PublicReadRevisionId"]) &&
+                foreignKey.PrincipalEntityType == publicRead &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+
+        Assert.Contains(
+            interactionEvent.GetForeignKeys(),
+            foreignKey =>
+                foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual(["PublicReadRevisionId", "PlacementId", "ListingId"]) &&
+                foreignKey.PrincipalEntityType == sponsoredPlacement &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+
+        var checkpointRevision = checkpoint.FindProperty("ActivationRevision");
+        Assert.NotNull(checkpointRevision);
+        Assert.True(checkpointRevision.IsConcurrencyToken);
+        Assert.Contains(
+            checkpoint.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType == publicRead &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+
+        Assert.Contains(
+            inbox.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType == publicRead &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+        var inboxCheckNames = inbox.GetCheckConstraints()
+            .Select(check => check.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("ck_analytics_inbox_payload_digest", inboxCheckNames);
+        Assert.Contains("ck_analytics_inbox_activation_revision", inboxCheckNames);
+        Assert.Contains("ck_analytics_inbox_result_digest", inboxCheckNames);
+    }
+
+    [Fact]
     public void IncompleteMetricsCannotCarryFabricatedCounts()
     {
         using var context = CreateContext();
