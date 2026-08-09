@@ -25,10 +25,14 @@ public sealed class IngestionCatalogDeliveryReachabilityTests
         Assert.Contains(
             "../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
             infrastructureReferences);
+        Assert.Contains(
+            "../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
+            workerReferences);
         Assert.DoesNotContain(
-            applicationReferences.Concat(infrastructureReferences),
+            applicationReferences
+                .Concat(infrastructureReferences)
+                .Concat(workerReferences),
             IsForbiddenCatalogReference);
-        Assert.DoesNotContain(workerReferences, IsAnyCatalogReference);
     }
 
     [Fact]
@@ -258,11 +262,6 @@ public sealed class IngestionCatalogDeliveryReachabilityTests
         reference.Contains("Catalog.Infrastructure", StringComparison.OrdinalIgnoreCase) ||
         reference.Contains("Catalog.Api", StringComparison.OrdinalIgnoreCase) ||
         reference.Contains("Catalog.Worker", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsAnyCatalogReference(string reference) =>
-        reference.Contains("/Catalog/", StringComparison.OrdinalIgnoreCase) ||
-        reference.Contains("\\Catalog\\", StringComparison.OrdinalIgnoreCase) ||
-        reference.Contains("Catalog.", StringComparison.OrdinalIgnoreCase);
 
     private static HashSet<string> ReadProjectReferences(
         RepositoryModel repository,
