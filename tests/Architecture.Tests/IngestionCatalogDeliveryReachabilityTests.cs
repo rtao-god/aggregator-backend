@@ -145,14 +145,29 @@ public sealed class IngestionCatalogDeliveryReachabilityTests
         var persistence = Read(
             repository,
             "src/Ingestion/Ingestion.Infrastructure/IngestionProcessingPersistence.cs");
-        var migration = Read(
+        var leaseMigration = Read(
             repository,
             "src/Ingestion/Ingestion.Migrations/Migrations/V005__catalog_delivery_lease_and_retry.sql");
+        var consistencyMigration = Read(
+            repository,
+            "src/Ingestion/Ingestion.Migrations/Migrations/V006__catalog_delivery_state_consistency.sql");
 
         Assert.Contains("2 => \"leased\"", persistence, StringComparison.Ordinal);
         Assert.DoesNotContain("2 => \"published\"", persistence, StringComparison.Ordinal);
-        Assert.Contains("state = 2", migration, StringComparison.Ordinal);
-        Assert.Contains("lease_token IS NOT NULL", migration, StringComparison.Ordinal);
+        Assert.Contains("state = 2", leaseMigration, StringComparison.Ordinal);
+        Assert.Contains("lease_token IS NOT NULL", leaseMigration, StringComparison.Ordinal);
+        Assert.Contains(
+            "ck_ingestion_catalog_delivery_pending_shape",
+            consistencyMigration,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "INGESTION_CATALOG_DELIVERY_RECOVERED_LEASE",
+            consistencyMigration,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "next_attempt_at_utc > last_changed_at_utc",
+            consistencyMigration,
+            StringComparison.Ordinal);
     }
 
     [Fact]
