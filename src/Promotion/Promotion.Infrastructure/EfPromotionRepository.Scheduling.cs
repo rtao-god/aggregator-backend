@@ -117,7 +117,40 @@ public sealed partial class EfPromotionRepository
                         continue;
                     }
 
-                    if (!placement.SynchronizeTime(placement.AggregateRevision, nowUtc))
+                    var entitlementRow = await _dbContext.Entitlements
+                        .SingleOrDefaultAsync(
+                            candidate => candidate.Id == placement.EntitlementId,
+                            cancellationToken)
+                        ?? throw Failure(
+                            "Promotion.Scheduling",
+                            "PROMOTION_SCHEDULE_ENTITLEMENT_MISSING",
+                            500,
+                            $"Placement '{placement.Id}' references missing entitlement '{placement.EntitlementId}'.",
+                            "Restore the exact Promotion entitlement before resuming scheduled transitions.");
+                    var entitlement = RestoreEntitlement(entitlementRow);
+                    var productRow = await _dbContext.Products
+                        .AsNoTracking()
+                        .SingleOrDefaultAsync(
+                            candidate => candidate.ProductKey == placement.ProductKey,
+                            cancellationToken)
+                        ?? throw Failure(
+                            "Promotion.Scheduling",
+                            "PROMOTION_SCHEDULE_PRODUCT_MISSING",
+                            500,
+                            $"Placement '{placement.Id}' references missing product '{placement.ProductKey}'.",
+                            "Restore the exact Promotion product before resuming scheduled transitions.");
+                    var product = await RestoreProductAsync(productRow, cancellationToken);
+                    var eligibility = await GetEligibilityAsync(
+                        revision.CatalogKey,
+                        placement.ListingId,
+                        cancellationToken);
+                    if (!PromotionScheduledPlacementPolicy.Synchronize(
+                            placement,
+                            entitlement,
+                            product,
+                            eligibility,
+                            systemActorId,
+                            nowUtc))
                     {
                         continue;
                     }
