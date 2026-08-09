@@ -1,5 +1,7 @@
 # Catalog module
 
+Status: in development
+
 ## Owner
 
 Catalog is the canonical owner of product configuration, listing identities and immutable revisions, accepted provenance, media lifecycle and publication rights, editorial decisions, listing-scoped claims/access, immutable publications, the current Catalog publication pointer, and emergency public-visibility suppressions including private evidence and their revisioned lifecycle.
@@ -15,7 +17,7 @@ Catalog is the canonical owner of product configuration, listing identities and 
 - `Catalog.Media.Application`: media commands, processing, and the implementation of the producer-owned publication-binding authority.
 - `Catalog.Media.Infrastructure`: Catalog media persistence and object-storage adapters; it does not own or reimplement the publication-binding decision.
 - `Catalog.Api`: the single authenticated Catalog command transport, including media upload/register/revoke/read routes; thin Controllers, no repository access or domain decisions.
-- `Catalog.Worker`: fail-fast Catalog outbox dispatcher; it has no HTTP surface and never applies migrations.
+- `Catalog.Worker`: durable publication-operation executor and fail-fast Catalog outbox dispatcher; it has no HTTP surface and never applies migrations.
 - `Catalog.Media.Worker`: resource-heavy scanning and variant generation inside the Catalog owner boundary; it uses Catalog app credentials and the Catalog media object prefix.
 - `Catalog.Migrations`: the only Catalog database migration owner, including media tables, publication media gates, media work leases, and both Catalog outbox schemas.
 
@@ -35,14 +37,26 @@ Git-authored product-config directory
 → listing identity
 → immutable listing revision
 → editorial approval
+→ immutable publication request + idempotency identity
+→ durable Catalog worker lease
 → deterministic publication artifact
 → verified object storage write
 → atomic publication pointer switch + correlated outbox event
-→ bounded Catalog worker lease
 → publisher-confirmed RabbitMQ delivery or explicit dead-letter state
 ```
 
 The validator CLI is only a composition root over `CatalogProductConfigurationSourceLoader`; it does not define a parallel manifest, parser, semantic validator, or digest formula. Runtime startup never reads or imports product-config files.
+
+
+### Durable publication operation
+
+The command API never materializes a publication or writes its object artifact. `POST /api/catalog-command/catalogs/{catalogKey}/publication-requests` validates the wire boundary, captures one immutable command snapshot, requires an explicit idempotency key, persists the operation with actor/correlation/expected-pointer identity, and returns `202 Accepted` with the operation resource.
+
+The Catalog worker is the only production composition root that may execute publication materialization. It claims eligible operations with `FOR UPDATE SKIP LOCKED`, a unique lease token, bounded attempts, and a lease expiry. A stale worker cannot complete or fail an operation after losing the lease. Known contract/concurrency/publication-gate failures are terminal and retain owner diagnostics; classified infrastructure failures return the exact operation to bounded retry until the attempt limit, after which the operation is terminally failed.
+
+The operation stores the canonical request JSON and SHA-256 digest, never a second independently editable request model. Completion records the exact `publication_id`; failure records owner, code, expected/actual state, context, required action, attempt, and timestamp. Read-only operation status cannot claim work, retry, repair, materialize, verify storage, or switch a pointer.
+
+Publication activation remains one Catalog transaction that persists the immutable publication, updates exact listing published pointers, switches the Catalog pointer, and writes the producer outbox message. Object storage verification occurs before that transaction. A failed or crashed operation cannot change the active pointer; an already completed operation is never rematerialized.
 
 ```text
 exact rollback target publication ID
