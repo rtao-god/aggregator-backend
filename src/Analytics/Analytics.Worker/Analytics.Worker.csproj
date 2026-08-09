@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../Analytics.Application/Analytics.Application.csproj" />
     <ProjectReference Include="../Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+    <ProjectReference Include="../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj" />
     <ProjectReference Include="../../Query/Query.Contracts/Query.Contracts.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
   </ItemGroup>
