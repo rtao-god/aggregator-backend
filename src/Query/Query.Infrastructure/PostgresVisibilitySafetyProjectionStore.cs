@@ -64,6 +64,16 @@ public sealed partial class PostgresVisibilitySafetyProjectionStore :
                 "Correct the Query worker envelope validation before persistence.");
         }
 
+        if (string.IsNullOrWhiteSpace(inboxMessage.CorrelationId) ||
+            inboxMessage.CorrelationId.Length > 128)
+        {
+            throw Failure(
+                "QUERY_VISIBILITY_CORRELATION_INVALID",
+                500,
+                "Visibility safety store received a missing or oversized correlation identity.",
+                "Correct the Query worker envelope mapping before persistence.");
+        }
+
         if (!IsDigest(inboxMessage.PayloadDigest))
         {
             throw Failure(
