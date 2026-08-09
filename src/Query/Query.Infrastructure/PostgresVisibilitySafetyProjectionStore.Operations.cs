@@ -308,11 +308,12 @@ public sealed partial class PostgresVisibilitySafetyProjectionStore
             transaction,
             materialization.PublicReadRevision,
             cancellationToken);
+        var nextActivationRevision = checked(currentContext.PointerActivationRevision + 1);
         await UpdateCurrentPointerAsync(
             connection,
             transaction,
             materialization.PublicReadRevision,
-            checked(currentContext.PointerActivationRevision + 1),
+            nextActivationRevision,
             builtAtUtc,
             cancellationToken);
         await CompleteInboxAsync(
@@ -327,6 +328,16 @@ public sealed partial class PostgresVisibilitySafetyProjectionStore
             connection,
             transaction,
             inboxMessage.EventId,
+            cancellationToken);
+        await QueryPublicReadActivationOutboxWriter.InsertAsync(
+            connection,
+            transaction,
+            materialization.PublicReadRevision,
+            nextActivationRevision,
+            builtAtUtc,
+            inboxMessage.CorrelationId,
+            inboxMessage.EventId,
+            _idFactory,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new VisibilitySafetyProjectionResult(
