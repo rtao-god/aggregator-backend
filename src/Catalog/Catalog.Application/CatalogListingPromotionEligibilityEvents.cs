@@ -9,11 +9,17 @@ namespace Aggregator.Catalog.Application;
 public delegate CatalogOutboxMessage CatalogListingPromotionEligibilityOutboxFactory(
     long eligibilityRevision);
 
-/// <summary>Eligibility event request bound to one exact Catalog listing stream.</summary>
+/// <summary>
+/// Prepared Catalog effect containing one exact listing state and the matching producer event factory.
+/// </summary>
 public sealed record CatalogListingPromotionEligibilityOutboxRequest(
-    CatalogKey CatalogKey,
-    Guid ListingId,
-    CatalogListingPromotionEligibilityOutboxFactory OutboxFactory);
+    Listing Listing,
+    CatalogListingPromotionEligibilityOutboxFactory OutboxFactory)
+{
+    public CatalogKey CatalogKey => Listing.CatalogKey;
+
+    public Guid ListingId => Listing.Id;
+}
 
 /// <summary>
 /// Creates one Catalog-owned eligibility event request whose revision is allocated in the business transaction.
@@ -57,8 +63,7 @@ public static class CatalogListingPromotionEligibilityEventFactory
             .ToArray();
 
         return CreateRequest(
-            listing.CatalogKey,
-            listing.Id,
+            listing,
             eventId,
             publishedRevision.Id,
             isPublished: true,
@@ -82,8 +87,7 @@ public static class CatalogListingPromotionEligibilityEventFactory
         ArgumentNullException.ThrowIfNull(eventContext);
         RequireEventIdentity(eventId, occurredAtUtc);
         return CreateRequest(
-            listing.CatalogKey,
-            listing.Id,
+            listing,
             eventId,
             publishedListingRevisionId: null,
             isPublished: false,
@@ -97,8 +101,7 @@ public static class CatalogListingPromotionEligibilityEventFactory
     }
 
     private static CatalogListingPromotionEligibilityOutboxRequest CreateRequest(
-        CatalogKey catalogKey,
-        Guid listingId,
+        Listing listing,
         Guid eventId,
         Guid? publishedListingRevisionId,
         bool isPublished,
@@ -114,8 +117,8 @@ public static class CatalogListingPromotionEligibilityEventFactory
         {
             var integrationEvent = new CatalogListingPromotionEligibilityChanged(
                 eventId,
-                catalogKey.Value,
-                listingId,
+                listing.CatalogKey.Value,
+                listing.Id,
                 publishedListingRevisionId,
                 isPublished,
                 isArchived,
@@ -136,8 +139,7 @@ public static class CatalogListingPromotionEligibilityEventFactory
         }
 
         return new CatalogListingPromotionEligibilityOutboxRequest(
-            catalogKey,
-            listingId,
+            listing,
             CreateOutbox);
     }
 
