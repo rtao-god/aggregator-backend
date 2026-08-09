@@ -26,7 +26,7 @@ public sealed partial class PostgresIngestionProducerRegistrationStore
         if (!string.Equals(stored.ProducerIdentity, mutation.Registration.ProducerIdentity, StringComparison.Ordinal) ||
             !string.Equals(stored.CallerServiceIdentity, mutation.CallerServiceIdentity, StringComparison.Ordinal) ||
             !string.Equals(
-                IngestionCanonicalJson.ComputeDigest(stored.ResultDocument),
+                IngestionCanonicalJson.ComputeDocumentDigest(stored.ResultDocument),
                 stored.ResultDigest,
                 StringComparison.Ordinal))
         {

@@ -18,7 +18,7 @@ public sealed partial class PostgresIngestionProducerRegistrationStore(Ingestion
     {
         ValidateMutation(mutation);
         var resultDocument = IngestionCanonicalJson.Serialize(mutation.Registration);
-        var resultDigest = IngestionCanonicalJson.ComputeDigest(resultDocument);
+        var resultDigest = IngestionCanonicalJson.ComputeDocumentDigest(resultDocument);
         var connection = (NpgsqlConnection)dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
         if (shouldClose)
