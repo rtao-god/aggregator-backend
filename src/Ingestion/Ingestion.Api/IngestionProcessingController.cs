@@ -16,6 +16,7 @@ public static class IngestionProcessingAuthorizationPolicies
 public static class IngestionProcessingOperationIds
 {
     public const string ReadProcessing = "ReadIngestionProcessing";
+    public const string ReadDeliveries = "ReadIngestionCatalogDeliveries";
     public const string CompleteReview = "CompleteIngestionReview";
     public const string CommitBatch = "CommitIngestionBatch";
 }
@@ -24,6 +25,7 @@ public static class IngestionProcessingOperationIds
 [Route("api/ingestion/batches/{batchId:guid}")]
 public sealed class IngestionProcessingController(
     ReadIngestionProcessingService readService,
+    ReadIngestionCatalogDeliveriesService deliveryReadService,
     ReviewIngestionPackageService reviewService,
     CommitIngestionPackageService commitService) : ControllerBase
 {
@@ -34,6 +36,14 @@ public sealed class IngestionProcessingController(
         Guid batchId,
         CancellationToken cancellationToken) =>
         Ok(await readService.ReadAsync(batchId, cancellationToken));
+
+    [HttpGet("deliveries", Name = IngestionProcessingOperationIds.ReadDeliveries)]
+    [Authorize(Policy = IngestionAuthorizationPolicies.Read)]
+    [ProducesResponseType<IngestionCatalogDeliveriesResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IngestionCatalogDeliveriesResponse>> ReadDeliveriesAsync(
+        Guid batchId,
+        CancellationToken cancellationToken) =>
+        Ok(await deliveryReadService.ReadAsync(batchId, cancellationToken));
 
     [HttpPost("review", Name = IngestionProcessingOperationIds.CompleteReview)]
     [Authorize(Policy = IngestionProcessingAuthorizationPolicies.Review)]
