@@ -159,8 +159,8 @@ public sealed record IngestionCatalogDeliverySnapshot(
                 if (attemptCount == 0 ||
                     leaseExpiresAtUtc is not null ||
                     nextAttemptAtUtc is not null ||
-                    listingId is null or { } && listingId == Guid.Empty ||
-                    listingRevisionId is null or { } && listingRevisionId == Guid.Empty ||
+                    listingId is null || listingId == Guid.Empty ||
+                    listingRevisionId is null || listingRevisionId == Guid.Empty ||
                     failureCode is not null)
                 {
                     throw Invalid(
