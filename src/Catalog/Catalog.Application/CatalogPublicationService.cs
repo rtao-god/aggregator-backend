@@ -327,7 +327,6 @@ public sealed class CatalogPublicationService(
             target,
             request.ExpectedCurrentPublicationId,
             publicationPointer,
-            eligibilityTransition.Listings,
             CreateOutbox,
             eligibilityTransition.OutboxRequests,
             cancellationToken);
