@@ -106,6 +106,33 @@ var visibilityWorkerOptions = new QueryVisibilityWorkerOptions
         $"{QueryVisibilityWorkerOptions.SectionName}:RetryDelayMilliseconds")),
 };
 visibilityWorkerOptions.Validate();
+var outboxOptions = new QueryOutboxWorkerOptions
+{
+    ConnectionString = queryConnectionString,
+    BrokerUri = brokerUri,
+    Exchange = builder.Configuration[$"{QueryOutboxWorkerOptions.SectionName}:Exchange"]
+        ?? workerOptions.Exchange,
+    DispatcherIdentity = builder.Configuration[
+        $"{QueryOutboxWorkerOptions.SectionName}:DispatcherIdentity"]
+        ?? "query-public-read-outbox",
+    BatchSize = ParseInt(
+        builder.Configuration[$"{QueryOutboxWorkerOptions.SectionName}:BatchSize"],
+        50,
+        $"{QueryOutboxWorkerOptions.SectionName}:BatchSize"),
+    MaximumDeliveryAttempts = ParseInt(
+        builder.Configuration[$"{QueryOutboxWorkerOptions.SectionName}:MaximumDeliveryAttempts"],
+        8,
+        $"{QueryOutboxWorkerOptions.SectionName}:MaximumDeliveryAttempts"),
+    LeaseDuration = TimeSpan.FromSeconds(ParseInt(
+        builder.Configuration[$"{QueryOutboxWorkerOptions.SectionName}:LeaseDurationSeconds"],
+        120,
+        $"{QueryOutboxWorkerOptions.SectionName}:LeaseDurationSeconds")),
+    EmptyDelay = TimeSpan.FromMilliseconds(ParseInt(
+        builder.Configuration[$"{QueryOutboxWorkerOptions.SectionName}:EmptyDelayMilliseconds"],
+        2000,
+        $"{QueryOutboxWorkerOptions.SectionName}:EmptyDelayMilliseconds")),
+};
+outboxOptions.Validate();
 var objectStoreOptions = new S3ObjectStoreOptions
 {
     ServiceUrl = new Uri(
@@ -136,9 +163,12 @@ builder.Services
     {
         ConnectionString = queryConnectionString,
     })
-    .AddQueryPromotionOverlayProjection()
-    .AddQueryVisibilitySafetyProjection()
-    .AddQueryWorker(workerOptions, promotionWorkerOptions, visibilityWorkerOptions);
+    .AddQueryProjectionCoordination()
+    .AddQueryWorker(
+        workerOptions,
+        promotionWorkerOptions,
+        visibilityWorkerOptions,
+        outboxOptions);
 builder.Services.AddPlatformObservability(builder.Configuration, "query-projection-worker");
 builder.Services.AddSingleton<IObjectStore>(_ => new S3ObjectStore(objectStoreOptions));
 builder.Services.AddSingleton<IQueryClock, SystemQueryClock>();
@@ -154,13 +184,7 @@ builder.Services.AddScoped(
             "Query:PublicationArtifact:MaximumArtifactBytes"),
     });
 builder.Services.AddScoped<ICatalogPublicationArtifactReader, ObjectStoreCatalogPublicationArtifactReader>();
-var projectionStoreType = typeof(QueryDatabaseOptions).Assembly
-    .GetTypes()
-    .Single(type =>
-        !type.IsAbstract &&
-        !type.IsInterface &&
-        typeof(IQueryProjectionStore).IsAssignableFrom(type));
-builder.Services.AddScoped(typeof(IQueryProjectionStore), projectionStoreType);
+builder.Services.AddScoped<IQueryActivationCheckpointReader, NpgsqlQueryActivationCheckpointReader>();
 
 await builder.Build().RunAsync();
 
