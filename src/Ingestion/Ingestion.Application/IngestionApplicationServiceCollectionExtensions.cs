@@ -13,6 +13,7 @@ public static class IngestionApplicationServiceCollectionExtensions
         services.AddScoped<ProcessIngestionCatalogDeliveriesService>();
         services.AddScoped<ReadIngestionCatalogDeliveriesService>();
         services.AddScoped<ApplyCatalogConfigurationActivationService>();
+        services.AddScoped<IngestionProducerRegistrationService>();
         services.AddScoped<PrepareIngestionUploadService>();
         services.AddScoped<CompleteIngestionUploadService>();
         return services;
