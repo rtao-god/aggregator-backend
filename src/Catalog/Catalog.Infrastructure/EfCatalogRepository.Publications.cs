@@ -163,6 +163,10 @@ public sealed partial class EfCatalogRepository
                     innerCancellationToken);
             }, cancellationToken);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new CatalogPublicationOperationLeaseLostException(completion.OperationId);
+        }
         catch (DbUpdateException exception)
         {
             if (TryTranslatePublicationActivationFailure(exception, publication, out var activationFailure))

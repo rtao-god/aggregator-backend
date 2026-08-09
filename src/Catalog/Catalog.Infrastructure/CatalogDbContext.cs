@@ -222,6 +222,11 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.Property(row => row.FailureCode).HasMaxLength(200);
             entity.Property(row => row.FailureDetail).HasMaxLength(4000);
             entity.Property(row => row.FailureRequiredAction).HasMaxLength(2000);
+            entity.Property(row => row.LeaseToken).IsConcurrencyToken();
+            entity.HasOne<CatalogPublicationRow>()
+                .WithMany()
+                .HasForeignKey(row => row.ResultPublicationId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(row => row.PublicationId).IsUnique();
             entity.HasIndex(row => new { row.CatalogKey, row.PublicationSequence }).IsUnique();
             entity.HasIndex(row => new { row.CatalogKey, row.ActorId, row.IdempotencyKey }).IsUnique();
