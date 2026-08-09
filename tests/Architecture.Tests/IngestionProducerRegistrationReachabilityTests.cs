@@ -122,7 +122,7 @@ public sealed class IngestionProducerRegistrationReachabilityTests
         Assert.Contains("INGESTION_PRODUCER_IDEMPOTENCY_CONFLICT", validation, StringComparison.Ordinal);
         Assert.Contains("INGESTION_PRODUCER_COMMAND_CORRUPT", validation, StringComparison.Ordinal);
         Assert.Contains("ComputeContentDigest(", validation, StringComparison.Ordinal);
-        Assert.Contains("INSERT INTO contracts.producer_registration_revision", write, StringComparison.Ordinal);
+        Assert.Contains("INSERT INTO contracts." + "producer_registration_revision", write, StringComparison.Ordinal);
         Assert.Contains("INSERT INTO operations.producer_registration_command", write, StringComparison.Ordinal);
     }
 
@@ -148,7 +148,7 @@ public sealed class IngestionProducerRegistrationReachabilityTests
                      relative.EndsWith(".yml", StringComparison.OrdinalIgnoreCase));
             })
             .Where(file => File.ReadAllText(file).Contains(
-                "INSERT INTO contracts.producer_registration",
+                "INSERT INTO contracts." + "producer_registration",
                 StringComparison.OrdinalIgnoreCase))
             .Select(file => Path.GetRelativePath(repository.Root, file).Replace('\\', '/'))
             .Order(StringComparer.Ordinal)
