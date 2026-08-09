@@ -12,8 +12,8 @@ It does not own Catalog facts, verification badges, organic ranking, payment pro
 
 - `Promotion.Domain`: products, immutable product revisions, entitlements, placement windows/revisions, scope eligibility, and capacity invariants.
 - `Promotion.Contracts`: admin API and producer-owned `PromotionPlacementChanged` event contract.
-- `Promotion.Application`: commands, idempotency, optimistic concurrency, explicit mapping, event creation, deterministic canonical JSON, and typed owner failures.
-- `Promotion.Infrastructure`: Promotion-only EF/PostgreSQL persistence, listing-eligibility projection, capacity rows, command results, and durable outbox.
+- `Promotion.Application`: commands, idempotency, optimistic concurrency, explicit mapping, event creation, deterministic canonical JSON, scheduled activation policy, and typed owner failures.
+- `Promotion.Infrastructure`: Promotion-only EF/PostgreSQL persistence, listing-eligibility projection, capacity rows, command results, durable outbox, eligibility reconciliation, and atomic schedule transition units.
 - `Promotion.Api`: authenticated product/entitlement/placement commands and reads; thin controllers only.
 - `Promotion.Worker`: scheduled lifecycle transitions, Catalog eligibility consumption, automatic fail-closed placement pause, and outbox dispatch; no HTTP surface and no migrations.
 - `Promotion.Migrations`: the only owner of Promotion database schemas.
@@ -45,8 +45,17 @@ Catalog listing publication/archive eligibility event
 → capacity exclusion removal + correlated placement outbox
 → Query sponsored overlay
 
-Eligibility recovery never resumes a placement. Resume remains an explicit Promotion command that rechecks the current local eligibility projection.
+scheduled transition scan
+→ select bounded due candidate identities
+→ one entitlement transition per serializable transaction
+→ acquire the Catalog eligibility listing-stream lock before each placement transaction snapshot
+→ lock current placement, entitlement, and product rows
+→ re-read current local eligibility
+→ activate, end, or fail-closed pause exactly one placement
+→ capacity rows + placement outbox in the same transaction
 ```
+
+Eligibility recovery never resumes a placement. Resume remains an explicit Promotion command that rechecks the current local eligibility projection.
 
 All public IDs use UUID identities. Aggregate revision is distinct from immutable revision identity and event identity.
 
@@ -94,6 +103,8 @@ Create, revise, resume, and due-time activation require the exact current entitl
 
 Capacity exclusion is represented by transactionally maintained `sponsored_placement_capacity` rows and a PostgreSQL exclusion constraint over exact catalog/scope/locale/slot time ranges. Capacity is not claimed while a placement is paused, ended, or revoked. An in-memory precheck is advisory only; the database is authoritative.
 
+The scheduler does not wrap an arbitrary batch in one transaction. Each entitlement or placement is an independent atomic unit, so a later invalid row cannot roll back already committed transitions. Placement activation uses the same per-listing advisory lock as Catalog eligibility projection/reconciliation and acquires it before opening the serializable transaction, preventing an older transaction snapshot from activating against a newly committed ineligible revision.
+
 ## Query boundary
 
 Promotion publishes minimal placement projection events containing only:
@@ -138,7 +149,9 @@ Business state and event envelope are committed in one serializable Promotion tr
 - Promotion domain tests cover invalid product revision input, entitlement overlap, scope mismatch, window rules, lifecycle transitions, and capacity overlap semantics;
 - Promotion eligibility tests prove archived/disputed/unpublished listings fail closed, product contact requirements remain enforced, and recovery does not auto-resume placements;
 - Promotion consumer tests prove inbox replay still invokes reconciliation after a crash boundary and preserves Catalog message causation;
+- Promotion scheduling tests prove missing eligibility, ineligible Catalog state, ineffective entitlement, and paused state cannot produce automatic activation;
 - architecture tests prove the consumer writes/replays the projection before reconciliation, acknowledges only after reconciliation, removes capacity rows, emits placement events, and depends only on `Catalog.Contracts`;
+- scheduling architecture tests require independent transaction units, pre-snapshot listing-stream locking, row locks, local eligibility reads, and no automatic resume;
 - Promotion application tests cover product/entitlement/placement command orchestration, idempotent replay, stale revision rejection, and exact correlated events;
 - Promotion infrastructure tests cover EF uniqueness, exclusion constraints, immutable-history guards, exact-text outbox, command-result shape, and DI ownership;
 - Promotion API tests cover authentication, authorization, strict enum wire behavior, route/body mismatch, duplicate replay, and typed failures;
