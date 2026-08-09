@@ -334,7 +334,16 @@ services:
       Analytics__Aggregation__PollInterval: "00:30:00"
       Analytics__Aggregation__FailureDelay: "00:00:10"
       Analytics__Aggregation__MaximumConsecutiveFailures: "5"
-    depends_on: {analytics-grants: {condition: service_completed_successfully}}
+      Analytics__PublicReadProjection__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
+      Analytics__PublicReadProjection__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
+      Analytics__PublicReadProjection__Queue: analytics.query-public-read-projection
+      Analytics__PublicReadProjection__DeadLetterExchange: aggregator.dead-letter
+      Analytics__PublicReadProjection__DeadLetterQueue: analytics.query-public-read-projection.dead-letter
+      Analytics__PublicReadProjection__RoutingKey: query.public-read-revision.activated
+      Analytics__PublicReadProjection__PrefetchCount: "8"
+      Analytics__PublicReadProjection__DeliveryLimit: "8"
+      Analytics__PublicReadProjection__RetryDelay: "00:00:00.500"
+    depends_on: {analytics-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
   promotion-api:
     <<: *api
     build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Promotion/Promotion.Api/Promotion.Api.csproj, APP_DLL: Promotion.Api.dll}}
