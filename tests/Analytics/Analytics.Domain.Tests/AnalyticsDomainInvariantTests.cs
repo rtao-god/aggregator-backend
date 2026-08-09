@@ -62,6 +62,31 @@ public sealed class AnalyticsDomainInvariantTests
     }
 
     [Fact]
+    public void SponsoredScopeAcceptsProducerMaximumLength()
+    {
+        var scopeKey = new string('s', 200);
+
+        var placement = PlacementContext.Create(
+            PlacementExposureKind.Sponsored,
+            Guid.Parse("0198a100-0000-7000-8000-000000000015"),
+            scopeKey);
+
+        Assert.Equal(scopeKey, placement.ScopeKey);
+    }
+
+    [Fact]
+    public void SponsoredScopeRejectsValueBeyondProducerMaximumLength()
+    {
+        var exception = Assert.Throws<AnalyticsDomainException>(() =>
+            PlacementContext.Create(
+                PlacementExposureKind.Sponsored,
+                Guid.Parse("0198a100-0000-7000-8000-000000000016"),
+                new string('s', 201)));
+
+        Assert.Equal("ANALYTICS_KEY_INVALID", exception.Code);
+    }
+
+    [Fact]
     public void CampaignParametersRejectUnknownKeys()
     {
         var exception = Assert.Throws<AnalyticsDomainException>(() =>

@@ -34,6 +34,9 @@ public sealed class AnalyticsPersistenceModelTests
         Assert.Contains("ck_analytics_interaction_event_placement_shape", checkNames);
         Assert.Contains("ck_analytics_interaction_event_time_bounds", checkNames);
         Assert.Contains("ck_analytics_interaction_event_digest", checkNames);
+        Assert.Equal(
+            200,
+            interactionEvent.FindProperty("PlacementScopeKey")?.GetMaxLength());
         var campaignForeignKey = Assert.Single(campaignParameter.GetForeignKeys());
         Assert.Equal(DeleteBehavior.Restrict, campaignForeignKey.DeleteBehavior);
     }

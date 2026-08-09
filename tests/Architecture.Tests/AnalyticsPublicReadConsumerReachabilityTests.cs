@@ -98,6 +98,9 @@ public sealed class AnalyticsPublicReadConsumerReachabilityTests
         var migration = Read(
             repository,
             "src/Analytics/Analytics.Migrations/Migrations/V003__query_public_read_projection.sql");
+        var scopeMigration = Read(
+            repository,
+            "src/Analytics/Analytics.Migrations/Migrations/V004__interaction_placement_scope_key.sql");
         var store = Read(
             repository,
             "src/Analytics/Analytics.Infrastructure/EfPublicReadActivationProjectionStore.cs");
@@ -127,6 +130,11 @@ public sealed class AnalyticsPublicReadConsumerReachabilityTests
             StringComparison.Ordinal);
 
         Assert.Contains(
+            "ALTER COLUMN placement_scope_key TYPE varchar(200)",
+            scopeMigration,
+            StringComparison.Ordinal);
+
+        Assert.Contains(
             "IsolationLevel.Serializable",
             store,
             StringComparison.Ordinal);
@@ -150,6 +158,41 @@ public sealed class AnalyticsPublicReadConsumerReachabilityTests
             "ValidateMembershipAsync(",
             interactionRepository,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AcceptanceBootstrapUsesTheCanonicalQueryActivationOwner()
+    {
+        var repository = RepositoryModel.Load();
+        var program = Read(
+            repository,
+            "tests/Acceptance/Acceptance.Analytics.Control/Program.cs");
+        var references = ReadProjectReferences(
+            repository,
+            "tests/Acceptance/Acceptance.Analytics.Control/Acceptance.Analytics.Control.csproj");
+
+        Assert.Contains(
+            "ApplyPublicReadRevisionActivationService",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PublicReadActivationEventFactory.Create(",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "QueryCanonicalJson.ComputeDigest(activationPayload)",
+            program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "IPublicReadReferenceProjectionWriter",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "../../../src/Query/Query.Application/Query.Application.csproj",
+            references);
+        Assert.Contains(
+            "../../../src/Query/Query.Domain/Query.Domain.csproj",
+            references);
     }
 
     [Fact]
