@@ -10,7 +10,6 @@ public static class IngestionProcessingAuthorizationPolicies
 {
     public const string Review = "ingestion.review";
     public const string Commit = "ingestion.commit";
-    public const string Delivery = "ingestion.delivery";
 }
 
 public static class IngestionProcessingOperationIds

@@ -74,10 +74,7 @@ public partial class Program
                 IngestionProcessingAuthorizationPolicies.Review)
             .AddRequiredScopePolicy(
                 IngestionProcessingAuthorizationPolicies.Commit,
-                IngestionProcessingAuthorizationPolicies.Commit)
-            .AddRequiredScopePolicy(
-                IngestionProcessingAuthorizationPolicies.Delivery,
-                IngestionProcessingAuthorizationPolicies.Delivery);
+                IngestionProcessingAuthorizationPolicies.Commit);
 
         var application = builder.Build();
         application.UseOwnerProblemDetails();
