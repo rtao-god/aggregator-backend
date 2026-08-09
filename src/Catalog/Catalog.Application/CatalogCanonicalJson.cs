@@ -83,14 +83,14 @@ internal static class CatalogCanonicalJson
             },
             contacts = content.Contacts
                 .OrderBy(value => value.Kind)
-                .ThenBy(value => value.Target.AbsoluteUri, StringComparer.Ordinal)
-                .ThenBy(value => value.Id)
+                .ThenBy(value => value.Target, StringComparer.Ordinal)
+                .ThenBy(value => value.AssertionId)
                 .Select(value => new
                 {
                     contactId = value.Id,
                     kind = value.Kind,
-                    target = value.Target.AbsoluteUri,
-                    value.Label,
+                    target = value.Target,
+                    label = value.Label,
                     assertionId = value.AssertionId,
                 })
                 .ToArray(),
@@ -100,16 +100,16 @@ internal static class CatalogCanonicalJson
                 .ThenBy(value => value.VariantId)
                 .Select(value => new
                 {
-                    value.MediaId,
-                    value.MediaAggregateRevision,
-                    value.VariantId,
-                    objectUri = value.ObjectUri.AbsoluteUri,
-                    value.ContentType,
-                    value.ContentDigest,
-                    value.RightsBasis,
-                    value.DisplayOrder,
-                    value.Caption,
-                    value.AssertionId,
+                    mediaId = value.MediaId,
+                    mediaAggregateRevision = value.MediaAggregateRevision,
+                    variantId = value.VariantId,
+                    objectUri = value.ObjectUri,
+                    contentType = value.ContentType,
+                    contentDigest = value.ContentDigest,
+                    rightsBasis = value.RightsBasis,
+                    displayOrder = value.DisplayOrder,
+                    caption = value.Caption,
+                    assertionId = value.AssertionId,
                 })
                 .ToArray(),
             assertions = content.Assertions.Values
@@ -132,6 +132,45 @@ internal static class CatalogCanonicalJson
     {
         ArgumentNullException.ThrowIfNull(publication);
         return Serialize(publication);
+    }
+
+    public static byte[] SerializePublicationRequest(CreateCatalogPublicationRequest request)
+    {
+        CatalogPublicationRequestValidator.Validate(request);
+        return Serialize(new CreateCatalogPublicationRequest(
+            request.CatalogKey.Trim(),
+            request.ConfigurationRevisionId,
+            request.ExpectedCurrent,
+            request.Selections
+                .OrderBy(selection => selection.ListingId)
+                .ThenBy(selection => selection.ListingRevisionId)
+                .ToArray()));
+    }
+
+    public static CreateCatalogPublicationRequest DeserializePublicationRequest(ReadOnlySpan<byte> content)
+    {
+        if (content.IsEmpty)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_operation_request_empty",
+                "Persisted publication request document cannot be empty.");
+        }
+
+        try
+        {
+            var request = JsonSerializer.Deserialize<CreateCatalogPublicationRequest>(content, SerializerOptions)
+                ?? throw new CatalogContractException(
+                    "catalog.publication_operation_request_invalid",
+                    "Persisted publication request document deserialized to an empty contract.");
+            CatalogPublicationRequestValidator.Validate(request);
+            return request;
+        }
+        catch (JsonException exception)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_operation_request_invalid",
+                $"Persisted publication request document is invalid: {exception.Message}");
+        }
     }
 
     public static string SerializeEvent<T>(T integrationEvent)
@@ -238,10 +277,14 @@ internal static class CatalogCanonicalJson
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNameCaseInsensitive = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
             WriteIndented = false,
         };
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter(
+            JsonNamingPolicy.CamelCase,
+            allowIntegerValues: false));
         return options;
     }
 
@@ -284,8 +327,7 @@ internal static class CatalogCanonicalJson
                 writer.WriteNullValue();
                 break;
             default:
-                throw new InvalidOperationException(
-                    $"JSON value kind '{element.ValueKind}' cannot be canonicalized.");
+                throw new InvalidOperationException($"Unsupported JSON token '{element.ValueKind}'.");
         }
     }
 }

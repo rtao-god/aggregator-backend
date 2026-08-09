@@ -22,28 +22,9 @@ public sealed class CatalogPublicationService(
         CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        CatalogPublicationRequestValidator.Validate(request);
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(eventContext);
-        ArgumentNullException.ThrowIfNull(request.Selections);
-        if (request.Selections.Count == 0)
-        {
-            throw new CatalogContractException(
-                "catalog.publication_empty",
-                "A publication must contain at least one exact listing revision selection.");
-        }
-
-        var duplicateListings = request.Selections
-            .GroupBy(selection => selection.ListingId)
-            .Where(group => group.Count() > 1)
-            .Select(group => group.Key)
-            .ToArray();
-        if (duplicateListings.Length > 0)
-        {
-            throw new CatalogContractException(
-                "catalog.publication_duplicate_listing",
-                $"Publication contains duplicate listings: {string.Join(", ", duplicateListings)}.");
-        }
 
         var catalogKey = CatalogKey.Create(request.CatalogKey);
         var activeConfiguration = await repository.GetActiveConfigurationAsync(catalogKey, cancellationToken)
