@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "contracts": [
     {
       "name": "aggregator-candidate-ingestion",
@@ -14,67 +15,18 @@
       ]
     },
     {
-      "name": "analytics-interaction-event",
-      "file": "src/Analytics/Analytics.Contracts/InteractionContracts.cs",
-      "required": [
-        "public enum InteractionEventKindContract",
-        "public enum InteractionAcceptanceStateContract",
-        "public sealed record SubmitInteractionEventRequest(",
-        "Guid PublicReadRevisionId,\n    DateTimeOffset OccurredAtUtc,",
-        "PlacementContextContract PlacementContext,",
-        "string AntiAbuseToken);",
-        "public sealed record InteractionEventResponse("
-      ]
-    },
-    {
-      "name": "analytics-daily-listing-metrics",
-      "file": "src/Analytics/Analytics.Contracts/MetricsContracts.cs",
-      "required": [
-        "public enum AggregateReadinessStateContract",
-        "public sealed record InteractionCountsContract(",
-        "long SponsoredImpressions,",
-        "public sealed record DailyListingMetricsResponse(",
-        "InteractionCountsContract? Counts,",
-        "public sealed record DailyMetricsRangeRequest(DateOnly FromInclusive, DateOnly ToExclusive)"
-      ]
-    },
-    {
       "name": "promotion-placement-change",
       "file": "src/Promotion/Promotion.Contracts/PromotionIntegrationEvents.cs",
       "required": [
         "public const string PlacementChanged = \"promotion.placement.changed\";",
         "public const string PlacementChanged = \"aggregator.promotion.placement-changed@1\";",
-        "public sealed record SponsoredPlacementChanged(",
-        "DateTimeOffset HardExpiryAtUtc,",
-        "int CapacitySlot,",
-        "string PresentationLabelKey,"
+        "public sealed record PromotionPlacementChanged("
       ]
     },
     {
-      "name": "catalog-publication-artifact",
-      "file": "src/Catalog/Catalog.Contracts/CatalogPublicationArtifact.cs",
+      "name": "query-public-contact",
+      "file": "src/Query/Query.Domain/QueryDocuments.cs",
       "required": [
-        "public const string Identity = \"aggregator-catalog-publication\";",
-        "public const int Revision = 4;",
-        "public sealed record PublicContact(\n    Guid ContactId,",
-        "public sealed record PublicMedia(",
-        "long MediaAggregateRevision,",
-        "Guid VariantId,",
-        "int DisplayOrder,",
-        "string? Caption,"
-      ]
-    },
-    {
-      "name": "query-public-search",
-      "file": "src/Query/Query.Contracts/PublicQueryContracts.cs",
-      "required": [
-        "public sealed record PublicReadMetadata(",
-        "Guid PromotionOverlayId,",
-        "public sealed record PublicSponsoredListingSummary(",
-        "DateTimeOffset HardExpiryAtUtc,",
-        "public sealed record PublicListingSearchResponse(",
-        "IReadOnlyList<PublicSponsoredListingSummary> Sponsored,",
-        "IReadOnlyList<PublicListingSummary> Organic,",
         "public sealed record PublicContactValue(Guid ContactId, string Kind, string Target, string? Label);"
       ]
     },
@@ -97,9 +49,35 @@
       "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
       "required": [
         "public const string PublicationActivated = \"catalog.publication.activated\";",
-        "public sealed record CatalogPublicationActivated(",
-        "long ActivationRevision,",
-        "PublicationActivationKindContract ActivationKind,"
+        "public const string PublicationActivated = \"aggregator.catalog.publication-activated@1\";",
+        "public sealed record CatalogPublicationActivated("
+      ]
+    },
+    {
+      "name": "catalog-visibility-suppression",
+      "file": "src/Catalog/Catalog.Contracts/CatalogVisibilitySuppressionContracts.cs",
+      "required": [
+        "public const string VisibilitySuppressionChanged = \"catalog.public-visibility-suppression.changed\";",
+        "public const string VisibilitySuppressionChanged = \"aggregator.catalog.public-visibility-suppression-changed@1\";",
+        "public sealed record PublicVisibilitySuppressionChanged("
+      ]
+    },
+    {
+      "name": "catalog-media-binding",
+      "file": "src/Catalog/Catalog.Media.Contracts/CatalogMediaBindingContracts.cs",
+      "required": [
+        "public const string BindingAuthority = \"aggregator.catalog.media.binding-authority\";",
+        "public const int BindingAuthorityRevision = 1;",
+        "public sealed record CatalogMediaBindingRequest("
+      ]
+    },
+    {
+      "name": "catalog-publication-artifact",
+      "file": "src/Catalog/Catalog.Contracts/CatalogPublicationArtifact.cs",
+      "required": [
+        "public const int SchemaRevision = 4;",
+        "public sealed record PublishedContact(",
+        "public sealed record PublishedMediaBinding("
       ]
     },
     {
@@ -124,18 +102,27 @@
         "string CorrelationId);",
         "public sealed record CatalogIngestionCommandOutcome("
       ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-query",
+      "file": "src/Ingestion/Ingestion.Contracts/IngestionCatalogDeliveryQueryContracts.cs",
+      "required": [
+        "public enum IngestionCatalogDeliveryStateContract",
+        "public sealed record IngestionCatalogDeliveryStatusDto(",
+        "DateTimeOffset? NextAttemptAtUtc,",
+        "string? FailureDetail,",
+        "public sealed record IngestionCatalogDeliveriesResponse("
+      ]
     }
   ],
   "http": [
     {
-      "file": "src/Catalog/Catalog.Api/CatalogMediaController.cs",
+      "file": "src/Query/Query.Api/PublicQueryController.cs",
       "required": [
-        "[Route(\"api/catalog-command/media/assets\")]",
-        "[HttpPost(Name = CatalogMediaOperationIds.Register)]",
-        "[HttpPost(\"{assetId:guid}/upload-authorizations\", Name = CatalogMediaOperationIds.PrepareUpload)]",
-        "[HttpPost(\"{assetId:guid}/upload-completions\", Name = CatalogMediaOperationIds.CompleteUpload)]",
-        "[HttpPost(\"{assetId:guid}/rights-revocations\", Name = CatalogMediaOperationIds.RevokeRights)]",
-        "[HttpGet(\"{assetId:guid}\", Name = CatalogMediaOperationIds.Get)]"
+        "[HttpGet(\"catalogs/{catalogKey}/listings\", Name = QueryOperationIds.SearchListings)]",
+        "[HttpGet(\"catalogs/{catalogKey}/routes/{**path}\", Name = QueryOperationIds.ResolveRoute)]",
+        "Response.Headers.ETag =",
+        "Response.Headers.CacheControl ="
       ]
     },
     {
@@ -149,33 +136,32 @@
       ]
     },
     {
-      "file": "src/Analytics/Analytics.Api/AnalyticsObservationsController.cs",
+      "file": "src/Analytics/Analytics.Api/AnalyticsController.cs",
       "required": [
-        "[Route(\"api/analytics\")]",
-        "[HttpPost(\"anti-abuse-tokens\", Name = AnalyticsOperationIds.IssueAntiAbuseToken)]",
-        "[HttpPost(\"interaction-events\", Name = AnalyticsOperationIds.SubmitInteractionEvent)]",
-        "[Route(\"api/analytics/listings/{listingId:guid}\")]",
-        "[HttpGet(\"daily-metrics\", Name = AnalyticsOperationIds.ReadDailyListingMetrics)]"
+        "[HttpPost(\"interaction-events\", Name = AnalyticsOperationIds.SubmitInteraction)]",
+        "[HttpGet(\"listings/{listingId:guid}/daily-metrics\", Name = AnalyticsOperationIds.ReadDailyListingMetrics)]",
+        "[Authorize(Policy = AnalyticsAuthorizationPolicies.ViewListingMetrics)]"
       ]
     },
     {
-      "file": "src/Promotion/Promotion.Api/PromotionPlacementsController.cs",
+      "file": "src/Promotion/Promotion.Api/PromotionController.cs",
       "required": [
-        "[Route(\"api/promotion/placements\")]",
-        "[HttpPost(Name = PromotionOperationIds.CreatePlacement)]",
-        "[HttpPost(\"{placementId:guid}/revisions\", Name = PromotionOperationIds.AddPlacementRevision)]",
-        "[HttpPost(\"{placementId:guid}/revoke\", Name = PromotionOperationIds.RevokePlacement)]",
-        "\"~/api/promotion/catalogs/{catalogKey}/placement-calendar\","
+        "[HttpPost(\"products\", Name = PromotionOperationIds.CreateProduct)]",
+        "[HttpPost(\"entitlements\", Name = PromotionOperationIds.GrantEntitlement)]",
+        "[HttpPost(\"placements\", Name = PromotionOperationIds.CreatePlacement)]",
+        "[HttpGet(\"catalogs/{catalogKey}/placement-calendar\", Name = PromotionOperationIds.ReadPlacementCalendar)]"
       ]
     },
     {
-      "file": "src/Query/Query.Api/CatalogQueryController.cs",
+      "file": "src/Catalog/Catalog.Api/CatalogMediaController.cs",
       "required": [
-        "[Route(\"api/catalog-query/catalogs/{catalogKey}\")]",
-        "[HttpGet(\"listings\", Name = \"SearchPublicListings\")]",
-        "var result = await service.SearchAsync(",
-        "result.Sponsored.Min(item => item.HardExpiryAtUtc)",
-        "allowStaleWhileRevalidate: result.Sponsored.Count == 0"
+        "[Route(\"api/catalog-command/media/assets\")]",
+        "[HttpPost(Name = CatalogMediaOperationIds.Register)]",
+        "[HttpPost(\"{assetId:guid}/upload-completions\", Name = CatalogMediaOperationIds.CompleteUpload)]",
+        "[HttpPost(\"{assetId:guid}/rights-verifications\", Name = CatalogMediaOperationIds.VerifyRights)]",
+        "[HttpPost(\"{assetId:guid}/approval-decisions\", Name = CatalogMediaOperationIds.Approve)]",
+        "[HttpPost(\"{assetId:guid}/rights-revocations\", Name = CatalogMediaOperationIds.Revoke)]",
+        "[HttpGet(\"{assetId:guid}\", Name = CatalogMediaOperationIds.Read)]"
       ]
     },
     {
@@ -206,65 +192,67 @@
         "RequireIdempotencyIdentity(Request, command.CommandId);",
         "service.ExecuteAsync("
       ]
+    },
+    {
+      "file": "src/Ingestion/Ingestion.Api/IngestionProcessingController.cs",
+      "required": [
+        "[HttpGet(\"deliveries\", Name = IngestionProcessingOperationIds.ReadDeliveries)]",
+        "[Authorize(Policy = IngestionAuthorizationPolicies.Read)]",
+        "[ProducesResponseType<IngestionCatalogDeliveriesResponse>(StatusCodes.Status200OK)]",
+        "deliveryReadService.ReadAsync(batchId, cancellationToken)"
+      ]
     }
   ],
   "strictJsonPrograms": [
     "src/Catalog/Catalog.Api/Program.cs",
+    "src/Query/Query.Api/Program.cs",
     "src/Ingestion/Ingestion.Api/Program.cs",
     "src/Analytics/Analytics.Api/Program.cs",
-    "src/Promotion/Promotion.Api/Program.cs",
-    "src/Query/Query.Api/Program.cs"
+    "src/Promotion/Promotion.Api/Program.cs"
   ],
   "workers": [
     {
-      "name": "query-public-read-outbox-dispatcher",
-      "file": "src/Query/Query.Worker/QueryWorkerServiceCollectionExtensions.cs",
+      "name": "catalog-outbox",
+      "file": "src/Catalog/Catalog.Worker/CatalogWorkerServiceCollectionExtensions.cs",
       "required": [
-        "services.AddSingleton<RabbitMqEventPublisher>();",
-        "services.AddSingleton<PostgresOutboxDispatcher>();",
-        "services.AddHostedService<QueryOutboxWorker>();"
+        "services.AddHostedService<CatalogOutboxWorker>();",
+        "services.AddHostedService<CatalogPublicationOperationWorker>();"
       ]
     },
     {
-      "name": "analytics-public-read-worker-host",
+      "name": "query-publication-projection",
+      "file": "src/Query/Query.Worker/Program.cs",
+      "required": [
+        "AddHostedService<CatalogPublicationProjectionWorker>()",
+        "AddHostedService<PromotionOverlayProjectionWorker>()",
+        "AddHostedService<VisibilitySafetyProjectionWorker>()",
+        "AddHostedService<QueryPublicReadActivationOutboxWorker>()"
+      ]
+    },
+    {
+      "name": "analytics-query-public-read-projection",
       "file": "src/Analytics/Analytics.Worker/Program.cs",
       "required": [
-        "builder.Services.AddAnalyticsApplication();",
-        "builder.Services.AddAnalyticsInfrastructure(builder.Configuration);",
-        "builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();"
+        "AddAnalyticsApplication()",
+        "AddAnalyticsInfrastructure(builder.Configuration)",
+        "AddHostedService<AnalyticsPublicReadProjectionWorker>()"
       ]
     },
     {
-      "name": "analytics-public-read-consumer",
-      "file": "src/Analytics/Analytics.Worker/AnalyticsPublicReadProjectionWorker.cs",
+      "name": "query-public-read-outbox",
+      "file": "src/Query/Query.Infrastructure/QueryPublicReadActivationOutboxWriter.cs",
       "required": [
-        "QueryIntegrationEventContracts.PublicReadRevisionActivated",
-        "\"payload-digest\"",
-        "\"causation-id\"",
-        "GetRequiredService<ApplyPublicReadRevisionActivationService>()",
-        "BasicAckAsync(",
-        "BasicNackAsync(",
-        "[\"x-delivery-limit\"] = _options.DeliveryLimit"
+        "INSERT INTO messaging.outbox_message",
+        "payload_digest",
+        "QueryIntegrationEventContracts.PublicReadRevisionActivated"
       ]
     },
     {
-      "name": "analytics-public-read-projection-store",
-      "file": "src/Analytics/Analytics.Infrastructure/EfPublicReadActivationProjectionStore.cs",
+      "name": "query-public-read-outbox-dispatch",
+      "file": "src/Query/Query.Worker/Program.cs",
       "required": [
-        ": IPublicReadActivationProjectionStore",
-        "IsolationLevel.Serializable",
-        "ANALYTICS_INBOX_MESSAGE_CORRUPT",
-        "ANALYTICS_PUBLIC_ACTIVATION_REVISION_GAP"
-      ]
-    },
-    {
-      "name": "analytics-public-read-projection-migration",
-      "file": "src/Analytics/Analytics.Migrations/Migrations/V003__query_public_read_projection.sql",
-      "required": [
-        "CREATE TABLE access_projection.public_sponsored_placement_reference",
-        "CREATE TABLE access_projection.public_read_activation_checkpoint",
-        "CREATE TABLE messaging.inbox_message",
-        "fk_analytics_interaction_sponsored_placement"
+        "AddSingleton<PostgresOutboxDispatcher>()",
+        "AddHostedService<QueryPublicReadActivationOutboxWorker>()"
       ]
     },
     {
@@ -298,7 +286,7 @@
       "file": "src/Ingestion/Ingestion.Infrastructure/PostgresIngestionCatalogDeliveryStore.cs",
       "required": [
         ": IIngestionCatalogDeliveryStore",
-        "FOR UPDATE SKIP LOCKED",
+        "FOR UPDATE OF d SKIP LOCKED",
         "lease_token = @lease_token",
         "EnsureLeaseMutation("
       ]
@@ -311,6 +299,34 @@
         "ADD COLUMN next_attempt_at_utc timestamp with time zone NULL",
         "ADD CONSTRAINT ck_ingestion_catalog_delivery_lease",
         "ADD CONSTRAINT ck_ingestion_catalog_delivery_outcome"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-query-composition",
+      "file": "src/Ingestion/Ingestion.Api/Program.cs",
+      "required": [
+        "builder.Services.AddIngestionProcessingInfrastructure(builder.Configuration);",
+        "builder.Services.AddIngestionCatalogDeliveryQueryInfrastructure();"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-query-reader",
+      "file": "src/Ingestion/Ingestion.Infrastructure/PostgresIngestionCatalogDeliveryReader.cs",
+      "required": [
+        ": IIngestionCatalogDeliveryReader",
+        "LEFT JOIN processing.catalog_delivery d ON d.batch_id = b.id",
+        "IngestionCatalogDeliverySnapshot.Create(",
+        "return foundBatch"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-state-consistency",
+      "file": "src/Ingestion/Ingestion.Migrations/Migrations/V006__catalog_delivery_state_consistency.sql",
+      "required": [
+        "INGESTION_CATALOG_DELIVERY_RECOVERED_LEASE",
+        "ADD CONSTRAINT ck_ingestion_catalog_delivery_pending_shape",
+        "ADD CONSTRAINT ck_ingestion_catalog_delivery_lease_time",
+        "ADD CONSTRAINT ck_ingestion_catalog_delivery_success_attempt"
       ]
     }
   ]
