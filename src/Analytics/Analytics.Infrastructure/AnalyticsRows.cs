@@ -26,6 +26,8 @@ internal sealed class AnalyticsInteractionEventRow
 
     public Guid? PlacementId { get; set; }
 
+    public AnalyticsPublicSponsoredPlacementReferenceRow? SponsoredPlacementReference { get; set; }
+
     public string? PlacementScopeKey { get; set; }
 
     public int ReferrerClass { get; set; }
@@ -54,6 +56,8 @@ internal sealed class AnalyticsPublicReadReferenceRow
 
     public required string CatalogKey { get; set; }
 
+    public long ActivationRevision { get; set; }
+
     public Guid BaseProjectionId { get; set; }
 
     public Guid PromotionOverlayId { get; set; }
@@ -66,6 +70,8 @@ internal sealed class AnalyticsPublicReadReferenceRow
 
     public required string MembershipDigest { get; set; }
 
+    public required string ProjectionDigest { get; set; }
+
     public DateTimeOffset ActivatedAtUtc { get; set; }
 }
 
@@ -76,6 +82,71 @@ internal sealed class AnalyticsPublicListingReferenceRow
     public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
 
     public Guid ListingId { get; set; }
+}
+
+internal sealed class AnalyticsPublicSponsoredPlacementReferenceRow
+{
+    public Guid PublicReadRevisionId { get; set; }
+
+    public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
+
+    public AnalyticsPublicListingReferenceRow PublicListingReference { get; set; } = null!;
+
+    public Guid PlacementId { get; set; }
+
+    public Guid ListingId { get; set; }
+
+    public int ScopeType { get; set; }
+
+    public required string ScopeKey { get; set; }
+
+    public DateTimeOffset StartsAtUtc { get; set; }
+
+    public DateTimeOffset HardExpiryAtUtc { get; set; }
+}
+
+internal sealed class AnalyticsPublicReadActivationCheckpointRow
+{
+    public required string CatalogKey { get; set; }
+
+    public long ActivationRevision { get; set; }
+
+    public Guid PublicReadRevisionId { get; set; }
+
+    public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
+
+    public required string ProjectionDigest { get; set; }
+
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+}
+
+internal sealed class AnalyticsInboxMessageRow
+{
+    public Guid MessageId { get; set; }
+
+    public required string CatalogKey { get; set; }
+
+    public required string RoutingKey { get; set; }
+
+    public required string ContractIdentity { get; set; }
+
+    public required string PayloadDigest { get; set; }
+
+    public long ActivationRevision { get; set; }
+
+    public Guid PublicReadRevisionId { get; set; }
+
+    public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
+
+    public DateTimeOffset ReceivedAtUtc { get; set; }
+
+    public required string CorrelationId { get; set; }
+
+    public int Disposition { get; set; }
+
+    public required string ResultProjectionDigest { get; set; }
+
+    public DateTimeOffset ProcessedAtUtc { get; set; }
 }
 
 internal sealed class AnalyticsListingAccessProjectionRow

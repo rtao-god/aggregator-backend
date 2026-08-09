@@ -16,6 +16,15 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
     internal DbSet<AnalyticsPublicListingReferenceRow> PublicListingReferences =>
         Set<AnalyticsPublicListingReferenceRow>();
 
+    internal DbSet<AnalyticsPublicSponsoredPlacementReferenceRow> PublicSponsoredPlacementReferences =>
+        Set<AnalyticsPublicSponsoredPlacementReferenceRow>();
+
+    internal DbSet<AnalyticsPublicReadActivationCheckpointRow> PublicReadActivationCheckpoints =>
+        Set<AnalyticsPublicReadActivationCheckpointRow>();
+
+    internal DbSet<AnalyticsInboxMessageRow> PublicReadInboxMessages =>
+        Set<AnalyticsInboxMessageRow>();
+
     internal DbSet<AnalyticsListingAccessProjectionRow> ListingAccessProjections =>
         Set<AnalyticsListingAccessProjectionRow>();
 
@@ -61,6 +70,21 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(row => row.SponsoredPlacementReference)
+                .WithMany()
+                .HasForeignKey(row => new
+                {
+                    row.PublicReadRevisionId,
+                    row.PlacementId,
+                    row.ListingId,
+                })
+                .HasPrincipalKey(row => new
+                {
+                    row.PublicReadRevisionId,
+                    row.PlacementId,
+                    row.ListingId,
+                })
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(row => new { row.ClientEventId, row.EventKind })
                 .IsUnique()
                 .HasDatabaseName("ux_analytics_interaction_event_semantic_key");
@@ -88,16 +112,25 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("public_read_reference", "access_projection", table =>
             {
                 table.HasCheckConstraint(
+                    "ck_analytics_public_read_activation_revision",
+                    "activation_revision > 0");
+                table.HasCheckConstraint(
                     "ck_analytics_public_read_content_digest",
                     "public_read_content_digest ~ '^[0-9a-f]{64}$'");
                 table.HasCheckConstraint(
                     "ck_analytics_public_read_membership_digest",
                     "membership_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_public_read_projection_digest",
+                    "projection_digest ~ '^[0-9a-f]{64}$'");
             });
             entity.HasKey(row => row.PublicReadRevisionId);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
             entity.Property(row => row.PublicReadContentDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.MembershipDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.ProjectionDigest).HasMaxLength(64).IsFixedLength();
+            entity.HasIndex(row => new { row.CatalogKey, row.ActivationRevision })
+                .IsUnique();
             entity.HasIndex(row => new { row.CatalogKey, row.ActivatedAtUtc });
         });
 
@@ -110,6 +143,96 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .HasForeignKey(row => row.PublicReadRevisionId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(row => row.ListingId);
+        });
+
+        modelBuilder.Entity<AnalyticsPublicSponsoredPlacementReferenceRow>(entity =>
+        {
+            entity.ToTable("public_sponsored_placement_reference", "access_projection", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_public_placement_scope",
+                    "scope_type BETWEEN 1 AND 4");
+                table.HasCheckConstraint(
+                    "ck_analytics_public_placement_interval",
+                    "starts_at_utc < hard_expiry_at_utc");
+            });
+            entity.HasKey(row => new { row.PublicReadRevisionId, row.PlacementId });
+            entity.HasAlternateKey(row => new
+            {
+                row.PublicReadRevisionId,
+                row.PlacementId,
+                row.ListingId,
+            });
+            entity.Property(row => row.ScopeKey).HasMaxLength(200);
+            entity.HasOne(row => row.PublicReadReference)
+                .WithMany()
+                .HasForeignKey(row => row.PublicReadRevisionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(row => row.PublicListingReference)
+                .WithMany()
+                .HasForeignKey(row => new { row.PublicReadRevisionId, row.ListingId })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(row => new { row.PublicReadRevisionId, row.ListingId });
+        });
+
+        modelBuilder.Entity<AnalyticsPublicReadActivationCheckpointRow>(entity =>
+        {
+            entity.ToTable("public_read_activation_checkpoint", "access_projection", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_public_checkpoint_revision",
+                    "activation_revision > 0");
+                table.HasCheckConstraint(
+                    "ck_analytics_public_checkpoint_digest",
+                    "projection_digest ~ '^[0-9a-f]{64}$'");
+            });
+            entity.HasKey(row => row.CatalogKey);
+            entity.Property(row => row.CatalogKey).HasMaxLength(100);
+            entity.Property(row => row.ProjectionDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.ActivationRevision).IsConcurrencyToken();
+            entity.HasOne(row => row.PublicReadReference)
+                .WithMany()
+                .HasForeignKey(row => row.PublicReadRevisionId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AnalyticsInboxMessageRow>(entity =>
+        {
+            entity.ToTable("inbox_message", "messaging", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_inbox_payload_digest",
+                    "payload_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_inbox_activation_revision",
+                    "activation_revision > 0");
+                table.HasCheckConstraint(
+                    "ck_analytics_inbox_disposition",
+                    "disposition BETWEEN 1 AND 3");
+                table.HasCheckConstraint(
+                    "ck_analytics_inbox_result_digest",
+                    "result_projection_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_inbox_processing_time",
+                    "processed_at_utc >= received_at_utc");
+            });
+            entity.HasKey(row => row.MessageId);
+            entity.Property(row => row.CatalogKey).HasMaxLength(100);
+            entity.Property(row => row.RoutingKey).HasMaxLength(200);
+            entity.Property(row => row.ContractIdentity).HasMaxLength(200);
+            entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.CorrelationId).HasMaxLength(128);
+            entity.Property(row => row.ResultProjectionDigest).HasMaxLength(64).IsFixedLength();
+            entity.HasOne(row => row.PublicReadReference)
+                .WithMany()
+                .HasForeignKey(row => row.PublicReadRevisionId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(row => new
+            {
+                row.CatalogKey,
+                row.ActivationRevision,
+                row.MessageId,
+            });
         });
 
         modelBuilder.Entity<AnalyticsListingAccessProjectionRow>(entity =>
