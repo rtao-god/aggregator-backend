@@ -3,6 +3,8 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../Catalog.Application/Catalog.Application.csproj" />
+    <ProjectReference Include="../Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Messaging/Platform.Messaging.csproj" />
     <ProjectReference Include="../../BuildingBlocks/Platform.Observability/Platform.Observability.csproj" />
   </ItemGroup>

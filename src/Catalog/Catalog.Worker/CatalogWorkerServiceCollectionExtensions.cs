@@ -11,8 +11,7 @@ public static class CatalogWorkerServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(options);
-        options.CreateOutboxDispatcherOptions().Validate();
-        options.CreateRabbitMqPublisherOptions().Validate();
+        options.Validate();
 
         services.AddSingleton(options);
         services.AddSingleton(options.CreateRabbitMqPublisherOptions());
@@ -22,6 +21,7 @@ public static class CatalogWorkerServiceCollectionExtensions
             provider.GetRequiredService<RabbitMqEventPublisher>());
         services.AddSingleton<PostgresOutboxDispatcher>();
         services.AddHostedService<CatalogOutboxWorker>();
+        services.AddHostedService<CatalogPublicationOperationWorker>();
         return services;
     }
 }

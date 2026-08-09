@@ -1,187 +1,247 @@
-name: aggregator-backend
-
-x-log: &log {driver: local, options: {max-size: "20m", max-file: "5"}}
-x-secure: &secure
+x-service: &service
   init: true
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  tmpfs: ["/tmp:size=64m,mode=1777"]
+  tmpfs: [/tmp:size=64m,mode=1777]
   pids_limit: 256
   stop_grace_period: 30s
   networks: [backend]
-  logging: *log
+  logging:
+    driver: local
+    options: {max-size: 20m, max-file: 5}
+
 x-api: &api
-  <<: *secure
-  restart: unless-stopped
-  networks: [backend, egress]
-  cpus: "0.75"
-  mem_limit: 512m
-x-worker: &worker
-  <<: *secure
+  <<: *service
   restart: unless-stopped
   cpus: "1.0"
   mem_limit: 768m
-  healthcheck: {test: [CMD-SHELL, 'test "$(cat /proc/1/comm)" = dotnet'], interval: 15s, timeout: 5s, retries: 4, start_period: 15s}
-x-job: &job
-  <<: *secure
-  restart: "no"
+  healthcheck:
+    test: [CMD-SHELL, /app/HealthProbe http://127.0.0.1:8080/health/live]
+    interval: 15s
+    timeout: 5s
+    retries: 4
+    start_period: 20s
+
+x-worker: &worker
+  <<: *service
+  restart: unless-stopped
   cpus: "1.0"
-  mem_limit: 512m
-x-build: &build {context: ., dockerfile: deploy/Dockerfile.dotnet-service}
-x-sdk: &sdk {DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'}
-x-runtime: &runtime {DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'}
-x-aspnet: &aspnet {DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'}
-x-api-env: &api-env
-  ASPNETCORE_URLS: http://+:8080
-  ASPNETCORE_ENVIRONMENT: '${ASPNETCORE_ENVIRONMENT:-Development}'
-  Authentication__Authority: '${AUTHENTICATION_AUTHORITY:?AUTHENTICATION_AUTHORITY is required}'
-  Authentication__RequireHttpsMetadata: '${AUTHENTICATION_REQUIRE_HTTPS_METADATA:-true}'
-  OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
-  DOTNET_EnableDiagnostics: "0"
-x-worker-env: &worker-env {OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}', DOTNET_EnableDiagnostics: "0"}
-x-api-health: &api-health {test: [CMD, dotnet, /health/HealthProbe.dll, 'http://127.0.0.1:8080/health/ready'], interval: 10s, timeout: 6s, retries: 12, start_period: 15s}
-x-media-store: &media-store
-  CatalogMedia__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-  CatalogMedia__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
-  CatalogMedia__ObjectStorage__Bucket: '${CATALOG_MEDIA_BUCKET:-catalog-media}'
-  CatalogMedia__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}'
-  CatalogMedia__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}'
-  CatalogMedia__ObjectStorage__ForcePathStyle: "true"
-x-grant: &grant
-  image: '${POSTGIS_IMAGE:?POSTGIS_IMAGE is required}'
+  mem_limit: 768m
+  healthcheck:
+    test: [CMD-SHELL, 'test "$(cat /proc/1/comm)" = dotnet']
+    interval: 15s
+    timeout: 5s
+    retries: 4
+    start_period: 15s
+
+x-migration: &migration
+  <<: *service
   restart: "no"
-  read_only: true
-  cap_drop: [ALL]
-  security_opt: [no-new-privileges:true]
-  tmpfs: ["/tmp:size=16m,mode=1777"]
-  entrypoint: [/bin/bash, /grants/grant-context.sh]
-  volumes: [./deploy/postgres:/grants:ro]
-  networks: [backend]
-  logging: *log
+  cpus: "0.5"
+  mem_limit: 256m
+  profiles: [migrate]
 
 services:
   postgres:
-    image: '${POSTGIS_IMAGE:?POSTGIS_IMAGE is required}'
-    hostname: postgres
+    image: '${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}'
     restart: unless-stopped
     environment:
-      POSTGRES_USER: platform_admin
-      POSTGRES_PASSWORD: '${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}'
-      CATALOG_APP_PASSWORD: '${CATALOG_APP_PASSWORD:?CATALOG_APP_PASSWORD is required}'
-      CATALOG_MIGRATOR_PASSWORD: '${CATALOG_MIGRATOR_PASSWORD:?CATALOG_MIGRATOR_PASSWORD is required}'
-      QUERY_APP_PASSWORD: '${QUERY_APP_PASSWORD:?QUERY_APP_PASSWORD is required}'
-      QUERY_MIGRATOR_PASSWORD: '${QUERY_MIGRATOR_PASSWORD:?QUERY_MIGRATOR_PASSWORD is required}'
-      INGESTION_APP_PASSWORD: '${INGESTION_APP_PASSWORD:?INGESTION_APP_PASSWORD is required}'
-      INGESTION_MIGRATOR_PASSWORD: '${INGESTION_MIGRATOR_PASSWORD:?INGESTION_MIGRATOR_PASSWORD is required}'
-      ANALYTICS_APP_PASSWORD: '${ANALYTICS_APP_PASSWORD:?ANALYTICS_APP_PASSWORD is required}'
-      ANALYTICS_MIGRATOR_PASSWORD: '${ANALYTICS_MIGRATOR_PASSWORD:?ANALYTICS_MIGRATOR_PASSWORD is required}'
-      PROMOTION_APP_PASSWORD: '${PROMOTION_APP_PASSWORD:?PROMOTION_APP_PASSWORD is required}'
-      PROMOTION_MIGRATOR_PASSWORD: '${PROMOTION_MIGRATOR_PASSWORD:?PROMOTION_MIGRATOR_PASSWORD is required}'
-    healthcheck: {test: [CMD-SHELL, 'pg_isready --username platform_admin --dbname postgres'], interval: 5s, timeout: 5s, retries: 30}
-    volumes: [postgres-data:/var/lib/postgresql, ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro]
-    shm_size: 256m
-    pids_limit: 256
-    cpus: "2.0"
-    mem_limit: 2g
-    stop_grace_period: 60s
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      CATALOG_APP_PASSWORD: '${CATALOG_APP_PASSWORD}'
+      CATALOG_MIGRATOR_PASSWORD: '${CATALOG_MIGRATOR_PASSWORD}'
+      QUERY_APP_PASSWORD: '${QUERY_APP_PASSWORD}'
+      QUERY_MIGRATOR_PASSWORD: '${QUERY_MIGRATOR_PASSWORD}'
+      INGESTION_APP_PASSWORD: '${INGESTION_APP_PASSWORD}'
+      INGESTION_MIGRATOR_PASSWORD: '${INGESTION_MIGRATOR_PASSWORD}'
+      ANALYTICS_APP_PASSWORD: '${ANALYTICS_APP_PASSWORD}'
+      ANALYTICS_MIGRATOR_PASSWORD: '${ANALYTICS_MIGRATOR_PASSWORD}'
+      PROMOTION_APP_PASSWORD: '${PROMOTION_APP_PASSWORD}'
+      PROMOTION_MIGRATOR_PASSWORD: '${PROMOTION_MIGRATOR_PASSWORD}'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init-owners.sql:/docker-entrypoint-initdb.d/10-init-owners.sql:ro
     networks: [backend]
-    logging: *log
+    ports:
+      - 127.0.0.1:5432:5432
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d postgres]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    tmpfs: [/tmp:size=64m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options: {max-size: 20m, max-file: 5}
+
   rabbitmq:
     image: '${RABBITMQ_IMAGE:?RABBITMQ_IMAGE is required}'
-    hostname: rabbitmq
     restart: unless-stopped
-    environment: {RABBITMQ_DEFAULT_USER: '${RABBITMQ_USER:?RABBITMQ_USER is required}', RABBITMQ_DEFAULT_PASS: '${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}'}
-    healthcheck: {test: [CMD, rabbitmq-diagnostics, -q, ping], interval: 5s, timeout: 5s, retries: 30}
-    volumes: [rabbitmq-data:/var/lib/rabbitmq]
-    pids_limit: 512
-    cpus: "1.0"
-    mem_limit: 1g
-    stop_grace_period: 60s
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: '${RABBITMQ_USER}'
+      RABBITMQ_DEFAULT_PASS: '${RABBITMQ_PASSWORD}'
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '-rabbit quorum_cluster_size 1'
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./deploy/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     networks: [backend]
-    logging: *log
+    ports:
+      - 127.0.0.1:5672:5672
+      - 127.0.0.1:15672:15672
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    tmpfs: [/tmp:size=64m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options: {max-size: 20m, max-file: 5}
+
   seaweedfs:
     image: '${SEAWEEDFS_IMAGE:?SEAWEEDFS_IMAGE is required}'
-    hostname: seaweedfs
     restart: unless-stopped
-    command: [mini, -dir=/data]
-    environment:
-      AWS_ACCESS_KEY_ID: '${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}'
-      AWS_SECRET_ACCESS_KEY: '${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}'
-      S3_BUCKET: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts},${CATALOG_MEDIA_BUCKET:-catalog-media},${INGESTION_BUCKET:-ingestion-packages}'
-    healthcheck: {test: [CMD-SHELL, 'wget -q -O /dev/null http://127.0.0.1:8333/'], interval: 5s, timeout: 5s, retries: 30, start_period: 10s}
+    command: server -s3 -dir=/data -s3.port=8333
     volumes: [seaweedfs-data:/data]
-    pids_limit: 256
-    cpus: "1.0"
-    mem_limit: 1g
-    stop_grace_period: 60s
     networks: [backend]
-    logging: *log
-  clamav:
-    image: '${CLAMAV_IMAGE:?CLAMAV_IMAGE is required}'
-    hostname: clamav
-    restart: unless-stopped
-    healthcheck: {test: [CMD-SHELL, 'clamdscan --ping=1 >/dev/null 2>&1'], interval: 15s, timeout: 10s, retries: 20, start_period: 120s}
-    volumes: [clamav-signatures:/var/lib/clamav]
-    pids_limit: 512
-    cpus: "2.0"
-    mem_limit: 2g
-    stop_grace_period: 60s
-    networks: [backend]
-    logging: *log
-
-  catalog-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj, APP_DLL: Catalog.Migrations.dll}}
-    environment: {CATALOG_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=catalog_db;Username=catalog_migrator;Password=${CATALOG_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {postgres: {condition: service_healthy}}
-  query-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Query/Query.Migrations/Query.Migrations.csproj, APP_DLL: Query.Migrations.dll}}
-    environment: {QUERY_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=query_db;Username=query_migrator;Password=${QUERY_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {postgres: {condition: service_healthy}}
-  ingestion-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj, APP_DLL: Ingestion.Migrations.dll}}
-    environment: {INGESTION_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=ingestion_db;Username=ingestion_migrator;Password=${INGESTION_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {postgres: {condition: service_healthy}}
-  analytics-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj, APP_DLL: Analytics.Migrations.dll}}
-    environment: {ANALYTICS_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=analytics_db;Username=analytics_migrator;Password=${ANALYTICS_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {postgres: {condition: service_healthy}}
-  promotion-migrations:
-    <<: *job
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj, APP_DLL: Promotion.Migrations.dll}}
-    environment: {PROMOTION_MIGRATOR_CONNECTION_STRING: 'Host=postgres;Database=promotion_db;Username=promotion_migrator;Password=${PROMOTION_MIGRATOR_PASSWORD};Include Error Detail=true', DOTNET_EnableDiagnostics: "0"}
-    depends_on: {postgres: {condition: service_healthy}}
+    ports:
+      - 127.0.0.1:8333:8333
+      - 127.0.0.1:9333:9333
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:9333/cluster/status]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    tmpfs: [/tmp:size=64m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options: {max-size: 20m, max-file: 5}
 
   catalog-grants:
-    <<: *grant
-    environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: catalog_db, PGUSER: catalog_migrator, PGPASSWORD: '${CATALOG_MIGRATOR_PASSWORD:?CATALOG_MIGRATOR_PASSWORD is required}', APP_ROLE: catalog_app}
-    depends_on: {catalog-migrations: {condition: service_completed_successfully}}
-  query-grants:
-    <<: *grant
-    environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: query_db, PGUSER: query_migrator, PGPASSWORD: '${QUERY_MIGRATOR_PASSWORD:?QUERY_MIGRATOR_PASSWORD is required}', APP_ROLE: query_app}
-    depends_on: {query-migrations: {condition: service_completed_successfully}}
-  ingestion-grants:
-    <<: *grant
-    environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: ingestion_db, PGUSER: ingestion_migrator, PGPASSWORD: '${INGESTION_MIGRATOR_PASSWORD:?INGESTION_MIGRATOR_PASSWORD is required}', APP_ROLE: ingestion_app}
-    depends_on: {ingestion-migrations: {condition: service_completed_successfully}}
-  analytics-grants:
-    <<: *grant
-    environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: analytics_db, PGUSER: analytics_migrator, PGPASSWORD: '${ANALYTICS_MIGRATOR_PASSWORD:?ANALYTICS_MIGRATOR_PASSWORD is required}', APP_ROLE: analytics_app}
-    depends_on: {analytics-migrations: {condition: service_completed_successfully}}
-  promotion-grants:
-    <<: *grant
-    environment: {PGHOST: postgres, PGPORT: "5432", PGDATABASE: promotion_db, PGUSER: promotion_migrator, PGPASSWORD: '${PROMOTION_MIGRATOR_PASSWORD:?PROMOTION_MIGRATOR_PASSWORD is required}', APP_ROLE: promotion_app}
-    depends_on: {promotion-migrations: {condition: service_completed_successfully}}
-
-  catalog-api:
-    <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Catalog/Catalog.Api/Catalog.Api.csproj, APP_DLL: Catalog.Api.dll}}
+    <<: *migration
+    profiles: [core, migrate]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj
+        APP_DLL: Catalog.Migrations.dll
+    command: [--provision, /app/deploy/database-owner-manifest.json]
     environment:
-      <<: [*api-env, *media-store]
+      AGGREGATOR_DB_ADMIN_CONNECTION: 'Host=postgres;Database=postgres;Username=postgres;Password=${POSTGRES_SUPERUSER_PASSWORD};Include Error Detail=true'
+      AGGREGATOR_DB_OWNER_MANIFEST: /app/deploy/database-owner-manifest.json
+      POSTGRES_SUPERUSER_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      CATALOG_APP_PASSWORD: '${CATALOG_APP_PASSWORD}'
+      CATALOG_MIGRATOR_PASSWORD: '${CATALOG_MIGRATOR_PASSWORD}'
+    depends_on: {postgres: {condition: service_healthy}}
+
+  query-grants:
+    <<: *migration
+    profiles: [core, migrate]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Query/Query.Migrations/Query.Migrations.csproj
+        APP_DLL: Query.Migrations.dll
+    command: [--provision, /app/deploy/database-owner-manifest.json]
+    environment:
+      AGGREGATOR_DB_ADMIN_CONNECTION: 'Host=postgres;Database=postgres;Username=postgres;Password=${POSTGRES_SUPERUSER_PASSWORD};Include Error Detail=true'
+      AGGREGATOR_DB_OWNER_MANIFEST: /app/deploy/database-owner-manifest.json
+      POSTGRES_SUPERUSER_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      QUERY_APP_PASSWORD: '${QUERY_APP_PASSWORD}'
+      QUERY_MIGRATOR_PASSWORD: '${QUERY_MIGRATOR_PASSWORD}'
+    depends_on: {postgres: {condition: service_healthy}}
+
+  ingestion-grants:
+    <<: *migration
+    profiles: [core, migrate]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj
+        APP_DLL: Ingestion.Migrations.dll
+    command: [--provision, /app/deploy/database-owner-manifest.json]
+    environment:
+      AGGREGATOR_DB_ADMIN_CONNECTION: 'Host=postgres;Database=postgres;Username=postgres;Password=${POSTGRES_SUPERUSER_PASSWORD};Include Error Detail=true'
+      AGGREGATOR_DB_OWNER_MANIFEST: /app/deploy/database-owner-manifest.json
+      POSTGRES_SUPERUSER_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      INGESTION_APP_PASSWORD: '${INGESTION_APP_PASSWORD}'
+      INGESTION_MIGRATOR_PASSWORD: '${INGESTION_MIGRATOR_PASSWORD}'
+    depends_on: {postgres: {condition: service_healthy}}
+
+  analytics-grants:
+    <<: *migration
+    profiles: [core, migrate]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj
+        APP_DLL: Analytics.Migrations.dll
+    command: [--provision, /app/deploy/database-owner-manifest.json]
+    environment:
+      AGGREGATOR_DB_ADMIN_CONNECTION: 'Host=postgres;Database=postgres;Username=postgres;Password=${POSTGRES_SUPERUSER_PASSWORD};Include Error Detail=true'
+      AGGREGATOR_DB_OWNER_MANIFEST: /app/deploy/database-owner-manifest.json
+      POSTGRES_SUPERUSER_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      ANALYTICS_APP_PASSWORD: '${ANALYTICS_APP_PASSWORD}'
+      ANALYTICS_MIGRATOR_PASSWORD: '${ANALYTICS_MIGRATOR_PASSWORD}'
+    depends_on: {postgres: {condition: service_healthy}}
+
+  promotion-grants:
+    <<: *migration
+    profiles: [core, migrate]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj
+        APP_DLL: Promotion.Migrations.dll
+    command: [--provision, /app/deploy/database-owner-manifest.json]
+    environment:
+      AGGREGATOR_DB_ADMIN_CONNECTION: 'Host=postgres;Database=postgres;Username=postgres;Password=${POSTGRES_SUPERUSER_PASSWORD};Include Error Detail=true'
+      AGGREGATOR_DB_OWNER_MANIFEST: /app/deploy/database-owner-manifest.json
+      POSTGRES_SUPERUSER_PASSWORD: '${POSTGRES_SUPERUSER_PASSWORD}'
+      PROMOTION_APP_PASSWORD: '${PROMOTION_APP_PASSWORD}'
+      PROMOTION_MIGRATOR_PASSWORD: '${PROMOTION_MIGRATOR_PASSWORD}'
+    depends_on: {postgres: {condition: service_healthy}}
+
+  catalog-command-api:
+    <<: *api
+    cpus: "1.5"
+    mem_limit: 1024m
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'
+        PROJECT_PATH: src/Catalog/Catalog.Api/Catalog.Api.csproj
+        APP_DLL: Catalog.Api.dll
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: '${ASPNETCORE_ENVIRONMENT:-Production}'
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
       Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
@@ -189,13 +249,25 @@ services:
       Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Catalog__ObjectStorage__ForcePathStyle: "true"
       Catalog__ObjectStorage__MaximumPublicationBytes: "67108864"
+      Catalog__PublicBaseUrl: '${CATALOG_PUBLIC_BASE_URL:?CATALOG_PUBLIC_BASE_URL is required}'
+      Catalog__Authentication__Authority: '${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}'
+      Catalog__Authentication__Audience: '${CATALOG_OIDC_AUDIENCE:?CATALOG_OIDC_AUDIENCE is required}'
+      Catalog__Authentication__RequireHttpsMetadata: '${OIDC_REQUIRE_HTTPS_METADATA:-true}'
     depends_on: {catalog-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}}
-    healthcheck: *api-health
+
   catalog-worker:
     <<: *worker
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Catalog/Catalog.Worker/Catalog.Worker.csproj, APP_DLL: Catalog.Worker.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Catalog/Catalog.Worker/Catalog.Worker.csproj
+        APP_DLL: Catalog.Worker.dll
     environment:
-      <<: *worker-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
       Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
@@ -204,140 +276,259 @@ services:
       CatalogWorker__MaximumDeliveryAttempts: "8"
       CatalogWorker__LeaseDurationSeconds: "120"
       CatalogWorker__EmptyDelayMilliseconds: "2000"
-    depends_on: {catalog-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
+      CatalogWorker__MaximumPublicationAttempts: "5"
+      CatalogWorker__PublicationLeaseDurationSeconds: "300"
+      Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
+      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
+      Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
+      Catalog__ObjectStorage__ForcePathStyle: "true"
+      Catalog__ObjectStorage__MaximumPublicationBytes: "67108864"
+    depends_on: {catalog-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}, seaweedfs: {condition: service_healthy}}
+
   catalog-media-worker:
     <<: *worker
     cpus: "2.0"
     mem_limit: 1536m
     build:
       context: .
-      dockerfile: deploy/Dockerfile.catalog-media-worker
-      args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj, APP_DLL: Catalog.Media.Worker.dll}
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Catalog/Catalog.Media.Worker/Catalog.Media.Worker.csproj
+        APP_DLL: Catalog.Media.Worker.dll
     environment:
-      <<: [*worker-env, *media-store]
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_app;Password=${CATALOG_APP_PASSWORD};Include Error Detail=true'
-      Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      CatalogMediaWorker__WorkerIdentity: catalog-media-worker
-      CatalogMediaWorker__SystemActorId: '${CATALOG_MEDIA_SYSTEM_ACTOR_ID:?CATALOG_MEDIA_SYSTEM_ACTOR_ID is required}'
+      Catalog__ObjectStorage__ServiceUrl: http://seaweedfs:8333
+      Catalog__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Catalog__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
+      Catalog__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
+      Catalog__ObjectStorage__ForcePathStyle: "true"
+      CatalogMediaWorker__Identity: catalog-media-worker
+      CatalogMediaWorker__LeaseSeconds: "300"
+      CatalogMediaWorker__BatchSize: "16"
+      CatalogMediaWorker__EmptyDelayMilliseconds: "2000"
       CatalogMediaWorker__ClamAvHost: clamav
       CatalogMediaWorker__ClamAvPort: "3310"
-      CatalogMediaWorker__MaximumAttempts: "8"
-      CatalogMediaWorker__OutboxBatchSize: "50"
-      CatalogMediaWorker__LeaseDurationSeconds: "300"
-      CatalogMediaWorker__EmptyDelayMilliseconds: "2000"
-    depends_on: {catalog-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}, seaweedfs: {condition: service_healthy}, clamav: {condition: service_healthy}}
-  query-api:
+      CatalogMediaWorker__ScanTimeoutSeconds: "120"
+      CatalogMediaWorker__ImageMagickExecutable: /usr/bin/magick
+      CatalogMediaWorker__ImageMagickTimeoutSeconds: "120"
+      CatalogMediaWorker__MaximumOutputBytes: "33554432"
+      CatalogMediaWorker__MaximumDimension: "4096"
+      CatalogMediaWorker__MaximumPixels: "16777216"
+    depends_on: {catalog-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}, clamav: {condition: service_healthy}}
+
+  catalog-query-api:
     <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Query/Query.Api/Query.Api.csproj, APP_DLL: Query.Api.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'
+        PROJECT_PATH: src/Query/Query.Api/Query.Api.csproj
+        APP_DLL: Query.Api.dll
     environment:
-      <<: *api-env
+      ASPNETCORE_URLS: http://+:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Query: 'Host=postgres;Database=query_db;Username=query_app;Password=${QUERY_APP_PASSWORD};Include Error Detail=true'
-    depends_on: {query-grants: {condition: service_completed_successfully}}
-    healthcheck: *api-health
-  query-worker:
-    <<: *worker
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Query/Query.Worker/Query.Worker.csproj, APP_DLL: Query.Worker.dll}}
-    environment:
-      <<: *worker-env
-      ConnectionStrings__Query: 'Host=postgres;Database=query_db;Username=query_app;Password=${QUERY_APP_PASSWORD};Include Error Detail=true'
-      Query__Worker__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Query__Worker__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Query__Worker__Queue: query.catalog-publication-projection
-      Query__Worker__RoutingKey: catalog.publication.activated
-      Query__Worker__PrefetchCount: "8"
-      Query__PromotionWorker__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
-      Query__PromotionWorker__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      Query__PromotionWorker__Queue: query.promotion-placement-projection
-      Query__PromotionWorker__DeadLetterExchange: aggregator.dead-letter
-      Query__PromotionWorker__DeadLetterQueue: query.promotion-placement-projection.dead-letter
-      Query__PromotionWorker__RoutingKey: promotion.placement.changed
-      Query__PromotionWorker__PrefetchCount: "8"
-      Query__PromotionWorker__DeliveryLimit: "8"
-      Query__PromotionWorker__RetryDelayMilliseconds: "500"
       Query__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Query__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
-      Query__ObjectStorage__Bucket: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Query__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
       Query__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Query__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Query__ObjectStorage__ForcePathStyle: "true"
-      Query__PublicationArtifact__AllowedObjectPrefix: catalog/
-      Query__PublicationArtifact__MaximumArtifactBytes: "67108864"
+    depends_on: {query-grants: {condition: service_completed_successfully}}
+
+  catalog-query-worker:
+    <<: *worker
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Query/Query.Worker/Query.Worker.csproj
+        APP_DLL: Query.Worker.dll
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
+      ConnectionStrings__Query: 'Host=postgres;Database=query_db;Username=query_app;Password=${QUERY_APP_PASSWORD};Include Error Detail=true'
+      Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
+      Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
+      Messaging__PublicationQueue: '${QUERY_PUBLICATION_QUEUE:-query.catalog-publication}'
+      Messaging__PromotionQueue: '${QUERY_PROMOTION_QUEUE:-query.promotion-overlay}'
+      Messaging__VisibilityQueue: '${QUERY_VISIBILITY_QUEUE:-query.visibility-safety}'
+      Messaging__DeadLetterExchange: '${RABBITMQ_DEAD_LETTER_EXCHANGE:-aggregator.dead-letter}'
+      QueryWorker__ConsumerIdentity: catalog-query-worker
+      QueryWorker__MaximumDeliveryAttempts: "8"
+      QueryWorker__MaximumRedeliveryCount: "8"
+      QueryWorker__PrefetchCount: "8"
+      QueryWorker__EmptyDelayMilliseconds: "2000"
+      QueryWorker__PublicationLeaseDurationSeconds: "300"
+      QueryWorker__PromotionLeaseDurationSeconds: "120"
+      QueryWorker__VisibilityLeaseDurationSeconds: "120"
+      Query__ObjectStorage__ServiceUrl: http://seaweedfs:8333
+      Query__ObjectStorage__BucketName: '${CATALOG_ARTIFACT_BUCKET:-catalog-artifacts}'
+      Query__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
+      Query__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
+      Query__ObjectStorage__ForcePathStyle: "true"
     depends_on: {query-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}, seaweedfs: {condition: service_healthy}}
+
   ingestion-api:
     <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Ingestion/Ingestion.Api/Ingestion.Api.csproj, APP_DLL: Ingestion.Api.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'
+        PROJECT_PATH: src/Ingestion/Ingestion.Api/Ingestion.Api.csproj
+        APP_DLL: Ingestion.Api.dll
     environment:
-      <<: *api-env
+      ASPNETCORE_URLS: http://+:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Ingestion: 'Host=postgres;Database=ingestion_db;Username=ingestion_app;Password=${INGESTION_APP_PASSWORD};Include Error Detail=true'
+      Ingestion__Authentication__Authority: '${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}'
+      Ingestion__Authentication__Audience: '${INGESTION_OIDC_AUDIENCE:?INGESTION_OIDC_AUDIENCE is required}'
+      Ingestion__Authentication__RequireHttpsMetadata: '${OIDC_REQUIRE_HTTPS_METADATA:-true}'
       Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Ingestion__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
-      Ingestion__ObjectStorage__Bucket: '${INGESTION_BUCKET:-ingestion-packages}'
+      Ingestion__ObjectStorage__BucketName: '${INGESTION_ARTIFACT_BUCKET:-ingestion-artifacts}'
       Ingestion__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Ingestion__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Ingestion__ObjectStorage__ForcePathStyle: "true"
     depends_on: {ingestion-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}}
-    healthcheck: *api-health
+
   ingestion-worker:
     <<: *worker
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj, APP_DLL: Ingestion.Worker.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Ingestion/Ingestion.Worker/Ingestion.Worker.csproj
+        APP_DLL: Ingestion.Worker.dll
     environment:
-      <<: *worker-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Ingestion: 'Host=postgres;Database=ingestion_db;Username=ingestion_app;Password=${INGESTION_APP_PASSWORD};Include Error Detail=true'
-      IngestionWorker__WorkerIdentity: ingestion-validation-worker
-      IngestionWorker__ValidationBatchSize: "10"
-      IngestionWorker__LeaseDuration: "00:05:00"
-      IngestionWorker__EmptyDelay: "00:00:02"
+      IngestionWorker__Identity: ingestion-worker
+      IngestionWorker__BatchSize: "16"
+      IngestionWorker__LeaseSeconds: "300"
+      IngestionWorker__EmptyDelayMilliseconds: "2000"
       Ingestion__ObjectStorage__ServiceUrl: http://seaweedfs:8333
-      Ingestion__ObjectStorage__Region: '${OBJECT_STORAGE_REGION:-us-east-1}'
-      Ingestion__ObjectStorage__Bucket: '${INGESTION_BUCKET:-ingestion-packages}'
+      Ingestion__ObjectStorage__BucketName: '${INGESTION_ARTIFACT_BUCKET:-ingestion-artifacts}'
       Ingestion__ObjectStorage__AccessKey: '${OBJECT_STORAGE_ACCESS_KEY}'
       Ingestion__ObjectStorage__SecretKey: '${OBJECT_STORAGE_SECRET_KEY}'
       Ingestion__ObjectStorage__ForcePathStyle: "true"
     depends_on: {ingestion-grants: {condition: service_completed_successfully}, seaweedfs: {condition: service_healthy}}
+
   analytics-api:
     <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Analytics/Analytics.Api/Analytics.Api.csproj, APP_DLL: Analytics.Api.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'
+        PROJECT_PATH: src/Analytics/Analytics.Api/Analytics.Api.csproj
+        APP_DLL: Analytics.Api.dll
     environment:
-      <<: *api-env
+      ASPNETCORE_URLS: http://+:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Analytics: 'Host=postgres;Database=analytics_db;Username=analytics_app;Password=${ANALYTICS_APP_PASSWORD};Include Error Detail=true'
+      Analytics__Authentication__Authority: '${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}'
+      Analytics__Authentication__Audience: '${ANALYTICS_OIDC_AUDIENCE:?ANALYTICS_OIDC_AUDIENCE is required}'
+      Analytics__Authentication__RequireHttpsMetadata: '${OIDC_REQUIRE_HTTPS_METADATA:-true}'
+      Analytics__AntiAbuse__Secret: '${ANALYTICS_ANTI_ABUSE_SECRET:?ANALYTICS_ANTI_ABUSE_SECRET is required}'
     depends_on: {analytics-grants: {condition: service_completed_successfully}}
-    healthcheck: *api-health
+
   analytics-worker:
     <<: *worker
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Analytics/Analytics.Worker/Analytics.Worker.csproj, APP_DLL: Analytics.Worker.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Analytics/Analytics.Worker/Analytics.Worker.csproj
+        APP_DLL: Analytics.Worker.dll
     environment:
-      <<: *worker-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Analytics: 'Host=postgres;Database=analytics_db;Username=analytics_app;Password=${ANALYTICS_APP_PASSWORD};Include Error Detail=true'
-      Analytics__Aggregation__LookbackDays: "2"
-      Analytics__Aggregation__PollInterval: "00:30:00"
-      Analytics__Aggregation__FailureDelay: "00:00:10"
-      Analytics__Aggregation__MaximumConsecutiveFailures: "5"
+      AnalyticsWorker__Identity: analytics-worker
+      AnalyticsWorker__BatchSize: "1000"
+      AnalyticsWorker__EmptyDelayMilliseconds: "5000"
     depends_on: {analytics-grants: {condition: service_completed_successfully}}
+
   promotion-api:
     <<: *api
-    build: {<<: *build, args: {<<: [*sdk, *aspnet], PROJECT_PATH: src/Promotion/Promotion.Api/Promotion.Api.csproj, APP_DLL: Promotion.Api.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_ASPNET_IMAGE:?DOTNET_ASPNET_IMAGE is required}'
+        PROJECT_PATH: src/Promotion/Promotion.Api/Promotion.Api.csproj
+        APP_DLL: Promotion.Api.dll
     environment:
-      <<: *api-env
+      ASPNETCORE_URLS: http://+:8080
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Promotion: 'Host=postgres;Database=promotion_db;Username=promotion_app;Password=${PROMOTION_APP_PASSWORD};Include Error Detail=true'
+      Promotion__Authentication__Authority: '${OIDC_AUTHORITY:?OIDC_AUTHORITY is required}'
+      Promotion__Authentication__Audience: '${PROMOTION_OIDC_AUDIENCE:?PROMOTION_OIDC_AUDIENCE is required}'
+      Promotion__Authentication__RequireHttpsMetadata: '${OIDC_REQUIRE_HTTPS_METADATA:-true}'
     depends_on: {promotion-grants: {condition: service_completed_successfully}}
-    healthcheck: *api-health
+
   promotion-worker:
     <<: *worker
-    build: {<<: *build, args: {<<: [*sdk, *runtime], PROJECT_PATH: src/Promotion/Promotion.Worker/Promotion.Worker.csproj, APP_DLL: Promotion.Worker.dll}}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Promotion/Promotion.Worker/Promotion.Worker.csproj
+        APP_DLL: Promotion.Worker.dll
     environment:
-      <<: *worker-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: '${OTEL_EXPORTER_OTLP_ENDPOINT:-}'
+      DOTNET_EnableDiagnostics: "0"
       ConnectionStrings__Promotion: 'Host=postgres;Database=promotion_db;Username=promotion_app;Password=${PROMOTION_APP_PASSWORD};Include Error Detail=true'
       Messaging__BrokerUri: 'amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/'
       Messaging__Exchange: '${RABBITMQ_EVENTS_EXCHANGE:-aggregator.events}'
-      PromotionWorker__DispatcherIdentity: promotion-worker
-      PromotionWorker__SystemActorId: '${PROMOTION_SYSTEM_ACTOR_ID:?PROMOTION_SYSTEM_ACTOR_ID is required}'
-      PromotionWorker__TransitionBatchSize: "100"
-      PromotionWorker__OutboxBatchSize: "50"
+      PromotionWorker__Identity: promotion-worker
+      PromotionWorker__BatchSize: "32"
       PromotionWorker__MaximumDeliveryAttempts: "8"
       PromotionWorker__LeaseDurationSeconds: "120"
-      PromotionWorker__PollDelayMilliseconds: "2000"
+      PromotionWorker__EmptyDelayMilliseconds: "2000"
     depends_on: {promotion-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
+
+  clamav:
+    image: '${CLAMAV_IMAGE:?CLAMAV_IMAGE is required}'
+    restart: unless-stopped
+    networks: [backend]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    tmpfs: [/tmp:size=256m,mode=1777]
+    volumes: [clamav-data:/var/lib/clamav]
+    healthcheck:
+      test: [CMD-SHELL, 'printf "PING\n" | nc -w 5 127.0.0.1 3310 | grep -q PONG']
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    logging:
+      driver: local
+      options: {max-size: 20m, max-file: 5}
 
   reverse-proxy:
     image: '${CADDY_IMAGE:?CADDY_IMAGE is required}'
@@ -345,21 +536,98 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: ["/config:size=16m,mode=0750", "/data:size=16m,mode=0750", "/tmp:size=16m,mode=1777"]
-    ports: ['127.0.0.1:${BACKEND_HTTP_PORT:-8080}:8080']
-    volumes: [./deploy/Caddyfile:/etc/caddy/Caddyfile:ro]
-    healthcheck: {test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:8080/health/live'], interval: 10s, timeout: 5s, retries: 6, start_period: 10s}
+    pids_limit: 128
+    tmpfs: [/data:size=64m,mode=1777, /config:size=64m,mode=1777]
+    volumes: [./deploy/reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro]
+    networks: [backend]
+    ports:
+      - 127.0.0.1:8080:8080
     depends_on:
-      catalog-api: {condition: service_healthy}
-      query-api: {condition: service_healthy}
+      catalog-command-api: {condition: service_healthy}
+      catalog-query-api: {condition: service_healthy}
       ingestion-api: {condition: service_healthy}
       analytics-api: {condition: service_healthy}
       promotion-api: {condition: service_healthy}
-    pids_limit: 128
-    cpus: "0.5"
-    mem_limit: 256m
-    networks: [edge, backend]
-    logging: *log
+    logging:
+      driver: local
+      options: {max-size: 20m, max-file: 5}
 
-volumes: {postgres-data: {}, rabbitmq-data: {}, seaweedfs-data: {}, clamav-signatures: {}}
-networks: {edge: {}, egress: {}, backend: {internal: true}}
+  catalog-migrate:
+    <<: *migration
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Catalog/Catalog.Migrations/Catalog.Migrations.csproj
+        APP_DLL: Catalog.Migrations.dll
+    environment:
+      ConnectionStrings__Catalog: 'Host=postgres;Database=catalog_db;Username=catalog_migrator;Password=${CATALOG_MIGRATOR_PASSWORD};Include Error Detail=true'
+    depends_on: {catalog-grants: {condition: service_completed_successfully}}
+
+  query-migrate:
+    <<: *migration
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Query/Query.Migrations/Query.Migrations.csproj
+        APP_DLL: Query.Migrations.dll
+    environment:
+      ConnectionStrings__Query: 'Host=postgres;Database=query_db;Username=query_migrator;Password=${QUERY_MIGRATOR_PASSWORD};Include Error Detail=true'
+    depends_on: {query-grants: {condition: service_completed_successfully}}
+
+  ingestion-migrate:
+    <<: *migration
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Ingestion/Ingestion.Migrations/Ingestion.Migrations.csproj
+        APP_DLL: Ingestion.Migrations.dll
+    environment:
+      ConnectionStrings__Ingestion: 'Host=postgres;Database=ingestion_db;Username=ingestion_migrator;Password=${INGESTION_MIGRATOR_PASSWORD};Include Error Detail=true'
+    depends_on: {ingestion-grants: {condition: service_completed_successfully}}
+
+  analytics-migrate:
+    <<: *migration
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Analytics/Analytics.Migrations/Analytics.Migrations.csproj
+        APP_DLL: Analytics.Migrations.dll
+    environment:
+      ConnectionStrings__Analytics: 'Host=postgres;Database=analytics_db;Username=analytics_migrator;Password=${ANALYTICS_MIGRATOR_PASSWORD};Include Error Detail=true'
+    depends_on: {analytics-grants: {condition: service_completed_successfully}}
+
+  promotion-migrate:
+    <<: *migration
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.dotnet-service
+      args:
+        DOTNET_SDK_IMAGE: '${DOTNET_SDK_IMAGE:?DOTNET_SDK_IMAGE is required}'
+        DOTNET_RUNTIME_IMAGE: '${DOTNET_RUNTIME_IMAGE:?DOTNET_RUNTIME_IMAGE is required}'
+        PROJECT_PATH: src/Promotion/Promotion.Migrations/Promotion.Migrations.csproj
+        APP_DLL: Promotion.Migrations.dll
+    environment:
+      ConnectionStrings__Promotion: 'Host=postgres;Database=promotion_db;Username=promotion_migrator;Password=${PROMOTION_MIGRATOR_PASSWORD};Include Error Detail=true'
+    depends_on: {promotion-grants: {condition: service_completed_successfully}}
+
+networks:
+  backend:
+    internal: true
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  seaweedfs-data:
+  clamav-data:

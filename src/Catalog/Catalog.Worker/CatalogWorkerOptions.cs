@@ -3,13 +3,15 @@ using Platform.Messaging;
 
 namespace Aggregator.Catalog.Worker;
 
-/// <summary>Owns the validated runtime contract for Catalog outbox delivery.</summary>
+/// <summary>Owns the validated runtime contract for Catalog publication execution and outbox delivery.</summary>
 public sealed record CatalogWorkerOptions
 {
     private const int DefaultBatchSize = 50;
     private const int DefaultMaximumDeliveryAttempts = 8;
     private const int DefaultLeaseDurationSeconds = 120;
     private const int DefaultEmptyDelayMilliseconds = 2000;
+    private const int DefaultMaximumPublicationAttempts = 5;
+    private const int DefaultPublicationLeaseDurationSeconds = 300;
 
     public required string ConnectionString { get; init; }
 
@@ -26,6 +28,10 @@ public sealed record CatalogWorkerOptions
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromSeconds(DefaultLeaseDurationSeconds);
 
     public TimeSpan EmptyDelay { get; init; } = TimeSpan.FromMilliseconds(DefaultEmptyDelayMilliseconds);
+
+    public int MaximumPublicationAttempts { get; init; } = DefaultMaximumPublicationAttempts;
+
+    public TimeSpan PublicationLeaseDuration { get; init; } = TimeSpan.FromSeconds(DefaultPublicationLeaseDurationSeconds);
 
     public static CatalogWorkerOptions FromConfiguration(IConfiguration configuration)
     {
@@ -55,7 +61,15 @@ public sealed record CatalogWorkerOptions
             TimeSpan.FromMilliseconds(ReadInt(
                 configuration,
                 "CatalogWorker:EmptyDelayMilliseconds",
-                DefaultEmptyDelayMilliseconds)));
+                DefaultEmptyDelayMilliseconds)),
+            ReadInt(
+                configuration,
+                "CatalogWorker:MaximumPublicationAttempts",
+                DefaultMaximumPublicationAttempts),
+            TimeSpan.FromSeconds(ReadInt(
+                configuration,
+                "CatalogWorker:PublicationLeaseDurationSeconds",
+                DefaultPublicationLeaseDurationSeconds)));
     }
 
     public static CatalogWorkerOptions Create(
@@ -66,7 +80,9 @@ public sealed record CatalogWorkerOptions
         int batchSize = DefaultBatchSize,
         int maximumDeliveryAttempts = DefaultMaximumDeliveryAttempts,
         TimeSpan? leaseDuration = null,
-        TimeSpan? emptyDelay = null)
+        TimeSpan? emptyDelay = null,
+        int maximumPublicationAttempts = DefaultMaximumPublicationAttempts,
+        TimeSpan? publicationLeaseDuration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         ArgumentNullException.ThrowIfNull(brokerUri);
@@ -82,10 +98,22 @@ public sealed record CatalogWorkerOptions
             MaximumDeliveryAttempts = maximumDeliveryAttempts,
             LeaseDuration = leaseDuration ?? TimeSpan.FromSeconds(DefaultLeaseDurationSeconds),
             EmptyDelay = emptyDelay ?? TimeSpan.FromMilliseconds(DefaultEmptyDelayMilliseconds),
+            MaximumPublicationAttempts = maximumPublicationAttempts,
+            PublicationLeaseDuration = publicationLeaseDuration ?? TimeSpan.FromSeconds(DefaultPublicationLeaseDurationSeconds),
         };
-        options.CreateOutboxDispatcherOptions().Validate();
-        options.CreateRabbitMqPublisherOptions().Validate();
+        options.Validate();
         return options;
+    }
+
+    public void Validate()
+    {
+        CreateOutboxDispatcherOptions().Validate();
+        CreateRabbitMqPublisherOptions().Validate();
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(MaximumPublicationAttempts);
+        if (PublicationLeaseDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PublicationLeaseDuration));
+        }
     }
 
     public OutboxDispatcherOptions CreateOutboxDispatcherOptions() =>
