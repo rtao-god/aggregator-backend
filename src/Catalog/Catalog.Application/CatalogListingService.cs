@@ -162,17 +162,42 @@ public sealed class CatalogListingService(
         return CatalogContractMapper.ToResponse(decision);
     }
 
+    public Task<ListingResponse> ArchiveAsync(
+        Guid listingId,
+        ArchiveListingRequest request,
+        CatalogActor actor,
+        CancellationToken cancellationToken) =>
+        ArchiveAsync(
+            listingId,
+            request,
+            actor,
+            CatalogEventContext.StartRoot(),
+            cancellationToken);
+
     public async Task<ListingResponse> ArchiveAsync(
         Guid listingId,
         ArchiveListingRequest request,
         CatalogActor actor,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(eventContext);
         var listing = await RequireListingAsync(listingId, cancellationToken);
-        listing.Archive(request.ExpectedVersion, timeProvider.GetUtcNow());
-        await repository.ArchiveListingAsync(listing, cancellationToken);
+        var archivedAtUtc = timeProvider.GetUtcNow();
+        listing.Archive(request.ExpectedVersion, archivedAtUtc);
+        var eligibilityOutboxRequest =
+            CatalogListingPromotionEligibilityEventFactory.CreateUnavailable(
+                listing,
+                hasBlockingDispute: false,
+                idSource.CreateId(),
+                archivedAtUtc,
+                eventContext);
+        await repository.ArchiveListingAsync(
+            listing,
+            eligibilityOutboxRequest,
+            cancellationToken);
         return CatalogContractMapper.ToResponse(listing);
     }
 
