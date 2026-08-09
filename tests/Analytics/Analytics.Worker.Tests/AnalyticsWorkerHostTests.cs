@@ -42,13 +42,17 @@ public sealed class AnalyticsWorkerHostTests
     }
 
     [Fact]
-    public void ExplicitCatalogAccessQueueSettingsPreserveSharedTransportIdentity()
+    public void CatalogAccessQueueSettingsCannotCreateAnotherBrokerTransport()
     {
         using var host = Program.CreateHost(
         [
             "--ConnectionStrings:Analytics=Host=localhost;Database=analytics_db;Username=analytics_app;Password=test",
-            "--Analytics:PublicReadProjection:BrokerUri=amqps://broker.example",
-            "--Analytics:ListingAccessProjection:BrokerUri=amqps://broker.example",
+            "--Analytics:PublicReadProjection:BrokerUri=amqps://canonical-broker.example",
+            "--Analytics:PublicReadProjection:Exchange=canonical.events",
+            "--Analytics:PublicReadProjection:DeadLetterExchange=canonical.dead-letter",
+            "--Analytics:ListingAccessProjection:BrokerUri=amqp://forbidden-second-broker.example",
+            "--Analytics:ListingAccessProjection:Exchange=forbidden.events",
+            "--Analytics:ListingAccessProjection:DeadLetterExchange=forbidden.dead-letter",
             "--Analytics:ListingAccessProjection:Queue=analytics.custom-access-projection",
         ]);
 
@@ -58,6 +62,10 @@ public sealed class AnalyticsWorkerHostTests
             .GetRequiredService<AnalyticsListingAccessProjectionWorkerOptions>();
 
         Assert.Equal(publicReadOptions.BrokerUri, listingAccessOptions.BrokerUri);
+        Assert.Equal(publicReadOptions.Exchange, listingAccessOptions.Exchange);
+        Assert.Equal(
+            publicReadOptions.DeadLetterExchange,
+            listingAccessOptions.DeadLetterExchange);
         Assert.Equal("analytics.custom-access-projection", listingAccessOptions.Queue);
     }
 
