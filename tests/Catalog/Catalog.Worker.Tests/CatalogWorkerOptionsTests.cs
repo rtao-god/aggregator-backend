@@ -21,6 +21,8 @@ public sealed class CatalogWorkerOptionsTests
         Assert.Equal(8, outbox.MaximumDeliveryAttempts);
         Assert.Equal("platform.events", publisher.Exchange);
         Assert.Equal("catalog-worker-test", publisher.ClientProvidedName);
+        Assert.Equal(5, options.MaximumPublicationAttempts);
+        Assert.Equal(TimeSpan.FromMinutes(5), options.PublicationLeaseDuration);
     }
 
     [Fact]
@@ -63,5 +65,35 @@ public sealed class CatalogWorkerOptionsTests
                 batchSize));
 
         Assert.Equal("BatchSize", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void InvalidPublicationAttemptLimitIsRejected(int maximumPublicationAttempts)
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CatalogWorkerOptions.Create(
+                "Host=localhost;Database=catalog;Username=catalog_app;Password=test",
+                new Uri("amqp://guest:guest@localhost:5672/"),
+                "platform.events",
+                "catalog-worker-test",
+                maximumPublicationAttempts: maximumPublicationAttempts));
+
+        Assert.Equal("MaximumPublicationAttempts", exception.ParamName);
+    }
+
+    [Fact]
+    public void NonPositivePublicationLeaseIsRejected()
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CatalogWorkerOptions.Create(
+                "Host=localhost;Database=catalog;Username=catalog_app;Password=test",
+                new Uri("amqp://guest:guest@localhost:5672/"),
+                "platform.events",
+                "catalog-worker-test",
+                publicationLeaseDuration: TimeSpan.Zero));
+
+        Assert.Equal("PublicationLeaseDuration", exception.ParamName);
     }
 }
