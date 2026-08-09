@@ -79,6 +79,20 @@
       ]
     },
     {
+      "name": "query-public-read-revision-activation",
+      "file": "src/Query/Query.Contracts/QueryIntegrationEvents.cs",
+      "required": [
+        "public const string PublicReadRevisionActivated = \"query.public-read-revision.activated\";",
+        "public const string PublicReadRevisionActivated = \"aggregator.query.public-read-revision-activated@1\";",
+        "public sealed record PublicReadSponsoredPlacementReference(",
+        "public sealed record PublicReadRevisionActivated(",
+        "long ActivationRevision,",
+        "string MembershipDigest,",
+        "IReadOnlyList<Guid> PublicListingIds,",
+        "IReadOnlyList<PublicReadSponsoredPlacementReference> SponsoredPlacements,"
+      ]
+    },
+    {
       "name": "catalog-publication-activation",
       "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
       "required": [
