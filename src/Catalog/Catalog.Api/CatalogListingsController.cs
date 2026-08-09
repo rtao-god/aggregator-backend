@@ -3,6 +3,7 @@ using Aggregator.Catalog.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;
 
@@ -10,7 +11,9 @@ namespace Aggregator.Catalog.Api;
 [Route("api/catalog-command")]
 [Authorize(Policy = CatalogAuthorizationPolicies.EditListing)]
 [EnableRateLimiting(CatalogRateLimitPolicies.Command)]
-public sealed class CatalogListingsController(CatalogListingService service) : ControllerBase
+public sealed class CatalogListingsController(
+    CatalogListingService service,
+    ICorrelationContextAccessor correlation) : ControllerBase
 {
     [HttpPost("catalogs/{catalogKey}/listings", Name = CatalogOperationIds.CreateListing)]
     [ProducesResponseType<ListingResponse>(StatusCodes.Status201Created)]
@@ -99,6 +102,7 @@ public sealed class CatalogListingsController(CatalogListingService service) : C
             listingId,
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken));
     }
 }
