@@ -1,28 +1,45 @@
+using System.Data;
 using Aggregator.Catalog.Application;
+using Aggregator.Catalog.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aggregator.Catalog.Infrastructure;
 
 public sealed partial class EfCatalogRepository :
     ICatalogRepository,
-    ICatalogConfigurationActivationRepository
+    ICatalogPublicationOperationCommitter,
+    ICatalogConfigurationActivationRepository,
+    ICatalogListingDisputeRepository
 {
     private readonly CatalogDbContext _dbContext;
+    private readonly ICatalogPublicationArtifactStore _publicationArtifactStore;
 
-    public EfCatalogRepository(CatalogDbContext dbContext)
+    public EfCatalogRepository(
+        CatalogDbContext dbContext,
+        ICatalogPublicationArtifactStore publicationArtifactStore)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _publicationArtifactStore = publicationArtifactStore
+            ?? throw new ArgumentNullException(nameof(publicationArtifactStore));
     }
 
     private async Task ExecuteInTransactionAsync(
-        Func<CancellationToken, Task> action,
+        Func<CancellationToken, Task> operation,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        ArgumentNullException.ThrowIfNull(operation);
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(
-            System.Data.IsolationLevel.Serializable,
+            IsolationLevel.Serializable,
             cancellationToken);
-        await action(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await operation(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 }
