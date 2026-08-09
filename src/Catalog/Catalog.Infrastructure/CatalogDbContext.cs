@@ -73,8 +73,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.ToTable("listing");
             entity.HasKey(row => row.Id);
             entity.Property(row => row.CatalogKey).HasMaxLength(96);
-            entity.Property(row => row.ArchiveReason).HasMaxLength(2048);
-            entity.HasIndex(row => new { row.CatalogKey, row.SubjectKind, row.SubjectId }).IsUnique();
+            entity.Property(row => row.Version).IsConcurrencyToken();
+            entity.HasIndex(row => new { row.CatalogKey, row.SubjectId }).IsUnique();
+            entity.HasIndex(row => new { row.CatalogKey, row.State });
         });
 
         modelBuilder.Entity<CatalogListingRevisionRow>(entity =>
@@ -83,24 +84,23 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.HasKey(row => row.Id);
             entity.Property(row => row.ContentDigest).HasMaxLength(64);
             entity.HasIndex(row => new { row.ListingId, row.RevisionNumber }).IsUnique();
+            entity.HasIndex(row => row.ConfigurationRevisionId);
         });
 
         modelBuilder.Entity<CatalogProvenanceAssertionRow>(entity =>
         {
             entity.ToTable("provenance_assertion");
-            entity.HasKey(row => row.Id);
+            entity.HasKey(row => new { row.ListingRevisionId, row.AssertionId });
             entity.Property(row => row.SourceReference).HasMaxLength(2048);
             entity.Property(row => row.EvidenceDigest).HasMaxLength(64);
-            entity.HasIndex(row => row.ListingRevisionId);
         });
 
         modelBuilder.Entity<CatalogLocalizedTextRow>(entity =>
         {
             entity.ToTable("localized_text");
             entity.HasKey(row => new { row.ListingRevisionId, row.FieldKind, row.Locale });
-            entity.Property(row => row.Locale).HasMaxLength(35);
-            entity.Property(row => row.Value).HasMaxLength(4096);
-            entity.Property(row => row.MissingReason).HasMaxLength(512);
+            entity.Property(row => row.FieldKind).HasMaxLength(24);
+            entity.Property(row => row.Locale).HasMaxLength(32);
         });
 
         modelBuilder.Entity<CatalogCategoryAssignmentRow>(entity =>
