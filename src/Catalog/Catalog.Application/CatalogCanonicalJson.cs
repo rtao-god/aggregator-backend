@@ -10,6 +10,8 @@ namespace Aggregator.Catalog.Application;
 internal static class CatalogCanonicalJson
 {
     private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
+    private static readonly JsonSerializerOptions PublicationRequestSerializerOptions =
+        CreatePublicationRequestSerializerOptions();
 
     public static byte[] SerializeConfiguration(ProductConfigurationContract configuration)
     {
@@ -83,14 +85,14 @@ internal static class CatalogCanonicalJson
             },
             contacts = content.Contacts
                 .OrderBy(value => value.Kind)
-                .ThenBy(value => value.Target, StringComparer.Ordinal)
-                .ThenBy(value => value.AssertionId)
+                .ThenBy(value => value.Target.AbsoluteUri, StringComparer.Ordinal)
+                .ThenBy(value => value.Id)
                 .Select(value => new
                 {
                     contactId = value.Id,
                     kind = value.Kind,
-                    target = value.Target,
-                    label = value.Label,
+                    target = value.Target.AbsoluteUri,
+                    value.Label,
                     assertionId = value.AssertionId,
                 })
                 .ToArray(),
@@ -100,16 +102,16 @@ internal static class CatalogCanonicalJson
                 .ThenBy(value => value.VariantId)
                 .Select(value => new
                 {
-                    mediaId = value.MediaId,
-                    mediaAggregateRevision = value.MediaAggregateRevision,
-                    variantId = value.VariantId,
-                    objectUri = value.ObjectUri,
-                    contentType = value.ContentType,
-                    contentDigest = value.ContentDigest,
-                    rightsBasis = value.RightsBasis,
-                    displayOrder = value.DisplayOrder,
-                    caption = value.Caption,
-                    assertionId = value.AssertionId,
+                    value.MediaId,
+                    value.MediaAggregateRevision,
+                    value.VariantId,
+                    objectUri = value.ObjectUri.AbsoluteUri,
+                    value.ContentType,
+                    value.ContentDigest,
+                    value.RightsBasis,
+                    value.DisplayOrder,
+                    value.Caption,
+                    value.AssertionId,
                 })
                 .ToArray(),
             assertions = content.Assertions.Values
@@ -158,7 +160,9 @@ internal static class CatalogCanonicalJson
 
         try
         {
-            var request = JsonSerializer.Deserialize<CreateCatalogPublicationRequest>(content, SerializerOptions)
+            var request = JsonSerializer.Deserialize<CreateCatalogPublicationRequest>(
+                    content,
+                    PublicationRequestSerializerOptions)
                 ?? throw new CatalogContractException(
                     "catalog.publication_operation_request_invalid",
                     "Persisted publication request document deserialized to an empty contract.");
@@ -277,11 +281,19 @@ internal static class CatalogCanonicalJson
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNameCaseInsensitive = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
             WriteIndented = false,
         };
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        return options;
+    }
+
+    private static JsonSerializerOptions CreatePublicationRequestSerializerOptions()
+    {
+        var options = CreateSerializerOptions();
+        options.PropertyNameCaseInsensitive = false;
+        options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
+        options.Converters.Clear();
         options.Converters.Add(new JsonStringEnumConverter(
             JsonNamingPolicy.CamelCase,
             allowIntegerValues: false));
@@ -327,7 +339,8 @@ internal static class CatalogCanonicalJson
                 writer.WriteNullValue();
                 break;
             default:
-                throw new InvalidOperationException($"Unsupported JSON token '{element.ValueKind}'.");
+                throw new InvalidOperationException(
+                    $"JSON value kind '{element.ValueKind}' cannot be canonicalized.");
         }
     }
 }
