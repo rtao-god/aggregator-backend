@@ -103,6 +103,42 @@ public sealed class IngestionCatalogDeliveryReachabilityTests
     }
 
     [Fact]
+    public void DeliveryClaimRequiresCommittingBatchAndRetainsPoisonCommandsAsTerminalFailures()
+    {
+        var repository = RepositoryModel.Load();
+        var store = Read(
+            repository,
+            "src/Ingestion/Ingestion.Infrastructure/PostgresIngestionCatalogDeliveryStore.cs");
+        var persistence = Read(
+            repository,
+            "src/Ingestion/Ingestion.Infrastructure/PostgresIngestionCatalogDeliveryStore.Persistence.cs");
+
+        Assert.Contains(
+            "INNER JOIN batches.import_batch b ON b.id = d.batch_id",
+            store,
+            StringComparison.Ordinal);
+        Assert.Contains("WHERE b.state = @committing", store, StringComparison.Ordinal);
+        Assert.Contains("FOR UPDATE OF d SKIP LOCKED", store, StringComparison.Ordinal);
+        Assert.Contains(
+            "catch (IngestionApplicationException exception)",
+            store,
+            StringComparison.Ordinal);
+        Assert.Contains("RejectCorruptDeliveryAsync(", store, StringComparison.Ordinal);
+        Assert.Contains(
+            "SET state = 4,",
+            persistence,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "failure_detail = @failure_detail",
+            persistence,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "FinalizeBatchIfTerminalAsync(",
+            persistence,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DeliveryPersistenceExposesLeaseStateInsteadOfLegacyPublishedState()
     {
         var repository = RepositoryModel.Load();
