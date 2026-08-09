@@ -14,6 +14,18 @@ public static class IngestionWorkerServiceCollectionExtensions
         services.AddSingleton(options);
         services.AddHostedService<IngestionValidationWorker>();
         services.AddHostedService<IngestionCatalogDeliveryWorker>();
+        return services;
+    }
+
+    /// <summary>Registers the Catalog configuration event consumer under its own transport contract.</summary>
+    public static IServiceCollection AddIngestionCatalogConfigurationProjectionWorker(
+        this IServiceCollection services,
+        IngestionCatalogConfigurationProjectionWorkerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        services.AddSingleton(options);
         services.AddHostedService<IngestionCatalogConfigurationProjectionWorker>();
         return services;
     }

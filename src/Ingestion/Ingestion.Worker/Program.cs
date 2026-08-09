@@ -24,7 +24,6 @@ public static class Program
             ?? throw new InvalidOperationException(
                 $"Configuration section '{IngestionCatalogConfigurationProjectionWorkerOptions.SectionName}' is required.");
         projectionOptions.Validate();
-        builder.Services.AddSingleton(projectionOptions);
         builder.Services
             .AddIngestionApplication()
             .AddIngestionInfrastructure(builder.Configuration)
@@ -32,7 +31,8 @@ public static class Program
             .AddIngestionObjectStorage(builder.Configuration)
             .AddIngestionProcessingInfrastructure(builder.Configuration)
             .AddIngestionCatalogDeliveryInfrastructure(builder.Configuration)
-            .AddIngestionWorker(options);
+            .AddIngestionWorker(options)
+            .AddIngestionCatalogConfigurationProjectionWorker(projectionOptions);
         builder.Services.AddPlatformObservability(
             builder.Configuration,
             "ingestion-worker");
