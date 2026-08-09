@@ -18,6 +18,7 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
 {
     private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
     private readonly PromotionEligibilityProjectionWorkerOptions _options;
+    private readonly PromotionWorkerOptions _ownerOptions;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PromotionEligibilityProjectionWorker> _logger;
     private IConnection? _connection;
@@ -25,13 +26,16 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
 
     public PromotionEligibilityProjectionWorker(
         PromotionEligibilityProjectionWorkerOptions options,
+        PromotionWorkerOptions ownerOptions,
         IServiceScopeFactory scopeFactory,
         ILogger<PromotionEligibilityProjectionWorker> logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _ownerOptions = ownerOptions ?? throw new ArgumentNullException(nameof(ownerOptions));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options.Validate();
+        _ownerOptions.Validate();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -126,6 +130,7 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
                     correlationId,
                     causationId,
                     integrationEvent),
+                _ownerOptions.SystemActorId,
                 cancellationToken);
             await channel.BasicAckAsync(
                 deliveryTag: eventArgs.DeliveryTag,
