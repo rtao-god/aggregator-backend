@@ -25,6 +25,8 @@ internal sealed class ActiveCatalogConfigurationRow
 
     public Guid ActivatedByActorId { get; set; }
 
+    public long AggregateRevision { get; set; }
+
     public DateTimeOffset ActivatedAtUtc { get; set; }
 }
 
@@ -234,6 +236,8 @@ internal sealed class CatalogPublicationRow
 
     public required string ArtifactDigest { get; set; }
 
+    public Guid? PreviousPublicationId { get; set; }
+
     public Guid CreatedByActorId { get; set; }
 
     public DateTimeOffset CreatedAtUtc { get; set; }
@@ -247,8 +251,6 @@ internal sealed class CatalogPublicationEntryRow
 
     public Guid ListingRevisionId { get; set; }
 
-    public Guid SubjectRevisionId { get; set; }
-
     public required string ContentDigest { get; set; }
 }
 
@@ -258,11 +260,9 @@ internal sealed class CurrentCatalogPublicationRow
 
     public Guid PublicationId { get; set; }
 
-    public long PublicationSequence { get; set; }
+    public long ActivationRevision { get; set; }
 
     public DateTimeOffset ActivatedAtUtc { get; set; }
-
-    public Guid ActivatedByActorId { get; set; }
 }
 
 internal sealed class CatalogListingClaimRow
@@ -296,17 +296,15 @@ internal sealed class CatalogListingAccessGrantRow
 
     public Guid ActorId { get; set; }
 
-    public DateTimeOffset GrantedAtUtc { get; set; }
+    public int State { get; set; }
+
+    public Guid SourceClaimId { get; set; }
+
+    public DateTimeOffset StartsAtUtc { get; set; }
 
     public DateTimeOffset? ExpiresAtUtc { get; set; }
 
-    public Guid ClaimId { get; set; }
-
     public DateTimeOffset? RevokedAtUtc { get; set; }
-
-    public Guid? RevokedByActorId { get; set; }
-
-    public string? RevocationReason { get; set; }
 }
 
 internal sealed class CatalogListingAccessScopeRow
@@ -330,7 +328,7 @@ internal sealed class CatalogPublicationOperationRow
 
     public required string IdempotencyKey { get; set; }
 
-    public required byte[] RequestDocument { get; set; }
+    public required string RequestJson { get; set; }
 
     public required string RequestDigest { get; set; }
 

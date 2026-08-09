@@ -66,6 +66,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.ToTable("active_configuration");
             entity.HasKey(row => row.CatalogKey);
             entity.Property(row => row.CatalogKey).HasMaxLength(96);
+            entity.Property(row => row.AggregateRevision).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<CatalogListingRow>(entity =>
@@ -190,16 +191,15 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.Property(row => row.EvidenceReference).HasMaxLength(2048);
             entity.Property(row => row.EvidenceDigest).HasMaxLength(64);
             entity.Property(row => row.DecisionReason).HasMaxLength(4096);
-            entity.HasIndex(row => new { row.ListingId, row.ClaimantActorId, row.State });
+            entity.HasIndex(row => new { row.ListingId, row.State });
         });
 
         modelBuilder.Entity<CatalogListingAccessGrantRow>(entity =>
         {
             entity.ToTable("listing_access_grant");
             entity.HasKey(row => row.Id);
-            entity.Property(row => row.RevocationReason).HasMaxLength(4096);
-            entity.HasIndex(row => new { row.ListingId, row.ActorId });
-            entity.HasIndex(row => row.ClaimId).IsUnique();
+            entity.HasIndex(row => new { row.ListingId, row.ActorId, row.State });
+            entity.HasIndex(row => row.SourceClaimId).IsUnique();
         });
 
         modelBuilder.Entity<CatalogListingAccessScopeRow>(entity =>
@@ -210,79 +210,52 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
         modelBuilder.Entity<CatalogPublicationOperationRow>(entity =>
         {
-            entity.ToTable("publication_operation");
+            entity.ToTable("publication_operation", "operations");
             entity.HasKey(row => row.Id);
             entity.Property(row => row.CatalogKey).HasMaxLength(96);
-            entity.Property(row => row.IdempotencyKey).HasMaxLength(128);
-            entity.Property(row => row.RequestDocument).HasColumnType("bytea");
-            entity.Property(row => row.RequestDigest).HasMaxLength(64);
+            entity.Property(row => row.IdempotencyKey).HasMaxLength(200);
+            entity.Property(row => row.RequestJson).HasColumnType("text");
+            entity.Property(row => row.RequestDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.CorrelationId).HasMaxLength(128);
             entity.Property(row => row.LeasedBy).HasMaxLength(200);
             entity.Property(row => row.FailureOwner).HasMaxLength(200);
             entity.Property(row => row.FailureCode).HasMaxLength(200);
             entity.Property(row => row.FailureDetail).HasMaxLength(4000);
-            entity.Property(row => row.FailureRequiredAction).HasMaxLength(2000);
-            entity.Property(row => row.LeaseToken).IsConcurrencyToken();
-            entity.HasOne<CatalogPublicationRow>()
-                .WithMany()
-                .HasForeignKey(row => row.ResultPublicationId)
-                .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(row => row.PublicationId).IsUnique();
-            entity.HasIndex(row => new { row.CatalogKey, row.PublicationSequence }).IsUnique();
-            entity.HasIndex(row => new { row.CatalogKey, row.ActorId, row.IdempotencyKey }).IsUnique();
-            entity.HasIndex(row => new { row.State, row.NextAttemptAtUtc, row.CreatedAtUtc });
-            entity.HasIndex(row => row.LeaseExpiresAtUtc);
+            entity.Property(row => row.FailureRequiredAction).HasMaxLength(1000);
+            entity.HasIndex(row => new { row.ActorId, row.CatalogKey, row.IdempotencyKey }).IsUnique();
         });
 
         modelBuilder.Entity<CatalogOutboxRow>(entity =>
         {
-            entity.ToTable("outbox_message");
+            entity.ToTable("outbox_message", "messaging");
             entity.HasKey(row => row.MessageId);
-            entity.Property(row => row.RoutingKey).HasMaxLength(256);
-            entity.Property(row => row.ContractIdentity).HasMaxLength(256);
+            entity.Property(row => row.RoutingKey).HasMaxLength(200);
+            entity.Property(row => row.ContractIdentity).HasMaxLength(200);
             entity.Property(row => row.PayloadJson).HasColumnType("text");
-            entity.Property(row => row.PayloadDigest).HasMaxLength(64);
+            entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.CorrelationId).HasMaxLength(128);
             entity.Property(row => row.LeasedBy).HasMaxLength(200);
-            entity.Property(row => row.LastError).HasMaxLength(2000);
-            entity.Property(row => row.DeadLetterReason).HasMaxLength(2000);
-            entity.HasIndex(row => new
+            entity.Property(row => row.LastError).HasMaxLength(4000);
+            entity.Property(row => row.DeadLetterReason).HasMaxLength(4000);
+            entity.ToTable(table =>
             {
-                row.DispatchedAtUtc,
-                row.DeadLetteredAtUtc,
-                row.OccurredAtUtc,
+                table.HasCheckConstraint(
+                    "ck_outbox_payload_digest",
+                    "payload_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_outbox_dead_letter_shape",
+                    "(dead_lettered_at_utc IS NULL AND dead_letter_reason IS NULL) OR " +
+                    "(dead_lettered_at_utc IS NOT NULL AND dead_letter_reason IS NOT NULL)");
             });
-            entity.HasIndex(row => row.LeaseExpiresAtUtc);
         });
-
-        ApplySnakeCaseColumns(modelBuilder);
     }
 
-    private static void ApplySnakeCaseColumns(ModelBuilder modelBuilder)
+    internal static string ComputePayloadDigest(string payloadJson)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            foreach (var property in entityType.GetProperties())
-            {
-                property.SetColumnName(ToSnakeCase(property.Name));
-            }
-        }
-    }
-
-    private static string ToSnakeCase(string value)
-    {
-        var builder = new StringBuilder(value.Length + 8);
-        for (var index = 0; index < value.Length; index++)
-        {
-            var character = value[index];
-            if (char.IsUpper(character) && index > 0)
-            {
-                builder.Append('_');
-            }
-
-            builder.Append(char.ToLowerInvariant(character));
-        }
-
-        return builder.ToString();
+        ArgumentException.ThrowIfNullOrWhiteSpace(payloadJson);
+        return Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    Encoding.UTF8.GetBytes(payloadJson)))
+            .ToLowerInvariant();
     }
 }
