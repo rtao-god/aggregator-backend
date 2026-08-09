@@ -270,7 +270,7 @@
       "file": "src/Ingestion/Ingestion.Worker/Program.cs",
       "required": [
         ".AddIngestionCatalogDeliveryInfrastructure(builder.Configuration)",
-        ".AddIngestionWorker(options);"
+        ".AddIngestionWorker(options)"
       ]
     },
     {
@@ -364,7 +364,7 @@
       "required": [
         ".GetSection(IngestionCatalogConfigurationProjectionWorkerOptions.SectionName)",
         ".AddIngestionCatalogProjectionInfrastructure()",
-        ".AddIngestionWorker(options);"
+        ".AddIngestionCatalogConfigurationProjectionWorker(projectionOptions);"
       ]
     },
     {
