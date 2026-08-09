@@ -6,6 +6,7 @@ namespace Aggregator.Catalog.Application;
 
 public sealed class CatalogConfigurationService(
     ICatalogRepository repository,
+    ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
     public async Task<ProductConfigurationRevisionResponse> ImportAsync(
@@ -48,15 +49,30 @@ public sealed class CatalogConfigurationService(
             IsActive: false);
     }
 
+    /// <summary>Starts a new correlation root for a direct application or operator activation command.</summary>
+    public Task<ProductConfigurationRevisionResponse> ActivateAsync(
+        string catalogKeyValue,
+        ActivateProductConfigurationRequest request,
+        CatalogActor actor,
+        CancellationToken cancellationToken) =>
+        ActivateAsync(
+            catalogKeyValue,
+            request,
+            actor,
+            CatalogEventContext.StartRoot(),
+            cancellationToken);
+
     public async Task<ProductConfigurationRevisionResponse> ActivateAsync(
         string catalogKeyValue,
         ActivateProductConfigurationRequest request,
         CatalogActor actor,
+        CatalogEventContext eventContext,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogKeyValue);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(eventContext);
         var catalogKey = CatalogKey.Create(catalogKeyValue);
 
         var configuration = await repository.GetConfigurationAsync(
@@ -74,12 +90,43 @@ public sealed class CatalogConfigurationService(
 
         var expectedCurrentRevisionId = ToInternalExpectation(request.ExpectedCurrent);
         var activatedAtUtc = timeProvider.GetUtcNow();
+        var eventId = idSource.CreateId();
+        var supportedListingKinds = configuration.Catalog.AllowedListingKinds
+            .OrderBy(kind => kind)
+            .Select(ToContractListingKind)
+            .ToArray();
+
+        CatalogOutboxMessage CreateOutbox(
+            Guid? previousConfigurationRevisionId,
+            long aggregateRevision)
+        {
+            var integrationEvent = new CatalogConfigurationActivated(
+                eventId,
+                configuration.Site.Key.Value,
+                configuration.Catalog.Key.Value,
+                configuration.RevisionId,
+                previousConfigurationRevisionId,
+                configuration.Digest,
+                configuration.Catalog.MarketAreaKey,
+                supportedListingKinds,
+                aggregateRevision,
+                activatedAtUtc);
+            return CatalogOutboxMessageFactory.Create(
+                integrationEvent.EventId,
+                CatalogIntegrationEventTypes.ConfigurationActivated,
+                CatalogIntegrationEventContracts.ConfigurationActivated,
+                integrationEvent,
+                activatedAtUtc,
+                eventContext);
+        }
+
         await repository.ActivateConfigurationAsync(
             catalogKey,
             configuration.RevisionId,
             expectedCurrentRevisionId,
             actor.Id,
             activatedAtUtc,
+            CreateOutbox,
             cancellationToken);
 
         return new ProductConfigurationRevisionResponse(
@@ -90,6 +137,19 @@ public sealed class CatalogConfigurationService(
             configuration.CreatedAtUtc,
             activatedAtUtc,
             IsActive: true);
+    }
+
+    private static SubjectKindContract ToContractListingKind(SubjectKind kind)
+    {
+        var contract = (SubjectKindContract)(int)kind;
+        if (!Enum.IsDefined(contract) || contract == SubjectKindContract.Organization)
+        {
+            throw new CatalogContractException(
+                "catalog.configuration_listing_kind_invalid",
+                $"Catalog listing kind '{kind}' has no supported wire identity.");
+        }
+
+        return contract;
     }
 
     private static Guid ToInternalExpectation(ConfigurationPointerExpectationContract expectation)

@@ -126,9 +126,11 @@ public sealed partial class EfCatalogRepository
         Guid expectedConfigurationRevisionId,
         Guid actorId,
         DateTimeOffset activatedAtUtc,
+        CatalogConfigurationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(catalogKey);
+        ArgumentNullException.ThrowIfNull(outboxFactory);
         await ExecuteInTransactionAsync(async innerCancellationToken =>
         {
             var targetExists = await _dbContext.ConfigurationRevisions
@@ -144,6 +146,8 @@ public sealed partial class EfCatalogRepository
             var current = await _dbContext.ActiveConfigurations
                 .SingleOrDefaultAsync(row => row.CatalogKey == catalogKey.Value, innerCancellationToken);
 
+            Guid? previousConfigurationRevisionId;
+            long aggregateRevision;
             // Guid.Empty is the internal persistence encoding of the explicit Absent expectation.
             if (expectedConfigurationRevisionId == Guid.Empty)
             {
@@ -153,11 +157,14 @@ public sealed partial class EfCatalogRepository
                         $"Catalog '{catalogKey}' expected no active configuration but is at '{current.ConfigurationRevisionId}'.");
                 }
 
+                previousConfigurationRevisionId = null;
+                aggregateRevision = 1;
                 current = new ActiveCatalogConfigurationRow
                 {
                     CatalogKey = catalogKey.Value,
                     ConfigurationRevisionId = configurationRevisionId,
                     ActivatedByActorId = actorId,
+                    AggregateRevision = aggregateRevision,
                     ActivatedAtUtc = activatedAtUtc,
                 };
                 _dbContext.ActiveConfigurations.Add(current);
@@ -170,11 +177,15 @@ public sealed partial class EfCatalogRepository
                         $"Catalog '{catalogKey}' expected active configuration '{expectedConfigurationRevisionId}' but is at '{current?.ConfigurationRevisionId.ToString() ?? "absent"}'.");
                 }
 
+                previousConfigurationRevisionId = current.ConfigurationRevisionId;
+                aggregateRevision = checked(current.AggregateRevision + 1);
                 current.ConfigurationRevisionId = configurationRevisionId;
                 current.ActivatedByActorId = actorId;
+                current.AggregateRevision = aggregateRevision;
                 current.ActivatedAtUtc = activatedAtUtc;
             }
 
+            AddOutbox(outboxFactory(previousConfigurationRevisionId, aggregateRevision));
             await _dbContext.SaveChangesAsync(innerCancellationToken);
         }, cancellationToken);
     }

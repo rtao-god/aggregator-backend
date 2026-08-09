@@ -3,13 +3,16 @@ using Aggregator.Catalog.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Platform.ProblemDetails;
 
 namespace Aggregator.Catalog.Api;
 
 [ApiController]
 [Route("api/catalog-command/catalogs")]
 [EnableRateLimiting(CatalogRateLimitPolicies.Command)]
-public sealed class CatalogConfigurationController(CatalogConfigurationService service) : ControllerBase
+public sealed class CatalogConfigurationController(
+    CatalogConfigurationService service,
+    ICorrelationContextAccessor correlation) : ControllerBase
 {
     [HttpPost("config-revisions", Name = CatalogOperationIds.ImportConfiguration)]
     [Authorize(Policy = CatalogAuthorizationPolicies.ManageConfiguration)]
@@ -47,6 +50,7 @@ public sealed class CatalogConfigurationController(CatalogConfigurationService s
             catalogKey,
             request,
             CatalogActorAccessor.Require(HttpContext),
+            CatalogEventContextAccessor.Require(correlation),
             cancellationToken);
         return Ok(response);
     }

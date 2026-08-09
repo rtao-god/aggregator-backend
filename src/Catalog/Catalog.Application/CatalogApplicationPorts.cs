@@ -33,6 +33,7 @@ public interface ICatalogRepository
         Guid expectedConfigurationRevisionId,
         Guid actorId,
         DateTimeOffset activatedAtUtc,
+        CatalogConfigurationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken);
 
     public Task AddListingAsync(Listing listing, CancellationToken cancellationToken);
@@ -121,6 +122,13 @@ public interface ICatalogPublicationArtifactStore
 public sealed record PublicationSelectionState(
     Listing Listing,
     ListingRevision Revision);
+
+/// <summary>
+/// Creates the producer-owned configuration event after persistence resolves the exact previous pointer and aggregate revision.
+/// </summary>
+public delegate CatalogOutboxMessage CatalogConfigurationActivationOutboxFactory(
+    Guid? previousConfigurationRevisionId,
+    long aggregateRevision);
 
 /// <summary>
 /// Creates the producer-owned activation event after the repository allocates its exact revision inside the pointer transaction.
