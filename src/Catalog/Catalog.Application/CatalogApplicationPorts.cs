@@ -79,6 +79,7 @@ public interface ICatalogRepository
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
+        IReadOnlyList<Listing> listings,
         CatalogPublicationActivationOutboxFactory outboxFactory,
         IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
         CancellationToken cancellationToken);
