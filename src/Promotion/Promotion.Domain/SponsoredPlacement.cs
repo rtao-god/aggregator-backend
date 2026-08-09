@@ -437,6 +437,60 @@ public sealed class SponsoredPlacement
         ApplyState(SponsoredPlacementState.Active, auditReason, changedAtUtc);
     }
 
+    public bool PauseWhenCatalogIneligible(
+        ListingPromotionEligibility eligibility,
+        PromotionProduct product,
+        Guid actorId,
+        DateTimeOffset changedAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(eligibility);
+        ArgumentNullException.ThrowIfNull(product);
+        if (State is not (SponsoredPlacementState.Scheduled or SponsoredPlacementState.Active))
+        {
+            return false;
+        }
+
+        if (eligibility.ListingId != ListingId)
+        {
+            throw new PromotionDomainException(
+                "PROMOTION_ELIGIBILITY_LISTING_MISMATCH",
+                "Promotion eligibility projection belongs to another listing.");
+        }
+
+        if (!string.Equals(
+                eligibility.CatalogKey,
+                CurrentRevision.CatalogKey,
+                StringComparison.Ordinal))
+        {
+            throw new PromotionDomainException(
+                "PROMOTION_ELIGIBILITY_CATALOG_MISMATCH",
+                "Promotion eligibility projection belongs to another catalog.");
+        }
+
+        if (!string.Equals(product.Key, ProductKey, StringComparison.Ordinal))
+        {
+            throw new PromotionDomainException(
+                "PROMOTION_PLACEMENT_PRODUCT_MISMATCH",
+                "Promotion placement is bound to another product identity.");
+        }
+
+        var decision = eligibility.Evaluate(
+            product,
+            CurrentRevision.ScopeType,
+            CurrentRevision.ScopeKey);
+        if (decision.IsEligible)
+        {
+            return false;
+        }
+
+        Pause(
+            AggregateRevision,
+            actorId,
+            $"catalog eligibility revision {eligibility.SourceRevision} invalidated placement: {decision.Code}",
+            changedAtUtc);
+        return true;
+    }
+
     public bool SynchronizeTime(long expectedAggregateRevision, DateTimeOffset changedAtUtc)
     {
         PromotionDomainRules.RequireExpectedRevision(

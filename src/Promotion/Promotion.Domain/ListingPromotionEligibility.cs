@@ -2,6 +2,26 @@ using System.Collections.ObjectModel;
 
 namespace Aggregator.Promotion.Domain;
 
+/// <summary>Typed owner verdict for one listing/product/scope eligibility check.</summary>
+public enum ListingPromotionEligibilityStatus
+{
+    Eligible = 1,
+    ProductInactive = 2,
+    ListingUnavailable = 3,
+    VerifiedContactRequired = 4,
+    ContactCapabilityRequired = 5,
+    ScopeMismatch = 6,
+}
+
+/// <summary>Promotion-owned result used by commands and automatic placement reconciliation.</summary>
+public sealed record ListingPromotionEligibilityDecision(
+    ListingPromotionEligibilityStatus Status,
+    string Code,
+    string Detail)
+{
+    public bool IsEligible => Status == ListingPromotionEligibilityStatus.Eligible;
+}
+
 /// <summary>Promotion-local fail-closed projection of Catalog listing eligibility.</summary>
 public sealed record ListingPromotionEligibility
 {
@@ -110,7 +130,7 @@ public sealed record ListingPromotionEligibility
             changedAtUtc);
     }
 
-    public void EnsureEligible(
+    public ListingPromotionEligibilityDecision Evaluate(
         PromotionProduct product,
         PlacementScopeType scopeType,
         string scopeKey)
@@ -118,21 +138,24 @@ public sealed record ListingPromotionEligibility
         ArgumentNullException.ThrowIfNull(product);
         if (product.State != PromotionProductState.Active)
         {
-            throw new PromotionDomainException(
+            return new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.ProductInactive,
                 "PROMOTION_PRODUCT_NOT_ACTIVE",
                 $"Promotion product '{product.Key}' is not active.");
         }
 
         if (!IsPublished || IsArchived || HasBlockingDispute)
         {
-            throw new PromotionDomainException(
+            return new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.ListingUnavailable,
                 "PROMOTION_LISTING_INELIGIBLE",
                 $"Listing '{ListingId}' is not eligible for Promotion in its current Catalog state.");
         }
 
         if (product.CurrentRevision.RequiresVerifiedContact && !HasVerifiedContact)
         {
-            throw new PromotionDomainException(
+            return new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.VerifiedContactRequired,
                 "PROMOTION_VERIFIED_CONTACT_REQUIRED",
                 $"Promotion product '{product.Key}' requires a verified listing contact.");
         }
@@ -140,39 +163,49 @@ public sealed record ListingPromotionEligibility
         if (product.CurrentRevision.RequiredContactCapability is { } requiredCapability &&
             !ContactCapabilities.Contains(requiredCapability))
         {
-            throw new PromotionDomainException(
+            return new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.ContactCapabilityRequired,
                 "PROMOTION_CONTACT_CAPABILITY_REQUIRED",
                 $"Promotion product '{product.Key}' requires contact capability '{requiredCapability}'.");
         }
 
         var normalizedScopeKey = PromotionDomainRules.RequireKey(scopeKey, nameof(scopeKey));
-        switch (scopeType)
+        var scopeMatches = scopeType switch
         {
-            case PlacementScopeType.Catalog when !string.Equals(
+            PlacementScopeType.Catalog => string.Equals(
                 normalizedScopeKey,
                 CatalogKey,
-                StringComparison.Ordinal):
-                throw ScopeMismatch(scopeType, normalizedScopeKey);
-            case PlacementScopeType.Category when !CategoryKeys.Contains(normalizedScopeKey):
-                throw ScopeMismatch(scopeType, normalizedScopeKey);
-            case PlacementScopeType.District when !string.Equals(
+                StringComparison.Ordinal),
+            PlacementScopeType.Category => CategoryKeys.Contains(normalizedScopeKey),
+            PlacementScopeType.District => string.Equals(
                 normalizedScopeKey,
                 DistrictKey,
-                StringComparison.Ordinal):
-                throw ScopeMismatch(scopeType, normalizedScopeKey);
-            case PlacementScopeType.EditorialLanding:
-                break;
-            case PlacementScopeType.Catalog or PlacementScopeType.Category or PlacementScopeType.District:
-                break;
-            default:
-                throw new PromotionDomainException(
-                    "PROMOTION_SCOPE_TYPE_INVALID",
-                    $"Placement scope type '{scopeType}' is unsupported.");
-        }
+                StringComparison.Ordinal),
+            PlacementScopeType.EditorialLanding => true,
+            _ => throw new PromotionDomainException(
+                "PROMOTION_SCOPE_TYPE_INVALID",
+                $"Placement scope type '{scopeType}' is unsupported."),
+        };
+        return scopeMatches
+            ? new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.Eligible,
+                "PROMOTION_LISTING_ELIGIBLE",
+                $"Listing '{ListingId}' is eligible for Promotion scope '{scopeType}:{normalizedScopeKey}'.")
+            : new ListingPromotionEligibilityDecision(
+                ListingPromotionEligibilityStatus.ScopeMismatch,
+                "PROMOTION_LISTING_SCOPE_MISMATCH",
+                $"Listing '{ListingId}' is not eligible for scope '{scopeType}:{normalizedScopeKey}'.");
     }
 
-    private PromotionDomainException ScopeMismatch(PlacementScopeType scopeType, string scopeKey) =>
-        new(
-            "PROMOTION_LISTING_SCOPE_MISMATCH",
-            $"Listing '{ListingId}' is not eligible for scope '{scopeType}:{scopeKey}'.");
+    public void EnsureEligible(
+        PromotionProduct product,
+        PlacementScopeType scopeType,
+        string scopeKey)
+    {
+        var decision = Evaluate(product, scopeType, scopeKey);
+        if (!decision.IsEligible)
+        {
+            throw new PromotionDomainException(decision.Code, decision.Detail);
+        }
+    }
 }
