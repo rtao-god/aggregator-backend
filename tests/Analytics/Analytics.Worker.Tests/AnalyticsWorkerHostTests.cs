@@ -7,12 +7,13 @@ namespace Analytics.Worker.Tests;
 public sealed class AnalyticsWorkerHostTests
 {
     [Fact]
-    public void HostRegistersAggregationAndPublicReferenceWorkers()
+    public void HostRegistersAggregationPublicReferenceAndCatalogAccessWorkers()
     {
         using var host = Program.CreateHost(
         [
             "--ConnectionStrings:Analytics=Host=localhost;Database=analytics_db;Username=analytics_app;Password=test",
             "--Analytics:PublicReadProjection:BrokerUri=amqp://broker.example",
+            "--Analytics:ListingAccessProjection:BrokerUri=amqp://broker.example",
         ]);
 
         var hostedServices = host.Services.GetServices<IHostedService>().ToArray();
@@ -20,6 +21,9 @@ public sealed class AnalyticsWorkerHostTests
         Assert.Contains(
             hostedServices,
             service => service is AnalyticsPublicReadProjectionWorker);
+        Assert.Contains(
+            hostedServices,
+            service => service is AnalyticsListingAccessProjectionWorker);
         Assert.Contains(
             hostedServices,
             service => string.Equals(
@@ -34,6 +38,17 @@ public sealed class AnalyticsWorkerHostTests
         _ = Assert.Throws<InvalidOperationException>(() => Program.CreateHost(
         [
             "--ConnectionStrings:Analytics=Host=localhost;Database=analytics_db;Username=analytics_app;Password=test",
+            "--Analytics:ListingAccessProjection:BrokerUri=amqp://broker.example",
+        ]));
+    }
+
+    [Fact]
+    public void MissingCatalogAccessBrokerConfigurationFailsAtStartup()
+    {
+        _ = Assert.Throws<InvalidOperationException>(() => Program.CreateHost(
+        [
+            "--ConnectionStrings:Analytics=Host=localhost;Database=analytics_db;Username=analytics_app;Password=test",
+            "--Analytics:PublicReadProjection:BrokerUri=amqp://broker.example",
         ]));
     }
 }
