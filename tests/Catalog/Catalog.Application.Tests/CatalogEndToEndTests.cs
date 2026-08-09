@@ -27,7 +27,13 @@ public sealed class CatalogEndToEndTests
         var idSource = new QueueCatalogIdSource(identifiers);
         var timeProvider = new FixedTimeProvider(Timestamp);
         var actor = CatalogActor.Create(ActorId);
-        var configurationService = new CatalogConfigurationService(repository, timeProvider);
+        var configurationEventIdSource = new QueueCatalogIdSource(
+            [Guid.Parse("0192f5f0-0000-7000-8000-000000000099")]);
+        var configurationService = new CatalogConfigurationService(
+            repository,
+            repository,
+            configurationEventIdSource,
+            timeProvider);
         var listingService = new CatalogListingService(
             repository,
             new UnexpectedMediaBindingAuthority(),
@@ -132,11 +138,18 @@ public sealed class CatalogEndToEndTests
             $"\"contactId\":\"{identifiers[2]:D}\"",
             firstArtifactJson,
             StringComparison.Ordinal);
-        Assert.Equal(3, repository.OutboxMessages.Count);
+        Assert.Equal(4, repository.OutboxMessages.Count);
         Assert.Equal(4, repository.NextPublicationActivationRevision);
-        Assert.All(
+        var configurationEvent = Assert.Single(
             repository.OutboxMessages,
-            message => Assert.Equal(CatalogIntegrationEventTypes.PublicationActivated, message.EventType));
+            message => message.EventType == CatalogIntegrationEventTypes.ConfigurationActivated);
+        Assert.Equal(
+            CatalogIntegrationEventContracts.ConfigurationActivated,
+            configurationEvent.ContractIdentity);
+        Assert.Equal(
+            3,
+            repository.OutboxMessages.Count(
+                message => message.EventType == CatalogIntegrationEventTypes.PublicationActivated));
     }
 
     private static ProductConfigurationContract CreateConfiguration() =>
@@ -344,10 +357,13 @@ public sealed class CatalogEndToEndTests
             throw new InvalidOperationException("The media authority must not be called for a revision without media references.");
     }
 
-    private sealed class InMemoryCatalogRepository : ICatalogRepository
+    private sealed class InMemoryCatalogRepository :
+        ICatalogRepository,
+        ICatalogConfigurationActivationRepository
     {
         private readonly Dictionary<Guid, ProductConfiguration> _configurations = [];
         private readonly Dictionary<string, Guid> _activeConfigurations = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, long> _configurationActivationRevisions = new(StringComparer.Ordinal);
         private readonly Dictionary<Guid, Listing> _listings = [];
         private readonly Dictionary<Guid, ListingRevision> _revisions = [];
         private readonly Dictionary<Guid, CatalogPublication> _publications = [];
@@ -400,6 +416,7 @@ public sealed class CatalogEndToEndTests
             Guid expectedConfigurationRevisionId,
             Guid actorId,
             DateTimeOffset activatedAtUtc,
+            CatalogConfigurationActivationOutboxFactory outboxFactory,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -411,7 +428,15 @@ public sealed class CatalogEndToEndTests
                 throw new CatalogConflictException("Configuration pointer mismatch.");
             }
 
+            var previousConfigurationRevisionId = actual == Guid.Empty ? null : actual;
+            var aggregateRevision = _configurationActivationRevisions.TryGetValue(
+                catalogKey.Value,
+                out var currentAggregateRevision)
+                ? checked(currentAggregateRevision + 1)
+                : 1;
             _activeConfigurations[catalogKey.Value] = configurationRevisionId;
+            _configurationActivationRevisions[catalogKey.Value] = aggregateRevision;
+            OutboxMessages.Add(outboxFactory(previousConfigurationRevisionId, aggregateRevision));
             return Task.CompletedTask;
         }
 
