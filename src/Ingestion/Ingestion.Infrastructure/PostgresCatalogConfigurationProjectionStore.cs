@@ -68,7 +68,14 @@ public sealed class PostgresCatalogConfigurationProjectionStore(
                 transaction,
                 projection.CatalogKey,
                 cancellationToken);
-            ValidateNext(current, projection);
+            CatalogConfigurationProjectionSequencePolicy.RequireNext(
+                current is null
+                    ? null
+                    : new CatalogConfigurationProjectionCheckpoint(
+                        current.SiteKey,
+                        current.ConfigurationRevisionId,
+                        current.AggregateRevision),
+                projection);
             await InsertInboxAsync(
                 connection,
                 transaction,
@@ -258,11 +265,13 @@ public sealed class PostgresCatalogConfigurationProjectionStore(
         command.Parameters.Add(new NpgsqlParameter<Guid>(
             "configuration_revision_id",
             projection.ConfigurationRevisionId));
-        command.Parameters.Add(new NpgsqlParameter<Guid?>(
+        command.Parameters.Add(new NpgsqlParameter(
             "previous_configuration_revision_id",
             NpgsqlDbType.Uuid)
         {
-            TypedValue = projection.PreviousConfigurationRevisionId,
+            Value = projection.PreviousConfigurationRevisionId is { } previousConfigurationRevisionId
+                ? previousConfigurationRevisionId
+                : DBNull.Value,
         });
         command.Parameters.Add(new NpgsqlParameter<long>(
             "aggregate_revision",
@@ -410,75 +419,6 @@ public sealed class PostgresCatalogConfigurationProjectionStore(
                 projection);
         }
     }
-
-    private static void ValidateNext(
-        StoredProjection? current,
-        CatalogConfigurationProjection incoming)
-    {
-        if (current is null)
-        {
-            if (incoming.AggregateRevision != 1 || incoming.PreviousConfigurationRevisionId is not null)
-            {
-                throw Gap(incoming, expectedRevision: 1, actualRevision: null);
-            }
-
-            return;
-        }
-
-        if (!string.Equals(current.SiteKey, incoming.SiteKey, StringComparison.Ordinal))
-        {
-            throw Failure(
-                "INGESTION_CATALOG_CONFIGURATION_SITE_CHANGED",
-                409,
-                $"Catalog '{incoming.CatalogKey}' moved from site '{current.SiteKey}' to '{incoming.SiteKey}'.",
-                "Correct the Catalog owner identity; a catalog cannot change its site through an activation event.",
-                incoming);
-        }
-
-        var expectedRevision = checked(current.AggregateRevision + 1);
-        if (incoming.AggregateRevision > expectedRevision)
-        {
-            throw Gap(incoming, expectedRevision, current.AggregateRevision);
-        }
-
-        if (incoming.AggregateRevision < expectedRevision)
-        {
-            throw Failure(
-                "INGESTION_CATALOG_CONFIGURATION_REVISION_REUSED",
-                409,
-                $"Catalog configuration aggregate revision '{incoming.AggregateRevision}' was received under a new message identity after revision '{current.AggregateRevision}'.",
-                "Replay the exact previously accepted message or rebuild from the complete Catalog activation stream.",
-                incoming);
-        }
-
-        if (incoming.PreviousConfigurationRevisionId != current.ConfigurationRevisionId)
-        {
-            throw Failure(
-                "INGESTION_CATALOG_CONFIGURATION_POINTER_CHAIN_MISMATCH",
-                409,
-                "Catalog configuration activation does not continue from the current Ingestion projection pointer.",
-                "Replay the missing or corrected Catalog activation stream in aggregate-revision order.",
-                incoming);
-        }
-    }
-
-    private static IngestionApplicationException Gap(
-        CatalogConfigurationProjection incoming,
-        long expectedRevision,
-        long? actualRevision) =>
-        new(
-            "Ingestion.CatalogProjection",
-            "INGESTION_CATALOG_CONFIGURATION_REVISION_GAP",
-            503,
-            $"Catalog '{incoming.CatalogKey}' expected activation revision '{expectedRevision}' but received '{incoming.AggregateRevision}'.",
-            "Replay Catalog configuration activations beginning with the next expected aggregate revision.",
-            new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["catalogKey"] = incoming.CatalogKey,
-                ["expectedAggregateRevision"] = expectedRevision,
-                ["actualProjectedRevision"] = actualRevision,
-                ["receivedAggregateRevision"] = incoming.AggregateRevision,
-            });
 
     private static DateTimeOffset RequireUtc(DateTimeOffset value, string parameterName)
     {
