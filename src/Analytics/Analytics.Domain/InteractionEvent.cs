@@ -86,7 +86,7 @@ public sealed record PlacementContext(
 
         var normalizedScope = string.IsNullOrWhiteSpace(scopeKey)
             ? null
-            : AnalyticsDomainRules.RequireKey(scopeKey, nameof(scopeKey));
+            : AnalyticsDomainRules.RequireKey(scopeKey, nameof(scopeKey), maximumLength: 200);
         return new PlacementContext(exposureKind, placementId, normalizedScope);
     }
 }

@@ -64,7 +64,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.HasKey(row => row.Id);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
             entity.Property(row => row.PageContext).HasMaxLength(120);
-            entity.Property(row => row.PlacementScopeKey).HasMaxLength(100);
+            entity.Property(row => row.PlacementScopeKey).HasMaxLength(200);
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
             entity.HasOne(row => row.PublicReadReference)
                 .WithMany()
