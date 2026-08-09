@@ -262,7 +262,7 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
         if (current.PublicReadRevisionId != innerResult.PublicReadRevision.Id ||
             current.BaseProjectionId != innerResult.PublicReadRevision.BaseProjectionId ||
             current.SourcePublicationId != innerResult.PublicReadRevision.SourcePublicationId ||
-            current.ActivationRevision != inboxMessage.ActivationRevision ||
+            current.ActivationRevision <= state.PreviousPointerActivationRevision ||
             innerResult.PublicReadRevision.PromotionOverlayId != state.PromotionOverlayId ||
             innerResult.PublicReadRevision.SafetyOverlayId != state.SafetyOverlayId)
         {
@@ -273,6 +273,17 @@ public sealed partial class OverlayPreservingQueryProjectionStore : IQueryProjec
                 "Keep the catalog blocked and inspect Query publication ordering and overlay preservation.");
         }
 
+        var exposedAtUtc = RequireUtc(_clock.GetUtcNow());
+        await QueryPublicReadActivationOutboxWriter.InsertAsync(
+            connection,
+            transaction,
+            innerResult.PublicReadRevision,
+            current.ActivationRevision,
+            exposedAtUtc,
+            inboxMessage.CorrelationId,
+            inboxMessage.EventId,
+            _idFactory,
+            cancellationToken);
         await DeletePublicationBlockAsync(
             connection,
             transaction,
