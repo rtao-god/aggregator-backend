@@ -10,7 +10,6 @@ internal sealed class EfAnalyticsRepository(
     AnalyticsDbContext dbContext) :
     IAnalyticsEventStore,
     IPublicReadReferenceStore,
-    IPublicReadReferenceProjectionWriter,
     IListingMetricsAccessProjectionWriter,
     IDailyListingMetricsStore,
     IListingMetricsAuthorizer
@@ -77,14 +76,18 @@ internal sealed class EfAnalyticsRepository(
         }
     }
 
-    public async Task<PublicReadMembershipResult> ValidateMembershipAsync(
+    public async Task<PublicReadMembershipResult> ValidateInteractionAsync(
         Guid publicReadRevisionId,
         string catalogKey,
         Guid? listingId,
+        PlacementContext placementContext,
+        DateTimeOffset occurredAtUtc,
         CancellationToken cancellationToken)
     {
         AnalyticsDomainRules.RequireIdentifier(publicReadRevisionId, nameof(publicReadRevisionId));
         var normalizedCatalogKey = AnalyticsDomainRules.RequireKey(catalogKey, nameof(catalogKey));
+        ArgumentNullException.ThrowIfNull(placementContext);
+        AnalyticsDomainRules.RequireUtc(occurredAtUtc, nameof(occurredAtUtc));
         var reference = await dbContext.PublicReadReferences
             .AsNoTracking()
             .SingleOrDefaultAsync(
@@ -108,10 +111,16 @@ internal sealed class EfAnalyticsRepository(
 
         if (listingId is null)
         {
-            return new PublicReadMembershipResult(
-                PublicReadMembershipState.Known,
-                reference.CatalogKey,
-                ActualListingId: null);
+            return placementContext.ExposureKind == PlacementExposureKind.Sponsored
+                ? new PublicReadMembershipResult(
+                    PublicReadMembershipState.ListingRequired,
+                    reference.CatalogKey,
+                    ActualListingId: null,
+                    placementContext.PlacementId)
+                : new PublicReadMembershipResult(
+                    PublicReadMembershipState.Known,
+                    reference.CatalogKey,
+                    ActualListingId: null);
         }
 
         var listingExists = await dbContext.PublicListingReferences
@@ -121,68 +130,84 @@ internal sealed class EfAnalyticsRepository(
                     row.PublicReadRevisionId == publicReadRevisionId &&
                     row.ListingId == listingId.Value,
                 cancellationToken);
-        return listingExists
-            ? new PublicReadMembershipResult(
-                PublicReadMembershipState.Known,
-                reference.CatalogKey,
-                listingId)
-            : new PublicReadMembershipResult(
+        if (!listingExists)
+        {
+            return new PublicReadMembershipResult(
                 PublicReadMembershipState.ListingNotPublic,
                 reference.CatalogKey,
                 listingId);
-    }
-
-    public async Task ApplyAsync(
-        PublicReadReferenceProjection projection,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(projection);
-        var existing = await ReadPublicReadProjectionAsync(
-            projection.PublicReadRevisionId,
-            cancellationToken);
-        if (existing is not null)
-        {
-            EnsureSamePublicReadProjection(existing, projection);
-            return;
         }
 
-        dbContext.PublicReadReferences.Add(new AnalyticsPublicReadReferenceRow
+        if (placementContext.ExposureKind != PlacementExposureKind.Sponsored)
         {
-            PublicReadRevisionId = projection.PublicReadRevisionId,
-            CatalogKey = projection.CatalogKey,
-            BaseProjectionId = projection.BaseProjectionId,
-            PromotionOverlayId = projection.PromotionOverlayId,
-            SafetyOverlayId = projection.SafetyOverlayId,
-            SourcePublicationId = projection.SourcePublicationId,
-            PublicReadContentDigest = projection.PublicReadContentDigest,
-            MembershipDigest = projection.MembershipDigest,
-            ActivatedAtUtc = projection.ActivatedAtUtc,
-        });
-        foreach (var listingId in projection.PublicListingIds)
-        {
-            dbContext.PublicListingReferences.Add(new AnalyticsPublicListingReferenceRow
-            {
-                PublicReadRevisionId = projection.PublicReadRevisionId,
-                ListingId = listingId,
-            });
+            return new PublicReadMembershipResult(
+                PublicReadMembershipState.Known,
+                reference.CatalogKey,
+                listingId);
         }
 
-        try
+        var placementId = placementContext.PlacementId
+            ?? throw PersistenceFailure(
+                "ANALYTICS_SPONSORED_PLACEMENT_ID_REQUIRED",
+                "A sponsored Analytics placement context reached persistence without a placement ID.",
+                "Stop interaction intake and repair the Analytics domain-to-persistence call path.");
+        var placement = await dbContext.PublicSponsoredPlacementReferences
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                row =>
+                    row.PublicReadRevisionId == publicReadRevisionId &&
+                    row.PlacementId == placementId,
+                cancellationToken);
+        if (placement is null)
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            return new PublicReadMembershipResult(
+                PublicReadMembershipState.SponsoredPlacementNotPublic,
+                reference.CatalogKey,
+                listingId,
+                placementId);
         }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+
+        if (placement.ListingId != listingId.Value)
         {
-            dbContext.ChangeTracker.Clear();
-            var raced = await ReadPublicReadProjectionAsync(
-                projection.PublicReadRevisionId,
-                cancellationToken)
-                ?? throw PersistenceFailure(
-                    "ANALYTICS_PUBLIC_REFERENCE_ROW_MISSING",
-                    "A public-read projection identity collided, but its persisted projection cannot be read.",
-                    "Stop Query event consumption and restore the Analytics access projection.");
-            EnsureSamePublicReadProjection(raced, projection);
+            return new PublicReadMembershipResult(
+                PublicReadMembershipState.SponsoredPlacementListingMismatch,
+                reference.CatalogKey,
+                listingId,
+                placement.PlacementId,
+                placement.ListingId,
+                placement.ScopeKey);
         }
+
+        if (placementContext.ScopeKey is not null &&
+            !string.Equals(placement.ScopeKey, placementContext.ScopeKey, StringComparison.Ordinal))
+        {
+            return new PublicReadMembershipResult(
+                PublicReadMembershipState.SponsoredPlacementScopeMismatch,
+                reference.CatalogKey,
+                listingId,
+                placement.PlacementId,
+                placement.ListingId,
+                placement.ScopeKey);
+        }
+
+        if (occurredAtUtc < placement.StartsAtUtc || occurredAtUtc >= placement.HardExpiryAtUtc)
+        {
+            return new PublicReadMembershipResult(
+                PublicReadMembershipState.SponsoredPlacementInactive,
+                reference.CatalogKey,
+                listingId,
+                placement.PlacementId,
+                placement.ListingId,
+                placement.ScopeKey);
+        }
+
+        return new PublicReadMembershipResult(
+            PublicReadMembershipState.Known,
+            reference.CatalogKey,
+            listingId,
+            placement.PlacementId,
+            placement.ListingId,
+            placement.ScopeKey);
     }
 
     public async Task ApplyAsync(
@@ -351,50 +376,6 @@ internal sealed class EfAnalyticsRepository(
         }
     }
 
-    private async Task<PublicReadReferenceProjection?> ReadPublicReadProjectionAsync(
-        Guid publicReadRevisionId,
-        CancellationToken cancellationToken)
-    {
-        var row = await dbContext.PublicReadReferences
-            .AsNoTracking()
-            .SingleOrDefaultAsync(
-                candidate => candidate.PublicReadRevisionId == publicReadRevisionId,
-                cancellationToken);
-        if (row is null)
-        {
-            return null;
-        }
-
-        var listingIds = await dbContext.PublicListingReferences
-            .AsNoTracking()
-            .Where(candidate => candidate.PublicReadRevisionId == publicReadRevisionId)
-            .OrderBy(candidate => candidate.ListingId)
-            .Select(candidate => candidate.ListingId)
-            .ToArrayAsync(cancellationToken);
-        try
-        {
-            return PublicReadReferenceProjection.Create(
-                row.PublicReadRevisionId,
-                row.CatalogKey,
-                row.BaseProjectionId,
-                row.PromotionOverlayId,
-                row.SafetyOverlayId,
-                row.SourcePublicationId,
-                row.PublicReadContentDigest,
-                row.MembershipDigest,
-                row.ActivatedAtUtc,
-                listingIds);
-        }
-        catch (AnalyticsDomainException exception)
-        {
-            throw PersistenceCorruption(
-                "ANALYTICS_PUBLIC_REFERENCE_CORRUPT",
-                $"Persisted public-read reference '{row.PublicReadRevisionId:D}' violates its owner contract: {exception.Message}",
-                "Stop Query event consumption and rebuild the Analytics public-reference projection.",
-                exception);
-        }
-    }
-
     private static AnalyticsInteractionEventRow ToRow(InteractionEvent interactionEvent) =>
         new()
         {
@@ -470,44 +451,6 @@ internal sealed class EfAnalyticsRepository(
         value ?? throw new AnalyticsDomainException(
             "ANALYTICS_AGGREGATE_COUNT_REQUIRED",
             $"Complete persisted aggregate is missing '{valueName}'.");
-
-    private static void EnsureSamePublicReadProjection(
-        PublicReadReferenceProjection persisted,
-        PublicReadReferenceProjection incoming)
-    {
-        if (persisted == incoming ||
-            (persisted.PublicReadRevisionId == incoming.PublicReadRevisionId &&
-             string.Equals(persisted.CatalogKey, incoming.CatalogKey, StringComparison.Ordinal) &&
-             persisted.BaseProjectionId == incoming.BaseProjectionId &&
-             persisted.PromotionOverlayId == incoming.PromotionOverlayId &&
-             persisted.SafetyOverlayId == incoming.SafetyOverlayId &&
-             persisted.SourcePublicationId == incoming.SourcePublicationId &&
-             string.Equals(
-                 persisted.PublicReadContentDigest,
-                 incoming.PublicReadContentDigest,
-                 StringComparison.Ordinal) &&
-             string.Equals(persisted.MembershipDigest, incoming.MembershipDigest, StringComparison.Ordinal) &&
-             persisted.ActivatedAtUtc == incoming.ActivatedAtUtc &&
-             persisted.PublicListingIds.SequenceEqual(incoming.PublicListingIds)))
-        {
-            return;
-        }
-
-        throw new AnalyticsCommandException(
-            "Analytics.PublicReference",
-            "ANALYTICS_PUBLIC_REFERENCE_DIGEST_CONFLICT",
-            409,
-            "The public-read revision identity is already projected with different content or membership.",
-            "Stop Query event consumption and inspect the producer event and Analytics projection row.",
-            new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["publicReadRevisionId"] = incoming.PublicReadRevisionId,
-                ["persistedContentDigest"] = persisted.PublicReadContentDigest,
-                ["incomingContentDigest"] = incoming.PublicReadContentDigest,
-                ["persistedMembershipDigest"] = persisted.MembershipDigest,
-                ["incomingMembershipDigest"] = incoming.MembershipDigest,
-            });
-    }
 
     private static void EnsureSameAccessProjection(
         AnalyticsListingAccessProjectionRow persisted,

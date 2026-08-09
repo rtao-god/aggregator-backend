@@ -23,18 +23,19 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
         services.AddDbContext<AnalyticsDbContext>(options =>
             options.UseNpgsql(connectionString));
         services.AddScoped<EfAnalyticsRepository>();
-        services.AddScoped<IAnalyticsEventStore>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IPublicReadReferenceStore>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IPublicReadReferenceProjectionWriter>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IListingMetricsAccessProjectionWriter>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IDailyListingMetricsStore>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IListingMetricsAuthorizer>(services =>
-            services.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<IAnalyticsEventStore>(provider =>
+            provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<IPublicReadReferenceStore>(provider =>
+            provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<
+            IPublicReadActivationProjectionStore,
+            EfPublicReadActivationProjectionStore>();
+        services.AddScoped<IListingMetricsAccessProjectionWriter>(provider =>
+            provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<IDailyListingMetricsStore>(provider =>
+            provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<IListingMetricsAuthorizer>(provider =>
+            provider.GetRequiredService<EfAnalyticsRepository>());
         services.AddScoped<IAnalyticsAggregateWriter, EfAnalyticsAggregateWriter>();
         services.AddScoped<AnalyticsReadinessProbe>();
         services.AddSingleton<IAnalyticsIdSource, UuidV7AnalyticsIdSource>();
