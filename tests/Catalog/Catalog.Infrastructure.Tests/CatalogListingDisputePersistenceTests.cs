@@ -1,4 +1,5 @@
 using Aggregator.Catalog.Application;
+using Aggregator.Catalog.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
