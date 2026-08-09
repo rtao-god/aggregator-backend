@@ -19,13 +19,18 @@ public sealed class CatalogListingDisputePersistenceTests
         Assert.NotNull(entity);
         Assert.Equal("listing_dispute", entity.GetTableName());
         Assert.Equal("catalog", entity.GetSchema());
-        Assert.True(entity.FindProperty(nameof(CatalogListingDisputeRow.AggregateRevision))?.IsConcurrencyToken);
-        Assert.Equal(
-            2_000,
-            entity.FindProperty(nameof(CatalogListingDisputeRow.OpenReason))?.GetMaxLength());
-        Assert.Equal(
-            2_000,
-            entity.FindProperty(nameof(CatalogListingDisputeRow.ResolutionReason))?.GetMaxLength());
+        var aggregateRevision = entity.FindProperty(
+            nameof(CatalogListingDisputeRow.AggregateRevision));
+        var openReason = entity.FindProperty(
+            nameof(CatalogListingDisputeRow.OpenReason));
+        var resolutionReason = entity.FindProperty(
+            nameof(CatalogListingDisputeRow.ResolutionReason));
+        Assert.NotNull(aggregateRevision);
+        Assert.NotNull(openReason);
+        Assert.NotNull(resolutionReason);
+        Assert.True(aggregateRevision.IsConcurrencyToken);
+        Assert.Equal(2_000, openReason.GetMaxLength());
+        Assert.Equal(2_000, resolutionReason.GetMaxLength());
         var activeIndex = Assert.Single(entity.GetIndexes().Where(index =>
             index.IsUnique &&
             index.Properties.Count == 1 &&
