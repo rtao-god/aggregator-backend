@@ -52,7 +52,15 @@ public sealed class IngestionCatalogCommandClientTests
         var sentCommand = JsonSerializer.Deserialize<CatalogIngestionUpsertDraftCommand>(
             catalogRequest.Body,
             WireOptions);
-        Assert.Equal(command, sentCommand);
+        Assert.NotNull(sentCommand);
+        Assert.Equal(command.CommandId, sentCommand.CommandId);
+        Assert.Equal(command.IngestionBatchId, sentCommand.IngestionBatchId);
+        Assert.Equal(command.IngestionItemKey, sentCommand.IngestionItemKey);
+        Assert.Equal(command.CommandDigest, sentCommand.CommandDigest);
+        Assert.Equal(command.CorrelationId, sentCommand.CorrelationId);
+        var sentField = Assert.Single(sentCommand.Fields);
+        var expectedField = Assert.Single(command.Fields);
+        Assert.Equal(expectedField, sentField);
     }
 
     [Fact]
@@ -80,7 +88,7 @@ public sealed class IngestionCatalogCommandClientTests
     public async Task RejectsUnmappedCatalogOutcomeMember()
     {
         var tokenHandler = new CapturingHandler(_ => TokenResponse());
-        var document = JsonSerializer.SerializeToNode(CreateOutcome(), WireOptions)!;
+        var document = JsonSerializer.SerializeToNode(CreateOutcome(), WireOptions)!.AsObject();
         document["unexpected"] = true;
         var commandHandler = new CapturingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
