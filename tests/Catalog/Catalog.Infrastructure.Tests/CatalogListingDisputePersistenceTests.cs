@@ -79,6 +79,32 @@ public sealed class CatalogListingDisputePersistenceTests
         Assert.Contains("CatalogPublicationActivationBlockReason.ListingDispute", publications, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ResolveLocksListingBeforeDisputeState()
+    {
+        var source = ReadRepositoryFile(
+            "src/Catalog/Catalog.Infrastructure/EfCatalogRepository.ListingDisputes.cs");
+        var saveStart = source.IndexOf(
+            "public async Task<ListingDispute> SaveAsync(",
+            StringComparison.Ordinal);
+        var listingLock = source.IndexOf(
+            "var listingRow = await RequireLockedListingAsync(",
+            saveStart,
+            StringComparison.Ordinal);
+        var disputeLock = source.IndexOf(
+            "FROM catalog.listing_dispute",
+            saveStart,
+            StringComparison.Ordinal);
+
+        Assert.True(saveStart >= 0);
+        Assert.True(listingLock > saveStart);
+        Assert.True(disputeLock > listingLock);
+        Assert.Contains(
+            "Every dispute/publication path locks the listing before its dispute state.",
+            source,
+            StringComparison.Ordinal);
+    }
+
     private static int Count(string value, string marker)
     {
         var count = 0;
