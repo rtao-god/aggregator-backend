@@ -24,7 +24,9 @@ public static class IngestionInfrastructureServiceCollectionExtensions
             options.UseNpgsql(connectionString));
         services.AddScoped<IIngestionBatchRepository, EfIngestionRepository>();
         services.AddScoped<IIngestionProducerRegistry, EfIngestionProducerRegistry>();
-        services.AddScoped<ICatalogIngestionReferenceReader, EfCatalogIngestionReferenceReader>();
+        services.AddScoped<
+            ICatalogIngestionReferenceReader,
+            PostgresCatalogIngestionReferenceReader>();
         services.AddScoped<IngestionReadinessProbe>();
         services.AddSingleton<IIngestionClock, SystemIngestionClock>();
         services.AddSingleton<IIngestionIdSource, UuidV7IngestionIdSource>();
