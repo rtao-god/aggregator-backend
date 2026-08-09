@@ -6,6 +6,8 @@ public static class CatalogIntegrationEventTypes
     public const string PublicationActivated = "catalog.publication.activated";
     public const string ListingClaimVerified = "catalog.listing-claim.verified";
     public const string ListingClaimRevoked = "catalog.listing-claim.revoked";
+    public const string ListingPromotionEligibilityChanged =
+        "catalog.listing-promotion-eligibility.changed";
     public const string PublicVisibilitySuppressionChanged =
         "catalog.public-visibility-suppression.changed";
 }
@@ -16,6 +18,8 @@ public static class CatalogIntegrationEventContracts
     public const string PublicationActivated = "aggregator.catalog.publication-activated@2";
     public const string ListingClaimVerified = "aggregator.catalog.listing-claim-verified@1";
     public const string ListingClaimRevoked = "aggregator.catalog.listing-claim-revoked@1";
+    public const string ListingPromotionEligibilityChanged =
+        "aggregator.catalog.listing-promotion-eligibility-changed@1";
     public const string PublicVisibilitySuppressionChanged =
         "aggregator.catalog.public-visibility-suppression-changed@1";
 }
@@ -69,6 +73,35 @@ public sealed record CatalogListingClaimRevoked(
     Guid ClaimId,
     Guid ListingId,
     Guid ActorId,
+    DateTimeOffset OccurredAtUtc);
+
+/// <summary>Stable verified contact capability keys published by the Catalog owner.</summary>
+public static class CatalogPromotionContactCapabilities
+{
+    public const string Website = "website";
+    public const string Email = "email";
+    public const string Phone = "phone";
+    public const string WhatsApp = "whatsapp";
+    public const string BookingReference = "booking-reference";
+    public const string MapReference = "map-reference";
+}
+
+/// <summary>
+/// Minimal Catalog-owned facts used by Promotion to evaluate one listing without reading Catalog storage.
+/// </summary>
+public sealed record CatalogListingPromotionEligibilityChanged(
+    Guid EventId,
+    string CatalogKey,
+    Guid ListingId,
+    Guid? PublishedListingRevisionId,
+    bool IsPublished,
+    bool IsArchived,
+    bool HasBlockingDispute,
+    bool HasVerifiedContact,
+    IReadOnlyList<string> VerifiedContactCapabilities,
+    IReadOnlyList<string> CategoryKeys,
+    string? DistrictKey,
+    long EligibilityRevision,
     DateTimeOffset OccurredAtUtc);
 
 /// <summary>
