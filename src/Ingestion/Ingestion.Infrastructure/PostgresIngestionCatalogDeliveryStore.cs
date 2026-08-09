@@ -1,6 +1,7 @@
 using System.Data;
 using Aggregator.Catalog.Contracts;
 using Aggregator.Ingestion.Application;
+using Aggregator.Ingestion.Domain;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -36,18 +37,25 @@ public sealed partial class PostgresIngestionCatalogDeliveryStore : IIngestionCa
         var candidates = new List<DeliveryCandidate>(limit);
         await using (var command = new NpgsqlCommand(
             """
-            SELECT delivery_id, batch_id, item_key, command_type, command_document,
-                   command_digest, attempt_count
-            FROM processing.catalog_delivery
-            WHERE (state = 1 AND (next_attempt_at_utc IS NULL OR next_attempt_at_utc <= @now))
-               OR (state = 2 AND lease_expires_at_utc <= @now)
-            ORDER BY created_at_utc, delivery_id
-            FOR UPDATE SKIP LOCKED
+            SELECT d.delivery_id, d.batch_id, d.item_key, d.command_type, d.command_document,
+                   d.command_digest, d.attempt_count
+            FROM processing.catalog_delivery d
+            INNER JOIN batches.import_batch b ON b.id = d.batch_id
+            WHERE b.state = @committing
+              AND (
+                  (d.state = 1 AND (d.next_attempt_at_utc IS NULL OR d.next_attempt_at_utc <= @now))
+                  OR (d.state = 2 AND d.lease_expires_at_utc <= @now)
+              )
+            ORDER BY d.created_at_utc, d.delivery_id
+            FOR UPDATE OF d SKIP LOCKED
             LIMIT @limit;
             """,
             connection,
             dbTransaction))
         {
+            command.Parameters.Add(new NpgsqlParameter<int>(
+                "committing",
+                (int)ImportBatchState.Committing));
             command.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("now", leasedAtUtc));
             command.Parameters.Add(new NpgsqlParameter<int>("limit", limit));
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -67,7 +75,23 @@ public sealed partial class PostgresIngestionCatalogDeliveryStore : IIngestionCa
         var leases = new List<IngestionCatalogDeliveryLease>(candidates.Count);
         foreach (var candidate in candidates)
         {
-            var catalogCommand = VerifyCommand(candidate);
+            CatalogIngestionUpsertDraftCommand catalogCommand;
+            try
+            {
+                catalogCommand = VerifyCommand(candidate);
+            }
+            catch (IngestionApplicationException exception)
+            {
+                await RejectCorruptDeliveryAsync(
+                    connection,
+                    dbTransaction,
+                    candidate,
+                    exception,
+                    leasedAtUtc,
+                    cancellationToken);
+                continue;
+            }
+
             var leaseToken = Guid.CreateVersion7();
             await using var update = new NpgsqlCommand(
                 """

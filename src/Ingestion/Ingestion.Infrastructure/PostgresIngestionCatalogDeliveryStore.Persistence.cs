@@ -9,6 +9,58 @@ namespace Aggregator.Ingestion.Infrastructure;
 
 public sealed partial class PostgresIngestionCatalogDeliveryStore
 {
+    private async Task RejectCorruptDeliveryAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        DeliveryCandidate candidate,
+        IngestionApplicationException failure,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var failureCode = failure.Code.Length <= 200
+            ? failure.Code
+            : "INGESTION_DELIVERY_PERSISTED_COMMAND_INVALID";
+        var failureDetail = $"{failure.Owner}: {failure.Message} Required action: {failure.RequiredAction}";
+        failureDetail = failureDetail[..Math.Min(failureDetail.Length, 4_000)];
+        await using var update = new NpgsqlCommand(
+            """
+            UPDATE processing.catalog_delivery
+            SET state = 4,
+                worker_identity = NULL,
+                lease_token = NULL,
+                lease_expires_at_utc = NULL,
+                next_attempt_at_utc = NULL,
+                catalog_listing_id = NULL,
+                catalog_listing_revision_id = NULL,
+                failure_code = @failure_code,
+                failure_detail = @failure_detail,
+                last_changed_at_utc = @now
+            WHERE delivery_id = @delivery_id
+              AND state IN (1, 2);
+            """,
+            connection,
+            transaction);
+        update.Parameters.Add(new NpgsqlParameter<string>("failure_code", failureCode));
+        update.Parameters.Add(new NpgsqlParameter<string>("failure_detail", failureDetail));
+        update.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("now", failedAtUtc));
+        update.Parameters.Add(new NpgsqlParameter<Guid>("delivery_id", candidate.DeliveryId));
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw Failure(
+                "INGESTION_DELIVERY_CORRUPTION_WRITE_FAILED",
+                500,
+                $"Corrupt Catalog delivery '{candidate.DeliveryId:D}' could not be retained as terminal failure.",
+                "Inspect the locked Ingestion delivery row before resuming the worker.");
+        }
+
+        await FinalizeBatchIfTerminalAsync(
+            connection,
+            transaction,
+            candidate.BatchId,
+            failedAtUtc,
+            cancellationToken);
+    }
+
     private async Task<DeliveryState> ReadForUpdateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
