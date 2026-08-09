@@ -134,6 +134,7 @@ public sealed class CatalogPublicationRollbackTests
             Guid expectedCurrentPublicationId,
             CurrentPublicationPointer publicationPointer,
             CatalogPublicationActivationOutboxFactory outboxFactory,
+            IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -194,7 +195,10 @@ public sealed class CatalogPublicationRollbackTests
             CancellationToken cancellationToken) =>
             Unsupported();
 
-        public Task ArchiveListingAsync(Listing listing, CancellationToken cancellationToken) =>
+        public Task ArchiveListingAsync(
+            Listing listing,
+            CatalogListingPromotionEligibilityOutboxRequest eligibilityOutboxRequest,
+            CancellationToken cancellationToken) =>
             Unsupported();
 
         public Task<IReadOnlyList<PublicationSelectionState>> GetPublicationSelectionsAsync(
@@ -213,6 +217,7 @@ public sealed class CatalogPublicationRollbackTests
             Guid? expectedCurrentPublicationId,
             IReadOnlyList<Listing> listings,
             CatalogPublicationActivationOutboxFactory outboxFactory,
+            IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
             CancellationToken cancellationToken) =>
             Unsupported();
 
