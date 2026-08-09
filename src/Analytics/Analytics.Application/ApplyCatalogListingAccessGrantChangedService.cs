@@ -32,10 +32,9 @@ public sealed class ApplyCatalogListingAccessGrantChangedService(
                 accessEvent,
                 permissions,
                 message.PayloadDigest);
-            var projectionDigest = AnalyticsCanonicalJson.ComputeDigest(projection);
             var change = new ListingMetricsAccessProjectionChange(
                 projection,
-                projectionDigest,
+                projection.ProjectionDigest,
                 message.MessageId,
                 message.RoutingKey.Trim(),
                 message.ContractIdentity.Trim(),

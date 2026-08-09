@@ -22,6 +22,8 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
 
         services.AddDbContext<AnalyticsDbContext>(options =>
             options.UseNpgsql(connectionString));
+        services.AddDbContext<AnalyticsAccessProjectionDbContext>(options =>
+            options.UseNpgsql(connectionString));
         services.AddScoped<EfAnalyticsRepository>();
         services.AddScoped<IAnalyticsEventStore>(provider =>
             provider.GetRequiredService<EfAnalyticsRepository>());
@@ -30,11 +32,11 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
         services.AddScoped<
             IPublicReadActivationProjectionStore,
             EfPublicReadActivationProjectionStore>();
-        services.AddScoped<IListingMetricsAccessProjectionWriter>(provider =>
-            provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<
+            IListingMetricsAccessProjectionStore,
+            EfListingMetricsAccessProjectionStore>();
+        services.AddScoped<IListingMetricsAuthorizer, EfListingMetricsAuthorizer>();
         services.AddScoped<IDailyListingMetricsStore>(provider =>
-            provider.GetRequiredService<EfAnalyticsRepository>());
-        services.AddScoped<IListingMetricsAuthorizer>(provider =>
             provider.GetRequiredService<EfAnalyticsRepository>());
         services.AddScoped<IAnalyticsAggregateWriter, EfAnalyticsAggregateWriter>();
         services.AddScoped<AnalyticsReadinessProbe>();

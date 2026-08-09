@@ -26,7 +26,8 @@ public sealed record ListingMetricsAccessProjection
         DateTimeOffset? revokedAtUtc,
         long sourceAggregateRevision,
         string sourcePayloadDigest,
-        DateTimeOffset changedAtUtc)
+        DateTimeOffset changedAtUtc,
+        string projectionDigest)
     {
         GrantId = grantId;
         ListingId = listingId;
@@ -38,6 +39,7 @@ public sealed record ListingMetricsAccessProjection
         SourceAggregateRevision = sourceAggregateRevision;
         SourcePayloadDigest = sourcePayloadDigest;
         ChangedAtUtc = changedAtUtc;
+        ProjectionDigest = projectionDigest;
     }
 
     public Guid GrantId { get; }
@@ -59,6 +61,8 @@ public sealed record ListingMetricsAccessProjection
     public string SourcePayloadDigest { get; }
 
     public DateTimeOffset ChangedAtUtc { get; }
+
+    public string ProjectionDigest { get; }
 
     public static ListingMetricsAccessProjection Create(
         Guid grantId,
@@ -123,6 +127,19 @@ public sealed record ListingMetricsAccessProjection
                 "Listing access change cannot precede grant creation.");
         }
 
+        var projectionDigest = AnalyticsCanonicalJson.ComputeDigest(new
+        {
+            GrantId = grantId,
+            ListingId = listingId,
+            ActorId = actorId,
+            CanViewAnalytics = canViewAnalytics,
+            GrantedAtUtc = grantedAtUtc,
+            ExpiresAtUtc = expiresAtUtc,
+            RevokedAtUtc = revokedAtUtc,
+            SourceAggregateRevision = sourceAggregateRevision,
+            SourcePayloadDigest = normalizedDigest,
+            ChangedAtUtc = changedAtUtc,
+        });
         return new ListingMetricsAccessProjection(
             grantId,
             listingId,
@@ -133,7 +150,8 @@ public sealed record ListingMetricsAccessProjection
             revokedAtUtc,
             sourceAggregateRevision,
             normalizedDigest,
-            changedAtUtc);
+            changedAtUtc,
+            projectionDigest);
     }
 }
 
