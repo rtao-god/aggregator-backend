@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Xunit;
 
 namespace Architecture.Tests;
@@ -5,54 +6,75 @@ namespace Architecture.Tests;
 public sealed class PromotionEligibilityReconciliationReachabilityTests
 {
     [Fact]
-    public void ConsumerReconcilesAfterInboxProjectionBeforeAcknowledgement()
+    public void PromotionConsumesOnlyTheProducerOwnedCatalogContract()
     {
         var repository = RepositoryModel.Load();
-        var application = Read(
+        var applicationReferences = ReadProjectReferences(
             repository,
-            "src/Promotion/Promotion.Application/CatalogListingPromotionEligibilityProjection.cs");
+            "src/Promotion/Promotion.Application/Promotion.Application.csproj");
+        var workerReferences = ReadProjectReferences(
+            repository,
+            "src/Promotion/Promotion.Worker/Promotion.Worker.csproj");
+
+        Assert.Contains(
+            "../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
+            applicationReferences);
+        Assert.Contains(
+            "../../Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
+            workerReferences);
+        Assert.DoesNotContain(
+            applicationReferences.Concat(workerReferences),
+            reference =>
+                reference.Contains("Catalog.Domain", StringComparison.OrdinalIgnoreCase) ||
+                reference.Contains("Catalog.Application", StringComparison.OrdinalIgnoreCase) ||
+                reference.Contains("Catalog.Infrastructure", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void WorkerRoutesOneCatalogEventThroughProjectionAndReconciliation()
+    {
+        var repository = RepositoryModel.Load();
+        var program = Read(repository, "src/Promotion/Promotion.Worker/Program.cs");
         var worker = Read(
             repository,
             "src/Promotion/Promotion.Worker/PromotionEligibilityProjectionWorker.cs");
+        var application = Read(
+            repository,
+            "src/Promotion/Promotion.Application/CatalogListingPromotionEligibilityProjection.cs");
+        var registration = Read(
+            repository,
+            "src/Promotion/Promotion.Infrastructure/PromotionInfrastructureServiceCollectionExtensions.cs");
 
-        var projectionWrite = application.IndexOf(
-            "var projectionResult = await store.ApplyAsync(",
-            StringComparison.Ordinal);
-        var reconciliation = application.IndexOf(
-            "placementReconciler.PauseIneligiblePlacementsAsync(",
-            StringComparison.Ordinal);
-        var returnResult = application.IndexOf(
-            "return projectionResult;",
-            StringComparison.Ordinal);
-        Assert.True(
-            projectionWrite >= 0 &&
-            reconciliation > projectionWrite &&
-            returnResult > reconciliation,
-            "Promotion must persist/replay the exact Catalog projection before reconciling placements.");
+        Assert.Contains("AddPromotionApplication()", program, StringComparison.Ordinal);
         Assert.Contains(
-            "PromotionCommandContext.Continue(",
-            application,
+            "AddPromotionInfrastructure(builder.Configuration)",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AddHostedService<PromotionEligibilityProjectionWorker>()",
+            program,
             StringComparison.Ordinal);
         Assert.Contains(
             "PromotionActor.Create(_ownerOptions.SystemActorId)",
             worker,
             StringComparison.Ordinal);
+        Assert.Contains("store.ApplyAsync(", application, StringComparison.Ordinal);
         Assert.Contains(
-            "await service.ApplyAsync(",
-            worker,
+            "placementReconciler.PauseIneligiblePlacementsAsync(",
+            application,
             StringComparison.Ordinal);
         Assert.Contains(
-            "BasicAckAsync(",
-            worker,
+            "PromotionCommandContext.Continue(",
+            application,
             StringComparison.Ordinal);
-        Assert.True(
-            worker.IndexOf("await service.ApplyAsync(", StringComparison.Ordinal) <
-            worker.IndexOf("BasicAckAsync(", StringComparison.Ordinal),
-            "Promotion must acknowledge Catalog eligibility only after projection and placement reconciliation.");
+        Assert.Contains(
+            "AddScoped<IPromotionEligibilityPlacementReconciler>",
+            registration,
+            StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ReconcilerPausesWithoutInventingAutomaticResume()
+    public void ReconciliationIsFailClosedAndCannotAutoResume()
     {
         var repository = RepositoryModel.Load();
         var reconciler = Read(
@@ -61,63 +83,66 @@ public sealed class PromotionEligibilityReconciliationReachabilityTests
         var domain = Read(
             repository,
             "src/Promotion/Promotion.Domain/SponsoredPlacement.cs");
-        var composition = Read(
-            repository,
-            "src/Promotion/Promotion.Infrastructure/PromotionInfrastructureServiceCollectionExtensions.cs");
 
         Assert.Contains("IsolationLevel.Serializable", reconciler, StringComparison.Ordinal);
-        Assert.Contains("PauseWhenCatalogIneligible(", reconciler, StringComparison.Ordinal);
+        Assert.Contains(
+            "pg_advisory_xact_lock(hashtextextended",
+            reconciler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "currentEligibility.SourceRevision > eligibility.SourceRevision",
+            reconciler,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "currentEligibility.SourceRevision < eligibility.SourceRevision",
+            reconciler,
+            StringComparison.Ordinal);
+        Assert.Contains("EnsureCurrentEligibilityMatches", reconciler, StringComparison.Ordinal);
+        Assert.Contains("PauseWhenCatalogIneligible", reconciler, StringComparison.Ordinal);
         Assert.Contains("PlacementCapacity.RemoveRange", reconciler, StringComparison.Ordinal);
-        Assert.Contains("PromotionOutboxMessageFactory.Create(", reconciler, StringComparison.Ordinal);
-        Assert.Contains("PromotionIntegrationEventTypes.PlacementChanged", reconciler, StringComparison.Ordinal);
-        Assert.Contains("PROMOTION_ELIGIBILITY_RECONCILIATION_CONFLICT", reconciler, StringComparison.Ordinal);
-        Assert.Contains("PROMOTION_ELIGIBILITY_RECONCILIATION_SERIALIZATION_CONFLICT", reconciler, StringComparison.Ordinal);
+        Assert.Contains("PromotionOutboxMessageFactory.Create", reconciler, StringComparison.Ordinal);
         Assert.DoesNotContain(".Resume(", reconciler, StringComparison.Ordinal);
         Assert.Contains("public bool PauseWhenCatalogIneligible(", domain, StringComparison.Ordinal);
         Assert.Contains(
-            "services.AddScoped<IPromotionEligibilityPlacementReconciler>",
-            composition,
+            "State is not (SponsoredPlacementState.Scheduled or SponsoredPlacementState.Active)",
+            domain,
             StringComparison.Ordinal);
     }
 
     [Fact]
-    public void PromotionDependsOnlyOnProducerOwnedCatalogContracts()
+    public void PromotionWorkerHasNoCatalogDatabaseCredential()
     {
         var repository = RepositoryModel.Load();
-        var applicationProject = Full(
-            repository,
-            "src/Promotion/Promotion.Application/Promotion.Application.csproj");
-        var workerProject = Full(
-            repository,
-            "src/Promotion/Promotion.Worker/Promotion.Worker.csproj");
-        var applicationTargets = repository.References
-            .Where(edge => string.Equals(edge.Source, applicationProject, StringComparison.OrdinalIgnoreCase))
-            .Select(edge => repository.Relative(edge.Target))
-            .ToArray();
-        var workerTargets = repository.References
-            .Where(edge => string.Equals(edge.Source, workerProject, StringComparison.OrdinalIgnoreCase))
-            .Select(edge => repository.Relative(edge.Target))
-            .ToArray();
+        var compose = Read(repository, "compose.yaml");
+        var start = compose.IndexOf("  promotion-worker:", StringComparison.Ordinal);
+        var end = compose.IndexOf("\n  ", start + 3, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start, "Promotion worker service block was not found.");
+        var block = compose[start..end];
 
-        Assert.Contains(
-            "src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
-            applicationTargets);
-        Assert.Contains(
-            "src/Catalog/Catalog.Contracts/Catalog.Contracts.csproj",
-            workerTargets);
-        Assert.DoesNotContain(
-            applicationTargets.Concat(workerTargets),
-            target =>
-                target.Contains("Catalog.Application", StringComparison.OrdinalIgnoreCase) ||
-                target.Contains("Catalog.Domain", StringComparison.OrdinalIgnoreCase) ||
-                target.Contains("Catalog.Infrastructure", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("ConnectionStrings__Promotion:", block, StringComparison.Ordinal);
+        Assert.Contains("Messaging__BrokerUri:", block, StringComparison.Ordinal);
+        Assert.Contains("PromotionWorker__SystemActorId:", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("ConnectionStrings__Catalog", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("catalog_db", block, StringComparison.Ordinal);
+    }
+
+    private static HashSet<string> ReadProjectReferences(
+        RepositoryModel repository,
+        string relativePath)
+    {
+        var project = XDocument.Load(Path.Combine(
+            repository.Root,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        return project
+            .Descendants("ProjectReference")
+            .Select(element => element.Attribute("Include")?.Value?.Replace('\\', '/'))
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static string Read(RepositoryModel repository, string relativePath) =>
-        File.ReadAllText(Full(repository, relativePath));
-
-    private static string Full(RepositoryModel repository, string relativePath) =>
-        Path.GetFullPath(Path.Combine(
+        File.ReadAllText(Path.Combine(
             repository.Root,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
 }
