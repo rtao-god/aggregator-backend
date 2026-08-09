@@ -166,12 +166,15 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             }
         }
 
-        public Task<PublicReadMembershipResult> ValidateMembershipAsync(
+        public Task<PublicReadMembershipResult> ValidateInteractionAsync(
             Guid publicReadRevisionId,
             string catalogKey,
             Guid? listingId,
+            PlacementContext placementContext,
+            DateTimeOffset occurredAtUtc,
             CancellationToken cancellationToken)
         {
+            ArgumentNullException.ThrowIfNull(placementContext);
             cancellationToken.ThrowIfCancellationRequested();
             PublicReadMembershipResult result;
             if (publicReadRevisionId != PublicReadRevisionId)
@@ -195,12 +198,24 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
                     CatalogKey,
                     requestedListingId);
             }
+            else if (placementContext.ExposureKind == PlacementExposureKind.Sponsored &&
+                placementContext.PlacementId is null)
+            {
+                result = new PublicReadMembershipResult(
+                    PublicReadMembershipState.SponsoredPlacementNotPublic,
+                    CatalogKey,
+                    listingId);
+            }
             else
             {
+                _ = occurredAtUtc;
                 result = new PublicReadMembershipResult(
                     PublicReadMembershipState.Known,
                     CatalogKey,
-                    listingId);
+                    listingId,
+                    placementContext.PlacementId,
+                    listingId,
+                    placementContext.ScopeKey);
             }
 
             return Task.FromResult(result);
