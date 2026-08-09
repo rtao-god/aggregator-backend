@@ -14,6 +14,7 @@ public static class IngestionWorkerServiceCollectionExtensions
         services.AddSingleton(options);
         services.AddHostedService<IngestionValidationWorker>();
         services.AddHostedService<IngestionCatalogDeliveryWorker>();
+        services.AddHostedService<IngestionCatalogConfigurationProjectionWorker>();
         return services;
     }
 }

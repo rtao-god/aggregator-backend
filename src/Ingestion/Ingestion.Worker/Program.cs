@@ -18,9 +18,17 @@ public static class Program
         ArgumentNullException.ThrowIfNull(args);
         var builder = Host.CreateApplicationBuilder(args);
         var options = IngestionWorkerOptions.FromConfiguration(builder.Configuration);
+        var projectionOptions = builder.Configuration
+            .GetSection(IngestionCatalogConfigurationProjectionWorkerOptions.SectionName)
+            .Get<IngestionCatalogConfigurationProjectionWorkerOptions>()
+            ?? throw new InvalidOperationException(
+                $"Configuration section '{IngestionCatalogConfigurationProjectionWorkerOptions.SectionName}' is required.");
+        projectionOptions.Validate();
+        builder.Services.AddSingleton(projectionOptions);
         builder.Services
             .AddIngestionApplication()
             .AddIngestionInfrastructure(builder.Configuration)
+            .AddIngestionCatalogProjectionInfrastructure()
             .AddIngestionObjectStorage(builder.Configuration)
             .AddIngestionProcessingInfrastructure(builder.Configuration)
             .AddIngestionCatalogDeliveryInfrastructure(builder.Configuration)
