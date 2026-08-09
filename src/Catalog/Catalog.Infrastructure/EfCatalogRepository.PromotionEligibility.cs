@@ -20,6 +20,7 @@ public sealed partial class EfCatalogRepository
         ArgumentNullException.ThrowIfNull(publication);
         ArgumentNullException.ThrowIfNull(listings);
         ArgumentNullException.ThrowIfNull(outboxFactory);
+        ValidateListingMutations(listings, publication.CatalogKey);
         ValidateEligibilityRequests(eligibilityOutboxRequests, publication.CatalogKey);
         try
         {
@@ -75,6 +76,7 @@ public sealed partial class EfCatalogRepository
         }
 
         var publication = preparedPublication.Publication;
+        ValidateListingMutations(preparedPublication.Listings, publication.CatalogKey);
         ValidateEligibilityRequests(
             preparedPublication.EligibilityOutboxRequests,
             publication.CatalogKey);
@@ -125,13 +127,16 @@ public sealed partial class EfCatalogRepository
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
+        IReadOnlyList<Listing> listings,
         CatalogPublicationActivationOutboxFactory outboxFactory,
         IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(targetPublication);
         ArgumentNullException.ThrowIfNull(publicationPointer);
+        ArgumentNullException.ThrowIfNull(listings);
         ArgumentNullException.ThrowIfNull(outboxFactory);
+        ValidateListingMutations(listings, targetPublication.CatalogKey);
         ValidateEligibilityRequests(
             eligibilityOutboxRequests,
             targetPublication.CatalogKey);
@@ -167,6 +172,14 @@ public sealed partial class EfCatalogRepository
                     innerCancellationToken);
                 var outboxMessage = outboxFactory(activationRevision);
 
+                foreach (var listing in listings)
+                {
+                    var listingRow = await RequireTrackedListingAsync(
+                        listing.Id,
+                        innerCancellationToken);
+                    ApplyListingMutation(listingRow, listing);
+                }
+
                 current.PublicationId = publicationPointer.PublicationId;
                 current.PublicationSequence = publicationPointer.PublicationSequence;
                 current.ActivatedAtUtc = publicationPointer.ActivatedAtUtc;
@@ -200,6 +213,7 @@ public sealed partial class EfCatalogRepository
         {
             ArgumentNullException.ThrowIfNull(listing);
             ArgumentNullException.ThrowIfNull(eligibilityOutboxRequest);
+            ValidateListingMutations(new[] { listing }, listing.CatalogKey);
             ValidateEligibilityRequests(
                 new[] { eligibilityOutboxRequest },
                 listing.CatalogKey);
@@ -219,6 +233,31 @@ public sealed partial class EfCatalogRepository
                 innerCancellationToken);
             await _dbContext.SaveChangesAsync(innerCancellationToken);
         }, cancellationToken);
+
+    private static void ValidateListingMutations(
+        IReadOnlyList<Listing> listings,
+        CatalogKey expectedCatalogKey)
+    {
+        ArgumentNullException.ThrowIfNull(listings);
+        ArgumentNullException.ThrowIfNull(expectedCatalogKey);
+        if (listings.Select(listing => listing.Id).Distinct().Count() != listings.Count)
+        {
+            throw new CatalogContractException(
+                "catalog.publication_listing_mutation_duplicate",
+                "A Catalog publication transaction cannot mutate the same listing twice.");
+        }
+
+        foreach (var listing in listings)
+        {
+            ArgumentNullException.ThrowIfNull(listing);
+            if (listing.CatalogKey != expectedCatalogKey)
+            {
+                throw new CatalogContractException(
+                    "catalog.publication_listing_mutation_catalog_mismatch",
+                    $"Listing '{listing.Id}' belongs to catalog '{listing.CatalogKey}', not '{expectedCatalogKey}'.");
+            }
+        }
+    }
 
     private static void ValidateEligibilityRequests(
         IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> requests,
