@@ -45,7 +45,10 @@ public interface ICatalogRepository
         EditorialDecision decision,
         CancellationToken cancellationToken);
 
-    public Task ArchiveListingAsync(Listing listing, CancellationToken cancellationToken);
+    public Task ArchiveListingAsync(
+        Listing listing,
+        CatalogListingPromotionEligibilityOutboxRequest eligibilityOutboxRequest,
+        CancellationToken cancellationToken);
 
     public Task<IReadOnlyList<PublicationSelectionState>> GetPublicationSelectionsAsync(
         CatalogKey catalogKey,
@@ -69,6 +72,7 @@ public interface ICatalogRepository
         Guid? expectedCurrentPublicationId,
         IReadOnlyList<Listing> listings,
         CatalogPublicationActivationOutboxFactory outboxFactory,
+        IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
         CancellationToken cancellationToken);
 
     public Task ActivateExistingPublicationAsync(
@@ -76,6 +80,7 @@ public interface ICatalogRepository
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
         CatalogPublicationActivationOutboxFactory outboxFactory,
+        IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
         CancellationToken cancellationToken);
 
     public Task AddClaimAsync(ListingClaim claim, CancellationToken cancellationToken);
