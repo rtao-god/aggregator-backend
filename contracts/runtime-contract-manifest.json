@@ -112,6 +112,18 @@
         "CatalogOperationStateContract State,",
         "CatalogOperationFailureContract? Failure);"
       ]
+    },
+    {
+      "name": "catalog-ingestion-draft-command",
+      "file": "src/Catalog/Catalog.Contracts/CatalogIngestionCommands.cs",
+      "required": [
+        "public const string UpsertDraft = \"aggregator.catalog.ingestion.upsert-draft@1\";",
+        "public sealed record CatalogIngestionUpsertDraftCommand(",
+        "string CommandDigest,",
+        "Guid ExpectedCatalogConfigurationRevisionId,",
+        "string CorrelationId);",
+        "public sealed record CatalogIngestionCommandOutcome("
+      ]
     }
   ],
   "http": [
@@ -184,6 +196,16 @@
         "[ProducesResponseType<CatalogPublicationOperationResponse>(StatusCodes.Status200OK)]",
         "operationService.GetAsync("
       ]
+    },
+    {
+      "file": "src/Catalog/Catalog.Api/CatalogIngestionDraftController.cs",
+      "required": [
+        "[Route(\"api/catalog-command/ingestion\")]",
+        "[HttpPost(\"drafts\", Name = CatalogIngestionOperationIds.UpsertDraft)]",
+        "[Authorize(Policy = CatalogIngestionAuthorizationPolicies.ExecuteDraftCommand)]",
+        "RequireIdempotencyIdentity(Request, command.CommandId);",
+        "service.ExecuteAsync("
+      ]
     }
   ],
   "strictJsonPrograms": [
@@ -243,6 +265,52 @@
         "CREATE TABLE access_projection.public_read_activation_checkpoint",
         "CREATE TABLE messaging.inbox_message",
         "fk_analytics_interaction_sponsored_placement"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-composition",
+      "file": "src/Ingestion/Ingestion.Worker/Program.cs",
+      "required": [
+        ".AddIngestionCatalogDeliveryInfrastructure(builder.Configuration)",
+        ".AddIngestionWorker(options);"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-worker",
+      "file": "src/Ingestion/Ingestion.Worker/IngestionWorkerServiceCollectionExtensions.cs",
+      "required": [
+        "services.AddHostedService<IngestionValidationWorker>();",
+        "services.AddHostedService<IngestionCatalogDeliveryWorker>();"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-command-client",
+      "file": "src/Ingestion/Ingestion.Infrastructure/IngestionCatalogCommandClient.cs",
+      "required": [
+        "request.Headers.TryAddWithoutValidation(\"Idempotency-Key\", command.CommandId.ToString(\"D\"));",
+        "request.Headers.TryAddWithoutValidation(\"X-Correlation-Id\", command.CorrelationId);",
+        "await tokenProvider.GetAsync(cancellationToken)",
+        "INGESTION_CATALOG_OUTCOME_IDENTITY_MISMATCH"
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-store",
+      "file": "src/Ingestion/Ingestion.Infrastructure/PostgresIngestionCatalogDeliveryStore.cs",
+      "required": [
+        ": IIngestionCatalogDeliveryStore",
+        "FOR UPDATE SKIP LOCKED",
+        "lease_token = @lease_token",
+        "EnsureLeaseMutation("
+      ]
+    },
+    {
+      "name": "ingestion-catalog-delivery-migration",
+      "file": "src/Ingestion/Ingestion.Migrations/Migrations/V005__catalog_delivery_lease_and_retry.sql",
+      "required": [
+        "ADD COLUMN lease_token uuid NULL",
+        "ADD COLUMN next_attempt_at_utc timestamp with time zone NULL",
+        "ADD CONSTRAINT ck_ingestion_catalog_delivery_lease",
+        "ADD CONSTRAINT ck_ingestion_catalog_delivery_outcome"
       ]
     }
   ]
