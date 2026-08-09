@@ -127,19 +127,20 @@ public sealed partial class EfCatalogRepository
         CatalogPublication targetPublication,
         Guid expectedCurrentPublicationId,
         CurrentPublicationPointer publicationPointer,
-        IReadOnlyList<Listing> listings,
         CatalogPublicationActivationOutboxFactory outboxFactory,
         IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> eligibilityOutboxRequests,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(targetPublication);
         ArgumentNullException.ThrowIfNull(publicationPointer);
-        ArgumentNullException.ThrowIfNull(listings);
         ArgumentNullException.ThrowIfNull(outboxFactory);
-        ValidateListingMutations(listings, targetPublication.CatalogKey);
         ValidateEligibilityRequests(
             eligibilityOutboxRequests,
             targetPublication.CatalogKey);
+        var listings = eligibilityOutboxRequests
+            .Select(request => request.Listing)
+            .ToArray();
+        ValidateListingMutations(listings, targetPublication.CatalogKey);
         try
         {
             await ExecuteInTransactionAsync(async innerCancellationToken =>
