@@ -186,11 +186,12 @@ public sealed class PostgresPromotionOverlayProjectionStore : IPromotionPlacemen
             transaction,
             materialization.PublicReadRevision,
             cancellationToken);
+        var nextActivationRevision = checked(current.ActivationRevision + 1);
         await UpdateCurrentPointerAsync(
             connection,
             transaction,
             materialization.PublicReadRevision,
-            checked(current.ActivationRevision + 1),
+            nextActivationRevision,
             inboxMessage.ReceivedAtUtc,
             cancellationToken);
         await InsertInboxAsync(
@@ -200,6 +201,16 @@ public sealed class PostgresPromotionOverlayProjectionStore : IPromotionPlacemen
             inboxMessage,
             PromotionPlacementProjectionDisposition.Activated,
             materialization.PublicReadRevision.Id,
+            cancellationToken);
+        await QueryPublicReadActivationOutboxWriter.InsertAsync(
+            connection,
+            transaction,
+            materialization.PublicReadRevision,
+            nextActivationRevision,
+            inboxMessage.ReceivedAtUtc,
+            inboxMessage.CorrelationId,
+            inboxMessage.EventId,
+            _idFactory,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -211,6 +222,8 @@ public sealed class PostgresPromotionOverlayProjectionStore : IPromotionPlacemen
     private static void ValidateInbox(PromotionPlacementInboxMessage inboxMessage)
     {
         if (inboxMessage.EventId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(inboxMessage.CorrelationId) ||
+            inboxMessage.CorrelationId.Length > 128 ||
             inboxMessage.ReceivedAtUtc.Offset != TimeSpan.Zero ||
             inboxMessage.PayloadDigest.Length != 64 ||
             inboxMessage.PayloadDigest.Any(character =>
