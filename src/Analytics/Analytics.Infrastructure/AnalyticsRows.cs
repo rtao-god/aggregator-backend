@@ -149,21 +149,6 @@ internal sealed class AnalyticsInboxMessageRow
     public DateTimeOffset ProcessedAtUtc { get; set; }
 }
 
-internal sealed class AnalyticsListingAccessProjectionRow
-{
-    public Guid ListingId { get; set; }
-
-    public Guid ActorId { get; set; }
-
-    public bool CanViewAnalytics { get; set; }
-
-    public long SourceAggregateRevision { get; set; }
-
-    public required string SourcePayloadDigest { get; set; }
-
-    public DateTimeOffset ChangedAtUtc { get; set; }
-}
-
 internal sealed class AnalyticsDailyListingMetricRow
 {
     public DateOnly MetricDate { get; set; }
