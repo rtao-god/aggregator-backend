@@ -86,7 +86,8 @@ public sealed record CatalogPreparedPublication(
     CatalogPublication Publication,
     Guid? ExpectedCurrentPublicationId,
     IReadOnlyList<Listing> Listings,
-    CatalogPublicationActivationOutboxFactory OutboxFactory);
+    CatalogPublicationActivationOutboxFactory OutboxFactory,
+    IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> EligibilityOutboxRequests);
 
 /// <summary>Exact lease identity that must be consumed by the publication transaction.</summary>
 public sealed record CatalogPublicationOperationCompletion(
