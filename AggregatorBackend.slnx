@@ -68,6 +68,7 @@
     <Project Path="tests/Analytics/Analytics.Application.Tests/Analytics.Application.Tests.csproj" />
     <Project Path="tests/Analytics/Analytics.Domain.Tests/Analytics.Domain.Tests.csproj" />
     <Project Path="tests/Analytics/Analytics.Infrastructure.Tests/Analytics.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Analytics/Analytics.Worker.Tests/Analytics.Worker.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Architecture.Tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
