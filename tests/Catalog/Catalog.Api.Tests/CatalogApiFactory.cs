@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Aggregator.Catalog.Api;
+using Aggregator.Catalog.Application;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -53,6 +55,8 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Testing");
         builder.ConfigureTestServices(services =>
         {
+            services.RemoveAll<ICatalogPublicationOperationStore>();
+            services.AddSingleton<ICatalogPublicationOperationStore, TestCatalogPublicationOperationStore>();
             services
                 .AddAuthentication(options =>
                 {
@@ -77,6 +81,66 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
         }
 
         base.Dispose(disposing);
+    }
+
+    private sealed class TestCatalogPublicationOperationStore : ICatalogPublicationOperationStore
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<
+            Guid,
+            CatalogPublicationOperationSnapshot> _operations = new();
+
+        public Task<CatalogPublicationOperationSnapshot> RegisterAsync(
+            CatalogPublicationOperationRegistration registration,
+            CancellationToken cancellationToken)
+        {
+            var operation = new CatalogPublicationOperationSnapshot(
+                registration.OperationId,
+                registration.PublicationId,
+                1,
+                registration.CatalogKey,
+                registration.ActorId,
+                CatalogPublicationOperationState.Pending,
+                0,
+                registration.CreatedAtUtc,
+                registration.CreatedAtUtc,
+                null,
+                null,
+                null);
+            _operations[operation.OperationId] = operation;
+            return Task.FromResult(operation);
+        }
+
+        public Task<CatalogPublicationOperationSnapshot?> GetAsync(
+            Guid operationId,
+            CancellationToken cancellationToken)
+        {
+            _operations.TryGetValue(operationId, out var operation);
+            return Task.FromResult(operation);
+        }
+
+        public Task<CatalogPublicationOperationLease?> ClaimNextAsync(
+            string workerIdentity,
+            DateTimeOffset claimedAtUtc,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ScheduleRetryAsync(
+            Guid operationId,
+            Guid leaseToken,
+            CatalogPublicationOperationFailure failure,
+            DateTimeOffset nextAttemptAtUtc,
+            DateTimeOffset updatedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task FailAsync(
+            Guid operationId,
+            Guid leaseToken,
+            CatalogPublicationOperationFailure failure,
+            DateTimeOffset failedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class TestAuthenticationHandler(

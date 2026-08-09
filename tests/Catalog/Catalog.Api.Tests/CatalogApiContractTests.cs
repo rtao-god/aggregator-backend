@@ -69,35 +69,28 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
             "/api/catalog-command/media/assets")
         {
             Content = JsonContent.Create(
-                new RegisterCatalogMediaRequest(
-                    CatalogMediaContractIdentity.CommandApi,
-                    CatalogMediaContractIdentity.CommandApiRevision,
-                    "catalog",
+                new RegisterCatalogMediaAssetRequest(
+                    "listing_image",
+                    "asset.jpg",
                     "image/jpeg",
-                    new string('a', 64),
-                    1,
-                    CatalogMediaRightsBasisContract.OwnerProvided,
-                    "owner upload"),
+                    42),
                 options: JsonOptions),
         };
         request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
         request.Headers.Add(
             CatalogApiFactory.ScopesHeader,
-            CatalogMediaAuthorizationPolicies.Manage);
-        request.Headers.Add("Idempotency-Key", "catalog-api-media-contract-0001");
+            CatalogMediaAuthorizationPolicies.ManageMedia);
 
         using var response = await client.SendAsync(request);
         var document = await ReadJsonAsync(response);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("Catalog.Media.Access", document.RootElement.GetProperty("owner").GetString());
-        Assert.Equal(
-            "CATALOG_MEDIA_ACTOR_MAPPING_REQUIRED",
-            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal("ACTOR_MAPPING_REQUIRED", document.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
-    public async Task UnsupportedMediaContractReturnsCanonicalCatalogMediaOwner()
+    public async Task CatalogOwnedMediaCommandMapsDomainFailureWithoutLegacyOwnerName()
     {
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(
@@ -105,34 +98,57 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
             "/api/catalog-command/media/assets")
         {
             Content = JsonContent.Create(
-                new
-                {
-                    contractIdentity = "unsupported",
-                    contractRevision = 1,
-                    catalogKey = "catalog",
-                    contentType = "image/jpeg",
-                    contentDigest = new string('a', 64),
-                    size = 1,
-                    rightsBasis = "ownerProvided",
-                    rightsReference = "owner upload",
-                },
+                new RegisterCatalogMediaAssetRequest(
+                    "listing_image",
+                    "asset.jpg",
+                    "application/pdf",
+                    42),
                 options: JsonOptions),
         };
         request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
         request.Headers.Add(CatalogApiFactory.ActorHeader, ActorId.ToString("D"));
         request.Headers.Add(
             CatalogApiFactory.ScopesHeader,
-            CatalogMediaAuthorizationPolicies.Manage);
-        request.Headers.Add("Idempotency-Key", "catalog-api-media-contract-0002");
+            CatalogMediaAuthorizationPolicies.ManageMedia);
 
         using var response = await client.SendAsync(request);
         var document = await ReadJsonAsync(response);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        Assert.Equal("Catalog.Media.Contracts", document.RootElement.GetProperty("owner").GetString());
-        Assert.Equal(
-            "CATALOG_MEDIA_CONTRACT_UNSUPPORTED",
-            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal("Catalog.Media.Domain", document.RootElement.GetProperty("owner").GetString());
+        Assert.DoesNotContain(
+            "Catalog" + "Media.",
+            document.RootElement.GetProperty("owner").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CatalogOwnedMediaRouteRequiresManageMediaScope()
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/catalog-command/media/assets")
+        {
+            Content = JsonContent.Create(
+                new RegisterCatalogMediaAssetRequest(
+                    "listing_image",
+                    "asset.jpg",
+                    "image/jpeg",
+                    42),
+                options: JsonOptions),
+        };
+        request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
+        request.Headers.Add(CatalogApiFactory.ActorHeader, ActorId.ToString("D"));
+        request.Headers.Add(
+            CatalogApiFactory.ScopesHeader,
+            CatalogAuthorizationPolicies.EditListing);
+
+        using var response = await client.SendAsync(request);
+        var document = await ReadJsonAsync(response);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("AUTHORIZATION_DENIED", document.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -158,6 +174,60 @@ public sealed class CatalogApiContractTests(CatalogApiFactory factory) : IClassF
         Assert.Equal(
             "catalog.listing_route_catalog_mismatch",
             document.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task PublicationRequestReturnsDurableOperationResource()
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/catalog-command/catalogs/catalog/publication-requests")
+        {
+            Content = JsonContent.Create(
+                new CreateCatalogPublicationRequest(
+                    "catalog",
+                    Guid.Parse("0192f5f0-0000-7000-8000-000000000010"),
+                    new PublicationPointerExpectationContract(
+                        PointerExpectationKindContract.Absent,
+                        null),
+                    [new PublicationSelectionContract(
+                        Guid.Parse("0192f5f0-0000-7000-8000-000000000011"),
+                        Guid.Parse("0192f5f0-0000-7000-8000-000000000012"),
+                        0)]),
+                options: JsonOptions),
+        };
+        request.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
+        request.Headers.Add(CatalogApiFactory.ActorHeader, ActorId.ToString("D"));
+        request.Headers.Add(
+            CatalogApiFactory.ScopesHeader,
+            CatalogAuthorizationPolicies.Publish);
+        request.Headers.Add("Idempotency-Key", "catalog-publication-api-0001");
+
+        using var response = await client.SendAsync(request);
+        var document = await ReadJsonAsync(response);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+        Assert.Equal("pending", document.RootElement.GetProperty("state").GetString());
+        var operationId = document.RootElement.GetProperty("operationId").GetGuid();
+        Assert.EndsWith(
+            $"/api/catalog-command/operations/{operationId:D}",
+            response.Headers.Location!.ToString(),
+            StringComparison.Ordinal);
+
+        using var statusRequest = new HttpRequestMessage(HttpMethod.Get, response.Headers.Location);
+        statusRequest.Headers.Add(CatalogApiFactory.AuthenticationHeader, "true");
+        statusRequest.Headers.Add(CatalogApiFactory.ActorHeader, ActorId.ToString("D"));
+        statusRequest.Headers.Add(
+            CatalogApiFactory.ScopesHeader,
+            CatalogAuthorizationPolicies.Publish);
+        using var statusResponse = await client.SendAsync(statusRequest);
+        var statusDocument = await ReadJsonAsync(statusResponse);
+
+        Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+        Assert.Equal(operationId, statusDocument.RootElement.GetProperty("operationId").GetGuid());
+        Assert.Equal("pending", statusDocument.RootElement.GetProperty("state").GetString());
     }
 
     [Fact]
