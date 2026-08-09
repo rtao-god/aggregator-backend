@@ -1,16 +1,5 @@
 namespace Aggregator.Ingestion.Infrastructure;
 
-internal sealed class IngestionProducerRow
-{
-    public string Identity { get; set; } = string.Empty;
-
-    public bool Active { get; set; }
-
-    public int[] SupportedContractRevisions { get; set; } = [];
-
-    public DateTimeOffset UpdatedAtUtc { get; set; }
-}
-
 internal sealed class ImportBatchRow
 {
     public Guid Id { get; set; }

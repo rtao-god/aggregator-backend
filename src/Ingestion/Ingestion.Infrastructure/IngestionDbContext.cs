@@ -4,8 +4,6 @@ namespace Aggregator.Ingestion.Infrastructure;
 
 public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> options) : DbContext(options)
 {
-    internal DbSet<IngestionProducerRow> Producers => Set<IngestionProducerRow>();
-
     internal DbSet<ImportBatchRow> Batches => Set<ImportBatchRow>();
 
     internal DbSet<ImportBatchManifestRow> Manifests => Set<ImportBatchManifestRow>();
@@ -19,25 +17,11 @@ public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> opti
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
-        ConfigureProducer(modelBuilder);
         ConfigureBatch(modelBuilder);
         ConfigureManifest(modelBuilder);
         ConfigureSourcePolicy(modelBuilder);
         ConfigureArtifact(modelBuilder);
         ConfigureCommand(modelBuilder);
-    }
-
-    private static void ConfigureProducer(ModelBuilder modelBuilder)
-    {
-        var entity = modelBuilder.Entity<IngestionProducerRow>();
-        entity.ToTable("producer_registration", "contracts");
-        entity.HasKey(row => row.Identity);
-        entity.Property(row => row.Identity).HasColumnName("identity").HasMaxLength(200);
-        entity.Property(row => row.Active).HasColumnName("active");
-        entity.Property(row => row.SupportedContractRevisions)
-            .HasColumnName("supported_contract_revisions")
-            .HasColumnType("integer[]");
-        entity.Property(row => row.UpdatedAtUtc).HasColumnName("updated_at_utc").HasColumnType("timestamp with time zone");
     }
 
     private static void ConfigureBatch(ModelBuilder modelBuilder)
