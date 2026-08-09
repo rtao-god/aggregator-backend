@@ -65,7 +65,9 @@ public sealed class CatalogConfigurationProjectionSequencePolicyTests
 
         Assert.Equal("INGESTION_CATALOG_CONFIGURATION_REVISION_GAP", exception.Code);
         Assert.Equal(503, exception.StatusCode);
-        Assert.Equal(2L, exception.Context["expectedAggregateRevision"]);
+        Assert.Equal(
+            2L,
+            Assert.IsType<long>(exception.Context["expectedAggregateRevision"]));
     }
 
     [Fact]
