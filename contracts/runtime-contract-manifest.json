@@ -24,6 +24,19 @@
       ]
     },
     {
+      "name": "catalog-listing-promotion-eligibility",
+      "file": "src/Catalog/Catalog.Contracts/CatalogIntegrationEvents.cs",
+      "required": [
+        "public const string ListingPromotionEligibilityChanged =",
+        "\"catalog.listing-promotion-eligibility.changed\";",
+        "\"aggregator.catalog.listing-promotion-eligibility-changed@1\";",
+        "public sealed record CatalogListingPromotionEligibilityChanged(",
+        "Guid? PublishedListingRevisionId,",
+        "IReadOnlyList<string> VerifiedContactCapabilities,",
+        "long EligibilityRevision,"
+      ]
+    },
+    {
       "name": "query-public-contact",
       "file": "src/Query/Query.Domain/QueryDocuments.cs",
       "required": [
@@ -420,6 +433,30 @@
         "Ingestion__CatalogProjection__BrokerUri:",
         "Ingestion__CatalogProjection__RoutingKey: catalog.configuration.activated",
         "Ingestion__CatalogProjection__DeadLetterQueue:"
+      ]
+    },
+    {
+      "name": "promotion-catalog-eligibility-consumer",
+      "file": "src/Promotion/Promotion.Worker/Program.cs",
+      "required": [
+        "builder.Services.AddPromotionApplication();",
+        "builder.Services.AddPromotionInfrastructure(builder.Configuration);",
+        "builder.Services.AddHostedService<PromotionEligibilityProjectionWorker>();"
+      ]
+    },
+    {
+      "name": "promotion-catalog-eligibility-reconciliation",
+      "file": "src/Promotion/Promotion.Infrastructure/EfPromotionRepository.EligibilityReconciliation.cs",
+      "required": [
+        "pg_advisory_xact_lock(hashtextextended",
+        "currentEligibility.SourceRevision > eligibility.SourceRevision",
+        "currentEligibility.SourceRevision < eligibility.SourceRevision",
+        "PauseWhenCatalogIneligible(",
+        "_dbContext.PlacementCapacity.RemoveRange",
+        "PromotionOutboxMessageFactory.Create("
+      ],
+      "forbidden": [
+        ".Resume("
       ]
     }
   ]
