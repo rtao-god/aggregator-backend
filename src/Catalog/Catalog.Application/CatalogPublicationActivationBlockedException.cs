@@ -1,43 +1,30 @@
-using Aggregator.Catalog.Domain;
-
 namespace Aggregator.Catalog.Application;
 
-/// <summary>Classifies the current Catalog owner state that prevents publication activation.</summary>
 public enum CatalogPublicationActivationBlockReason
 {
     PointerIdentityMismatch = 1,
     MediaNotPublishable = 2,
     PublicVisibilitySuppression = 3,
+    ListingDispute = 4,
 }
 
-/// <summary>Reports a fail-closed publication activation rejected by the final Catalog database boundary.</summary>
+/// <summary>Typed owner failure raised when the Catalog database activation gate rejects a publication.</summary>
 public sealed class CatalogPublicationActivationBlockedException : InvalidOperationException
 {
     public CatalogPublicationActivationBlockedException(
-        CatalogKey catalogKey,
+        string catalogKey,
         Guid publicationId,
         CatalogPublicationActivationBlockReason reason,
-        string message,
-        string requiredAction)
-        : base(message)
+        string requiredAction,
+        string detail)
+        : base(detail)
     {
-        ArgumentNullException.ThrowIfNull(catalogKey);
-        if (publicationId == Guid.Empty)
-        {
-            throw new ArgumentException("Publication ID is required.", nameof(publicationId));
-        }
-
-        if (!Enum.IsDefined(reason))
-        {
-            throw new ArgumentOutOfRangeException(nameof(reason), reason, "Publication activation block reason is unsupported.");
-        }
-
-        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(requiredAction);
-        CatalogKey = catalogKey.Value;
+        CatalogKey = catalogKey;
         PublicationId = publicationId;
         Reason = reason;
-        RequiredAction = requiredAction.Trim();
+        RequiredAction = requiredAction;
     }
 
     public string CatalogKey { get; }

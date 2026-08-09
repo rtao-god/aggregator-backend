@@ -163,6 +163,8 @@ public static class CatalogFailureTranslator
             "CATALOG_PUBLICATION_MEDIA_NOT_PUBLISHABLE",
         CatalogPublicationActivationBlockReason.PublicVisibilitySuppression =>
             "CATALOG_PUBLICATION_VISIBILITY_SUPPRESSED",
+        CatalogPublicationActivationBlockReason.ListingDispute =>
+            "CATALOG_PUBLICATION_LISTING_DISPUTED",
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Publication activation block reason is unsupported."),
     };
 
