@@ -39,6 +39,7 @@ public sealed class CatalogPublicationService(
             preparedPublication.ExpectedCurrentPublicationId,
             preparedPublication.Listings,
             preparedPublication.OutboxFactory,
+            preparedPublication.EligibilityOutboxRequests,
             cancellationToken);
         return CatalogContractMapper.ToResponse(
             preparedPublication.Publication,
@@ -167,6 +168,17 @@ public sealed class CatalogPublicationService(
         var expectedCurrentPublicationId = ToInternalExpectation(request.ExpectedCurrent);
         var previousPublicationId = await repository.GetCurrentPublicationIdAsync(catalogKey, cancellationToken);
         EnsurePointerExpectation(previousPublicationId, expectedCurrentPublicationId);
+        var previousPublication = previousPublicationId is null
+            ? null
+            : await repository.GetPublicationAsync(previousPublicationId.Value, cancellationToken)
+              ?? throw new CatalogNotFoundException("catalog-publication", previousPublicationId.Value);
+        var eligibilityOutboxRequests = await BuildEligibilityOutboxRequestsAsync(
+            catalogKey,
+            selections,
+            previousPublication,
+            createdAtUtc,
+            eventContext,
+            cancellationToken);
         var eventId = idSource.CreateId();
 
         CatalogOutboxMessage CreateOutbox(long activationRevision)
@@ -196,7 +208,8 @@ public sealed class CatalogPublicationService(
             publication,
             expectedCurrentPublicationId,
             selections.Select(selection => selection.Listing).ToArray(),
-            CreateOutbox);
+            CreateOutbox,
+            eligibilityOutboxRequests);
     }
 
     /// <summary>Starts a new correlation root for a direct application or operator rollback command.</summary>
@@ -235,6 +248,8 @@ public sealed class CatalogPublicationService(
                 $"Catalog '{catalogKey}' expected current publication '{request.ExpectedCurrentPublicationId}' but is at '{currentPublicationId}'.");
         }
 
+        var currentPublication = await repository.GetPublicationAsync(currentPublicationId, cancellationToken)
+            ?? throw new CatalogNotFoundException("catalog-publication", currentPublicationId);
         var target = await repository.GetPublicationAsync(request.TargetPublicationId, cancellationToken)
             ?? throw new CatalogNotFoundException("catalog-publication", request.TargetPublicationId);
         if (target.CatalogKey != catalogKey)
@@ -248,7 +263,15 @@ public sealed class CatalogPublicationService(
             target.ArtifactDigest,
             cancellationToken);
 
+        var targetSelections = await LoadPublicationSelectionsAsync(target, cancellationToken);
         var activatedAtUtc = timeProvider.GetUtcNow();
+        var eligibilityOutboxRequests = await BuildEligibilityOutboxRequestsAsync(
+            catalogKey,
+            targetSelections,
+            currentPublication,
+            activatedAtUtc,
+            eventContext,
+            cancellationToken);
         var publicationPointer = CurrentPublicationPointer.Create(
             catalogKey,
             target.Id,
@@ -285,8 +308,101 @@ public sealed class CatalogPublicationService(
             request.ExpectedCurrentPublicationId,
             publicationPointer,
             CreateOutbox,
+            eligibilityOutboxRequests,
             cancellationToken);
         return CatalogContractMapper.ToResponse(target, isCurrent: true);
+    }
+
+    private async Task<IReadOnlyList<PublicationSelectionState>> LoadPublicationSelectionsAsync(
+        CatalogPublication publication,
+        CancellationToken cancellationToken)
+    {
+        var selections = new List<PublicationSelectionState>(publication.Entries.Count);
+        foreach (var entry in publication.Entries.OrderBy(value => value.ListingId))
+        {
+            var listing = await repository.GetListingAsync(entry.ListingId, cancellationToken)
+                ?? throw new CatalogNotFoundException("listing", entry.ListingId);
+            var revision = await repository.GetListingRevisionAsync(
+                    entry.ListingRevisionId,
+                    cancellationToken)
+                ?? throw new CatalogNotFoundException(
+                    "listing-revision",
+                    entry.ListingRevisionId);
+            if (listing.CatalogKey != publication.CatalogKey ||
+                revision.ListingId != listing.Id ||
+                revision.Id != entry.ListingRevisionId)
+            {
+                throw new CatalogConflictException(
+                    $"Publication '{publication.Id}' contains an invalid listing revision binding for listing '{entry.ListingId}'.");
+            }
+
+            selections.Add(new PublicationSelectionState(listing, revision));
+        }
+
+        return selections;
+    }
+
+    private async Task<IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest>>
+        BuildEligibilityOutboxRequestsAsync(
+            CatalogKey catalogKey,
+            IReadOnlyList<PublicationSelectionState> targetSelections,
+            CatalogPublication? previousPublication,
+            DateTimeOffset occurredAtUtc,
+            CatalogEventContext eventContext,
+            CancellationToken cancellationToken)
+    {
+        var requests = new Dictionary<Guid, CatalogListingPromotionEligibilityOutboxRequest>();
+        foreach (var selection in targetSelections.OrderBy(value => value.Listing.Id))
+        {
+            if (selection.Listing.CatalogKey != catalogKey)
+            {
+                throw new CatalogConflictException(
+                    $"Listing '{selection.Listing.Id}' does not belong to eligibility catalog '{catalogKey}'.");
+            }
+
+            requests.Add(
+                selection.Listing.Id,
+                CatalogListingPromotionEligibilityEventFactory.CreatePublished(
+                    selection.Listing,
+                    selection.Revision,
+                    hasBlockingDispute: false,
+                    idSource.CreateId(),
+                    occurredAtUtc,
+                    eventContext));
+        }
+
+        if (previousPublication is not null)
+        {
+            foreach (var previousEntry in previousPublication.Entries
+                         .Where(entry => !requests.ContainsKey(entry.ListingId))
+                         .OrderBy(entry => entry.ListingId))
+            {
+                var listing = await repository.GetListingAsync(
+                        previousEntry.ListingId,
+                        cancellationToken)
+                    ?? throw new CatalogNotFoundException(
+                        "listing",
+                        previousEntry.ListingId);
+                if (listing.CatalogKey != catalogKey)
+                {
+                    throw new CatalogConflictException(
+                        $"Listing '{listing.Id}' does not belong to eligibility catalog '{catalogKey}'.");
+                }
+
+                requests.Add(
+                    listing.Id,
+                    CatalogListingPromotionEligibilityEventFactory.CreateUnavailable(
+                        listing,
+                        hasBlockingDispute: false,
+                        idSource.CreateId(),
+                        occurredAtUtc,
+                        eventContext));
+            }
+        }
+
+        return requests.Values
+            .OrderBy(value => value.ListingId)
+            .ToArray();
     }
 
     private static void EnsureCurrentRevisionDigest(ListingRevision revision)
