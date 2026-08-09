@@ -33,7 +33,7 @@ public sealed class IngestionCatalogCommandClient(
             "Bearer",
             await tokenProvider.GetAsync(cancellationToken));
         request.Headers.TryAddWithoutValidation("Idempotency-Key", command.CommandId.ToString("D"));
-        request.Headers.TryAddWithoutValidation("X-Correlation-Id", command.CommandId.ToString("D"));
+        request.Headers.TryAddWithoutValidation("X-Correlation-Id", command.CorrelationId);
         request.Content = new ByteArrayContent(payload);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
         {
@@ -92,6 +92,9 @@ public sealed class IngestionCatalogCommandClient(
         if (command.CommandId == Guid.Empty ||
             command.IngestionBatchId == Guid.Empty ||
             string.IsNullOrWhiteSpace(command.IngestionItemKey) ||
+            string.IsNullOrWhiteSpace(command.CorrelationId) ||
+            command.CorrelationId.Length > 128 ||
+            command.CorrelationId.Any(char.IsControl) ||
             !string.Equals(
                 CatalogIngestionCommandDigest.Compute(command),
                 command.CommandDigest,
