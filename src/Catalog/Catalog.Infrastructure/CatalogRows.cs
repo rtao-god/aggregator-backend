@@ -307,6 +307,8 @@ internal sealed class CatalogListingAccessGrantRow
     public Guid? RevokedByActorId { get; set; }
 
     public string? RevocationReason { get; set; }
+
+    public long AggregateRevision { get; set; }
 }
 
 internal sealed class CatalogListingAccessScopeRow

@@ -63,6 +63,7 @@ public sealed partial class EfCatalogRepository
                 RevokedAtUtc = grant.RevokedAtUtc,
                 RevokedByActorId = grant.RevokedByActorId,
                 RevocationReason = grant.RevocationReason,
+                AggregateRevision = grant.AggregateRevision,
             });
             foreach (var scope in grant.Scopes)
             {
@@ -109,6 +110,7 @@ public sealed partial class EfCatalogRepository
                     grant.RevokedAtUtc = claim.DecidedAtUtc;
                     grant.RevokedByActorId = claim.DecidedByActorId;
                     grant.RevocationReason = claim.DecisionReason;
+                    grant.AggregateRevision = checked(grant.AggregateRevision + 1);
                 }
             }
 

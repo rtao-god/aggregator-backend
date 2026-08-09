@@ -207,6 +207,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             entity.ToTable("listing_access_grant");
             entity.HasKey(row => row.Id);
             entity.Property(row => row.RevocationReason).HasMaxLength(4096);
+            entity.Property(row => row.AggregateRevision).IsConcurrencyToken();
             entity.HasIndex(row => new { row.ListingId, row.ActorId });
             entity.HasIndex(row => row.ClaimId).IsUnique();
         });
