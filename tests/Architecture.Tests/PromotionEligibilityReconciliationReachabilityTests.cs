@@ -115,7 +115,7 @@ public sealed class PromotionEligibilityReconciliationReachabilityTests
         var repository = RepositoryModel.Load();
         var compose = Read(repository, "compose.yaml");
         var start = compose.IndexOf("  promotion-worker:", StringComparison.Ordinal);
-        var end = compose.IndexOf("\n  ", start + 3, StringComparison.Ordinal);
+        var end = compose.IndexOf("\n  reverse-proxy:", start, StringComparison.Ordinal);
         Assert.True(start >= 0 && end > start, "Promotion worker service block was not found.");
         var block = compose[start..end];
 
