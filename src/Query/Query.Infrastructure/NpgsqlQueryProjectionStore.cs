@@ -9,10 +9,19 @@ namespace Aggregator.Query.Infrastructure;
 public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly IQueryIdFactory _idFactory;
 
     public NpgsqlQueryProjectionStore(NpgsqlDataSource dataSource)
+        : this(dataSource, new UuidV7QueryIdFactory())
+    {
+    }
+
+    public NpgsqlQueryProjectionStore(
+        NpgsqlDataSource dataSource,
+        IQueryIdFactory idFactory)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _idFactory = idFactory ?? throw new ArgumentNullException(nameof(idFactory));
     }
 
     public async Task<QueryProjectionActivationResult> ActivateAsync(
@@ -94,6 +103,11 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
                 QueryProjectionActivationDisposition.IgnoredStale);
         }
 
+        var publicReadActivationRevision = await AllocatePublicReadActivationRevisionAsync(
+            connection,
+            transaction,
+            activation.BaseProjection.CatalogKey,
+            cancellationToken);
         await InsertBaseProjectionAsync(connection, transaction, activation.BaseProjection, cancellationToken);
         await InsertDocumentsAsync(connection, transaction, activation.BaseProjection, cancellationToken);
         await InsertOverlayAsync(connection, transaction, activation.PromotionOverlay, cancellationToken);
@@ -107,7 +121,7 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
             connection,
             transaction,
             activation.PublicReadRevision,
-            inboxMessage.ActivationRevision,
+            publicReadActivationRevision,
             inboxMessage.ReceivedAtUtc,
             cancellationToken);
         await UpsertCheckpointAsync(
@@ -124,6 +138,23 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
             "activated",
             activation.PublicReadRevision.Id,
             cancellationToken);
+        if (!await HasPendingPublicationRecompositionAsync(
+                connection,
+                transaction,
+                inboxMessage.EventId,
+                cancellationToken))
+        {
+            await QueryPublicReadActivationOutboxWriter.InsertAsync(
+                connection,
+                transaction,
+                activation.PublicReadRevision,
+                publicReadActivationRevision,
+                inboxMessage.ReceivedAtUtc,
+                inboxMessage.CorrelationId,
+                inboxMessage.EventId,
+                _idFactory,
+                cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         return new QueryProjectionActivationResult(
@@ -143,6 +174,8 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
         ArgumentNullException.ThrowIfNull(inboxMessage);
         if (inboxMessage.EventId == Guid.Empty ||
             string.IsNullOrWhiteSpace(inboxMessage.EventType) ||
+            string.IsNullOrWhiteSpace(inboxMessage.CorrelationId) ||
+            inboxMessage.CorrelationId.Length > 128 ||
             inboxMessage.ActivationRevision <= 0 ||
             inboxMessage.ReceivedAtUtc.Offset != TimeSpan.Zero)
         {
@@ -241,6 +274,52 @@ public sealed class NpgsqlQueryProjectionStore : IQueryProjectionStore
         }
 
         return new CheckpointState(reader.GetInt64(0), reader.GetGuid(1));
+    }
+
+    private static async Task<long> AllocatePublicReadActivationRevisionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string catalogKey,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT activation_revision
+            FROM projection.current_public_read
+            WHERE catalog_key = @catalog_key
+            FOR UPDATE;
+            """;
+        await using var command = CreateCommand(connection, transaction, sql);
+        command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey));
+        var current = await command.ExecuteScalarAsync(cancellationToken);
+        return current is null or DBNull
+            ? 1
+            : checked(Convert.ToInt64(
+                current,
+                System.Globalization.CultureInfo.InvariantCulture) + 1);
+    }
+
+    private static async Task<bool> HasPendingPublicationRecompositionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid sourceEventId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS
+            (
+                SELECT 1
+                FROM projection.publication_overlay_recomposition
+                WHERE source_event_id = @source_event_id
+            );
+            """;
+        await using var command = CreateCommand(connection, transaction, sql);
+        command.Parameters.Add(new NpgsqlParameter<Guid>("source_event_id", sourceEventId));
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken)
+            ?? throw Failure(
+                "QUERY_PUBLICATION_RECOMPOSITION_STATE_UNREADABLE",
+                500,
+                $"Query could not determine whether event '{sourceEventId}' has pending publication recomposition.",
+                "Keep the catalog blocked and restore the Query projection owner state."));
     }
 
     private static async Task<PublicReadRevision> LoadPublicReadRevisionAsync(
