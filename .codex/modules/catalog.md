@@ -10,7 +10,7 @@ Catalog is the canonical owner of product configuration, listing identities and 
 
 - `Catalog.Domain`: owner invariants and state transitions; no framework dependencies.
 - `Catalog.Contracts`: producer-owned wire contracts, publication artifact, and integration events. Visibility events expose only public target/reason/response state and never private evidence.
-- `Catalog.Application`: authored product-configuration source loading, strict source validation, canonical import artifacts, use cases, deterministic serialization, explicit mapping, typed failure translation, event correlation, and canonical payload digests.
+- `Catalog.Application`: authored product-configuration source loading, strict source validation, canonical import artifacts, use cases, deterministic serialization, explicit mapping, typed failure translation, event correlation, canonical payload digests, and producer-owned configuration activation events.
 - `Catalog.Infrastructure`: EF Core/PostgreSQL persistence, suppression revision persistence, durable outbox rows, S3-compatible publication adapter, and read-only readiness.
 - `Catalog.Media.Domain`: media aggregate state and invariants.
 - `Catalog.Media.Contracts`: the sole producer-owned contract for resolving one exact publishable media asset revision and public variant.
@@ -34,6 +34,8 @@ Git-authored product-config directory
 → explicit import
 → immutable PostgreSQL configuration revision
 → explicit optimistic activation
+→ active configuration pointer + catalog.configuration.activated outbox in one transaction
+→ Ingestion consumes the minimal producer-owned configuration snapshot into its local projection
 → listing identity
 → immutable listing revision
 → editorial approval
@@ -100,7 +102,7 @@ Visibility commands use the dedicated `catalog.manage-visibility` scope. Admin r
 
 ## Persistence and messaging boundary
 
-Catalog persists business state and the producer-owned event envelope in one PostgreSQL transaction. Rows carry the exact routing key, contract identity, canonical payload digest, correlation/causation, delivery attempts, lease state, dispatch completion, and indivisible dead-letter state. Migration from a legacy JSON outbox fails closed when existing rows cannot prove their original UTF-8 payload bytes.
+Catalog persists business state and the producer-owned event envelope in one PostgreSQL transaction. Configuration activation allocates one monotonic aggregate revision, records the exact previous configuration pointer, switches the active pointer, and writes `aggregator.catalog.configuration-activated@1` atomically. Rows carry the exact routing key, contract identity, canonical payload digest, correlation/causation, delivery attempts, lease state, dispatch completion, and indivisible dead-letter state. Migration from a legacy JSON outbox fails closed when existing rows cannot prove their original UTF-8 payload bytes.
 
 `Catalog.Migrations/V008__catalog_media_owner_merge.sql` supports a clean Catalog database and a complete prior media schema. It rejects partial legacy schemas, non-empty legacy `jsonb` outboxes, orphan media references, incomplete dead-letter tuples, and incompatible table shapes before transferring ownership. It then establishes the Catalog-owned media FK and publication gate.
 
@@ -109,7 +111,7 @@ Catalog persists business state and the producer-owned event envelope in one Pos
 ## Proof
 
 - Catalog domain invariant tests cover invalid subject kinds, forbidden provenance, optimistic concurrency, scoped access revocation, suppression target/lifecycle rules, and exact media binding identity.
-- Catalog application E2E covers configuration import/activation, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, exact rollback, exact rollback-artifact verification, and pointer isolation when verification fails.
+- Catalog application E2E covers configuration import/activation with the correlated producer outbox event, listing revisions, stable contact identity, publication artifact revision `4`, approval, deterministic publications, exact rollback, exact rollback-artifact verification, and pointer isolation when verification fails.
 - Product-configuration tests prove strict authored-source parsing, locked canonical digest, semantic Catalog validation, real PostgreSQL canonical-byte persistence, immutable duplicate rejection, explicit activation, stale pointer rejection, and exact active revision rehydration.
 - Catalog geography contract tests prove generic wire tokens, rejection of product-specific/numeric tokens, and stable numeric storage identities.
 - Catalog suppression application tests cover requested/active/resolved revision persistence, stale revision rejection, correlation propagation, and absence of private evidence from public events.
