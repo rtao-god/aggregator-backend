@@ -186,19 +186,22 @@ public sealed class CatalogListingService(
         ArgumentNullException.ThrowIfNull(eventContext);
         var listing = await RequireListingAsync(listingId, cancellationToken);
         var archivedAtUtc = timeProvider.GetUtcNow();
-        listing.Archive(request.ExpectedVersion, archivedAtUtc);
+        var archivedListing = ListingPublicationMembership.ArchiveAndRemoveFromPublication(
+            listing,
+            request.ExpectedVersion,
+            archivedAtUtc);
         var eligibilityOutboxRequest =
             CatalogListingPromotionEligibilityEventFactory.CreateUnavailable(
-                listing,
+                archivedListing,
                 hasBlockingDispute: false,
                 idSource.CreateId(),
                 archivedAtUtc,
                 eventContext);
         await repository.ArchiveListingAsync(
-            listing,
+            archivedListing,
             eligibilityOutboxRequest,
             cancellationToken);
-        return CatalogContractMapper.ToResponse(listing);
+        return CatalogContractMapper.ToResponse(archivedListing);
     }
 
     public async Task<ListingResponse> GetAsync(Guid listingId, CancellationToken cancellationToken) =>
