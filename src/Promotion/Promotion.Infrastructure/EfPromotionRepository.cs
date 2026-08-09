@@ -7,13 +7,19 @@ using Npgsql;
 namespace Aggregator.Promotion.Infrastructure;
 
 /// <summary>Promotion-owned PostgreSQL repository with atomic idempotency and outbox persistence.</summary>
-public sealed partial class EfPromotionRepository : IPromotionRepository
+public sealed partial class EfPromotionRepository :
+    IPromotionRepository,
+    IPromotionEligibilityPlacementReconciler
 {
     private readonly PromotionDbContext _dbContext;
+    private readonly IPromotionIdSource _idSource;
 
-    public EfPromotionRepository(PromotionDbContext dbContext)
+    public EfPromotionRepository(
+        PromotionDbContext dbContext,
+        IPromotionIdSource idSource)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _idSource = idSource ?? throw new ArgumentNullException(nameof(idSource));
     }
 
     private async Task<PromotionCommandResult<TAggregate>> ExecuteCommandAsync<TAggregate>(

@@ -25,6 +25,8 @@ public static class PromotionInfrastructureServiceCollectionExtensions
         services.AddScoped<EfPromotionRepository>();
         services.AddScoped<IPromotionRepository>(services =>
             services.GetRequiredService<EfPromotionRepository>());
+        services.AddScoped<IPromotionEligibilityPlacementReconciler>(services =>
+            services.GetRequiredService<EfPromotionRepository>());
         services.AddScoped<
             IPromotionEligibilityProjectionStore,
             PostgresPromotionEligibilityProjectionStore>();
