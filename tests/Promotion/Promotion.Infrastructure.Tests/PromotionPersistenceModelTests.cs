@@ -64,11 +64,21 @@ public sealed class PromotionPersistenceModelTests
             model,
             "access_projection",
             "listing_eligibility_projection");
+        var eligibilityProperties = eligibility.GetProperties()
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
         var command = FindTable(model, "operations", "command_result");
         var commandPrimaryKey = command.FindPrimaryKey()
             ?? throw new InvalidOperationException("Promotion command-result primary key is missing.");
 
         Assert.True(eligibility.FindProperty("SourceRevision")?.IsConcurrencyToken);
+        Assert.Contains("PublishedListingRevisionId", eligibilityProperties);
+        Assert.Contains("SourceMessageId", eligibilityProperties);
+        Assert.Contains("SourceContractIdentity", eligibilityProperties);
+        Assert.Contains("SourcePayloadDigest", eligibilityProperties);
+        Assert.Contains("ProjectionDigest", eligibilityProperties);
+        Assert.Contains("CorrelationId", eligibilityProperties);
+        Assert.Contains("ReceivedAtUtc", eligibilityProperties);
         Assert.Contains(
             eligibility.GetCheckConstraints(),
             check => string.Equals(
