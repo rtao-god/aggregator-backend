@@ -29,8 +29,9 @@ public static class CatalogInfrastructureServiceCollectionExtensions
             serviceProvider.GetRequiredService<EfCatalogRepository>());
         services.AddScoped<ICatalogConfigurationActivationRepository>(serviceProvider =>
             serviceProvider.GetRequiredService<EfCatalogRepository>());
-        services.AddScoped<ICatalogPublicationOperationCommitter>(serviceProvider =>
-            serviceProvider.GetRequiredService<EfCatalogRepository>());
+        services.AddScoped<
+            ICatalogPublicationOperationCommitter,
+            CatalogPublicationOperationCommitter>();
         services.AddScoped<ICatalogPublicationOperationStore, PostgresCatalogPublicationOperationStore>();
         services.AddScoped<
             ICatalogPublicationOperationFailureClassifier,
