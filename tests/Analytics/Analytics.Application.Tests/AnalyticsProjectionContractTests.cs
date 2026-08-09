@@ -59,6 +59,7 @@ public sealed class AnalyticsProjectionContractTests
         PublicReadReferenceProjection.Create(
             Guid.Parse("0198a300-0000-7000-8000-000000000010"),
             "berlin-recording-services",
+            1,
             Guid.Parse("0198a300-0000-7000-8000-000000000011"),
             Guid.Parse("0198a300-0000-7000-8000-000000000012"),
             Guid.Parse("0198a300-0000-7000-8000-000000000013"),

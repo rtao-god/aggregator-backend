@@ -258,17 +258,24 @@ public sealed class AnalyticsApplicationServiceTests
     private sealed class FixedPublicReadReferenceStore(PublicReadMembershipState state)
         : IPublicReadReferenceStore
     {
-        public Task<PublicReadMembershipResult> ValidateMembershipAsync(
+        public Task<PublicReadMembershipResult> ValidateInteractionAsync(
             Guid publicReadRevisionId,
             string catalogKey,
             Guid? listingId,
+            PlacementContext placementContext,
+            DateTimeOffset occurredAtUtc,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Assert.NotEqual(Guid.Empty, publicReadRevisionId);
+            Assert.False(string.IsNullOrWhiteSpace(catalogKey));
+            Assert.NotNull(placementContext);
+            Assert.Equal(TimeSpan.Zero, occurredAtUtc.Offset);
             return Task.FromResult(new PublicReadMembershipResult(
                 state,
                 state == PublicReadMembershipState.Known ? catalogKey : null,
-                state == PublicReadMembershipState.Known ? listingId : null));
+                state == PublicReadMembershipState.Known ? listingId : null,
+                placementContext.PlacementId));
         }
     }
 
