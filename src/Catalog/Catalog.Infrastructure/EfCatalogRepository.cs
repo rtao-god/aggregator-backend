@@ -3,7 +3,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Aggregator.Catalog.Infrastructure;
 
-public sealed partial class EfCatalogRepository : ICatalogRepository, ICatalogPublicationOperationCommitter
+public sealed partial class EfCatalogRepository :
+    ICatalogRepository,
+    ICatalogConfigurationActivationRepository,
+    ICatalogPublicationOperationCommitter
 {
     private readonly CatalogDbContext _dbContext;
 

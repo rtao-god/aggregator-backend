@@ -27,15 +27,6 @@ public interface ICatalogRepository
         CatalogKey catalogKey,
         CancellationToken cancellationToken);
 
-    public Task ActivateConfigurationAsync(
-        CatalogKey catalogKey,
-        Guid configurationRevisionId,
-        Guid expectedConfigurationRevisionId,
-        Guid actorId,
-        DateTimeOffset activatedAtUtc,
-        CatalogConfigurationActivationOutboxFactory outboxFactory,
-        CancellationToken cancellationToken);
-
     public Task AddListingAsync(Listing listing, CancellationToken cancellationToken);
 
     public Task<Listing?> GetListingAsync(Guid listingId, CancellationToken cancellationToken);
@@ -100,6 +91,19 @@ public interface ICatalogRepository
     public Task SaveClaimDecisionAsync(
         ListingClaim claim,
         CatalogOutboxMessage? outboxMessage,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Atomically switches the active Catalog configuration and persists its producer event.</summary>
+public interface ICatalogConfigurationActivationRepository
+{
+    public Task ActivateConfigurationAsync(
+        CatalogKey catalogKey,
+        Guid configurationRevisionId,
+        Guid expectedConfigurationRevisionId,
+        Guid actorId,
+        DateTimeOffset activatedAtUtc,
+        CatalogConfigurationActivationOutboxFactory outboxFactory,
         CancellationToken cancellationToken);
 }
 

@@ -6,6 +6,7 @@ namespace Aggregator.Catalog.Application;
 
 public sealed class CatalogConfigurationService(
     ICatalogRepository repository,
+    ICatalogConfigurationActivationRepository activationRepository,
     ICatalogIdSource idSource,
     TimeProvider timeProvider)
 {
@@ -120,7 +121,7 @@ public sealed class CatalogConfigurationService(
                 eventContext);
         }
 
-        await repository.ActivateConfigurationAsync(
+        await activationRepository.ActivateConfigurationAsync(
             catalogKey,
             configuration.RevisionId,
             expectedCurrentRevisionId,
