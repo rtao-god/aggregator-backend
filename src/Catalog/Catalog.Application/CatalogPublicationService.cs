@@ -157,12 +157,15 @@ public sealed class CatalogPublicationService(
             actor.Id,
             createdAtUtc);
 
+        var changedListings = new Dictionary<Guid, Listing>();
         foreach (var selection in selections)
         {
-            selection.Listing.MarkPublished(
+            var publishedListing = ListingPublicationMembership.PublishApproved(
+                selection.Listing,
                 selection.Revision.Id,
                 selection.Listing.Version,
                 createdAtUtc);
+            changedListings.Add(publishedListing.Id, publishedListing);
         }
 
         var expectedCurrentPublicationId = ToInternalExpectation(request.ExpectedCurrent);
@@ -172,10 +175,11 @@ public sealed class CatalogPublicationService(
             ? null
             : await repository.GetPublicationAsync(previousPublicationId.Value, cancellationToken)
               ?? throw new CatalogNotFoundException("catalog-publication", previousPublicationId.Value);
-        var eligibilityOutboxRequests = await BuildEligibilityOutboxRequestsAsync(
+        var eligibilityTransition = await BuildEligibilityTransitionAsync(
             catalogKey,
             selections,
             previousPublication,
+            changedListings,
             createdAtUtc,
             eventContext,
             cancellationToken);
@@ -207,9 +211,9 @@ public sealed class CatalogPublicationService(
         return new CatalogPreparedPublication(
             publication,
             expectedCurrentPublicationId,
-            selections.Select(selection => selection.Listing).ToArray(),
+            eligibilityTransition.Listings,
             CreateOutbox,
-            eligibilityOutboxRequests);
+            eligibilityTransition.OutboxRequests);
     }
 
     /// <summary>Starts a new correlation root for a direct application or operator rollback command.</summary>
@@ -263,12 +267,28 @@ public sealed class CatalogPublicationService(
             target.ArtifactDigest,
             cancellationToken);
 
-        var targetSelections = await LoadPublicationSelectionsAsync(target, cancellationToken);
+        var loadedTargetSelections = await LoadPublicationSelectionsAsync(target, cancellationToken);
         var activatedAtUtc = timeProvider.GetUtcNow();
-        var eligibilityOutboxRequests = await BuildEligibilityOutboxRequestsAsync(
+        var changedListings = new Dictionary<Guid, Listing>();
+        var targetSelections = new List<PublicationSelectionState>(loadedTargetSelections.Count);
+        foreach (var selection in loadedTargetSelections)
+        {
+            var restoredListing = ListingPublicationMembership.RestoreExactPublishedRevision(
+                selection.Listing,
+                selection.Revision.Id,
+                activatedAtUtc);
+            targetSelections.Add(new PublicationSelectionState(restoredListing, selection.Revision));
+            if (!ReferenceEquals(restoredListing, selection.Listing))
+            {
+                changedListings.Add(restoredListing.Id, restoredListing);
+            }
+        }
+
+        var eligibilityTransition = await BuildEligibilityTransitionAsync(
             catalogKey,
             targetSelections,
             currentPublication,
+            changedListings,
             activatedAtUtc,
             eventContext,
             cancellationToken);
@@ -307,8 +327,9 @@ public sealed class CatalogPublicationService(
             target,
             request.ExpectedCurrentPublicationId,
             publicationPointer,
+            eligibilityTransition.Listings,
             CreateOutbox,
-            eligibilityOutboxRequests,
+            eligibilityTransition.OutboxRequests,
             cancellationToken);
         return CatalogContractMapper.ToResponse(target, isCurrent: true);
     }
@@ -342,15 +363,16 @@ public sealed class CatalogPublicationService(
         return selections;
     }
 
-    private async Task<IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest>>
-        BuildEligibilityOutboxRequestsAsync(
-            CatalogKey catalogKey,
-            IReadOnlyList<PublicationSelectionState> targetSelections,
-            CatalogPublication? previousPublication,
-            DateTimeOffset occurredAtUtc,
-            CatalogEventContext eventContext,
-            CancellationToken cancellationToken)
+    private async Task<CatalogEligibilityTransition> BuildEligibilityTransitionAsync(
+        CatalogKey catalogKey,
+        IReadOnlyList<PublicationSelectionState> targetSelections,
+        CatalogPublication? previousPublication,
+        IDictionary<Guid, Listing> changedListings,
+        DateTimeOffset occurredAtUtc,
+        CatalogEventContext eventContext,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(changedListings);
         var requests = new Dictionary<Guid, CatalogListingPromotionEligibilityOutboxRequest>();
         foreach (var selection in targetSelections.OrderBy(value => value.Listing.Id))
         {
@@ -358,6 +380,12 @@ public sealed class CatalogPublicationService(
             {
                 throw new CatalogConflictException(
                     $"Listing '{selection.Listing.Id}' does not belong to eligibility catalog '{catalogKey}'.");
+            }
+
+            if (selection.Listing.PublishedRevisionId != selection.Revision.Id)
+            {
+                throw new CatalogConflictException(
+                    $"Listing '{selection.Listing.Id}' does not point at target publication revision '{selection.Revision.Id}'.");
             }
 
             requests.Add(
@@ -389,10 +417,20 @@ public sealed class CatalogPublicationService(
                         $"Listing '{listing.Id}' does not belong to eligibility catalog '{catalogKey}'.");
                 }
 
+                if (listing.PublishedRevisionId != previousEntry.ListingRevisionId)
+                {
+                    throw new CatalogConflictException(
+                        $"Listing '{listing.Id}' public revision '{listing.PublishedRevisionId}' does not match active publication revision '{previousEntry.ListingRevisionId}'.");
+                }
+
+                var unpublishedListing = ListingPublicationMembership.RemoveFromPublication(
+                    listing,
+                    occurredAtUtc);
+                changedListings[unpublishedListing.Id] = unpublishedListing;
                 requests.Add(
-                    listing.Id,
+                    unpublishedListing.Id,
                     CatalogListingPromotionEligibilityEventFactory.CreateUnavailable(
-                        listing,
+                        unpublishedListing,
                         hasBlockingDispute: false,
                         idSource.CreateId(),
                         occurredAtUtc,
@@ -400,9 +438,13 @@ public sealed class CatalogPublicationService(
             }
         }
 
-        return requests.Values
-            .OrderBy(value => value.ListingId)
-            .ToArray();
+        return new CatalogEligibilityTransition(
+            changedListings.Values
+                .OrderBy(value => value.Id)
+                .ToArray(),
+            requests.Values
+                .OrderBy(value => value.ListingId)
+                .ToArray());
     }
 
     private static void EnsureCurrentRevisionDigest(ListingRevision revision)
@@ -439,4 +481,8 @@ public sealed class CatalogPublicationService(
                 $"Current publication pointer mismatch. Expected '{expected?.ToString() ?? "absent"}', actual '{actual?.ToString() ?? "absent"}'.");
         }
     }
+
+    private sealed record CatalogEligibilityTransition(
+        IReadOnlyList<Listing> Listings,
+        IReadOnlyList<CatalogListingPromotionEligibilityOutboxRequest> OutboxRequests);
 }
