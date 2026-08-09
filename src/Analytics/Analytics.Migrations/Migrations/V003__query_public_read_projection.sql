@@ -39,7 +39,7 @@ CREATE TABLE access_projection.public_sponsored_placement_reference
     CONSTRAINT ck_analytics_public_placement_ids CHECK
     (
         placement_id <> '00000000-0000-0000-0000-000000000000'::uuid
-        AND listing_id <> '00000000-0000-0000-8000-000000000000'::uuid
+        AND listing_id <> '00000000-0000-0000-0000-000000000000'::uuid
     ),
     CONSTRAINT ck_analytics_public_placement_scope CHECK
     (
