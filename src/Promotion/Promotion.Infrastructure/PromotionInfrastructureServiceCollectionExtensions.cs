@@ -25,6 +25,9 @@ public static class PromotionInfrastructureServiceCollectionExtensions
         services.AddScoped<EfPromotionRepository>();
         services.AddScoped<IPromotionRepository>(services =>
             services.GetRequiredService<EfPromotionRepository>());
+        services.AddScoped<
+            IPromotionEligibilityProjectionStore,
+            PostgresPromotionEligibilityProjectionStore>();
         services.AddScoped<PromotionReadinessProbe>();
         services.AddSingleton<IPromotionClock, SystemPromotionClock>();
         services.AddSingleton<IPromotionIdSource, UuidV7PromotionIdSource>();
