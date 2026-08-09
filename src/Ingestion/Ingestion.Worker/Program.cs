@@ -19,14 +19,15 @@ public static class Program
         var builder = Host.CreateApplicationBuilder(args);
         var options = IngestionWorkerOptions.FromConfiguration(builder.Configuration);
         builder.Services
-  .AddIngestionApplication()
-  .AddIngestionInfrastructure(builder.Configuration)
-  .AddIngestionObjectStorage(builder.Configuration)
-  .AddIngestionProcessingInfrastructure(builder.Configuration)
-  .AddIngestionWorker(options);
+            .AddIngestionApplication()
+            .AddIngestionInfrastructure(builder.Configuration)
+            .AddIngestionObjectStorage(builder.Configuration)
+            .AddIngestionProcessingInfrastructure(builder.Configuration)
+            .AddIngestionCatalogDeliveryInfrastructure(builder.Configuration)
+            .AddIngestionWorker(options);
         builder.Services.AddPlatformObservability(
-  builder.Configuration,
-  "ingestion-worker");
+            builder.Configuration,
+            "ingestion-worker");
         return builder.Build();
     }
 }

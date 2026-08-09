@@ -13,6 +13,7 @@ public static class IngestionWorkerServiceCollectionExtensions
         options.Validate();
         services.AddSingleton(options);
         services.AddHostedService<IngestionValidationWorker>();
+        services.AddHostedService<IngestionCatalogDeliveryWorker>();
         return services;
     }
 }

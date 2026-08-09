@@ -67,7 +67,7 @@ public sealed class IngestionWorkerOptionsTests
     }
 
     [Fact]
-    public void CompositionStillRegistersOnlyValidationUntilDeliveryAdapterIsWired()
+    public void CompositionRegistersValidationAndCatalogDeliveryWorkers()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -77,7 +77,10 @@ public sealed class IngestionWorkerOptionsTests
 
         var hosted = provider.GetServices<IHostedService>().ToArray();
 
-        Assert.IsType<IngestionValidationWorker>(Assert.Single(hosted));
+        Assert.Collection(
+            hosted,
+            service => Assert.IsType<IngestionValidationWorker>(service),
+            service => Assert.IsType<IngestionCatalogDeliveryWorker>(service));
     }
 
     private static IConfiguration CreateConfiguration(
