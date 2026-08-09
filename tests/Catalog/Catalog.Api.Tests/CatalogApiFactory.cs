@@ -50,6 +50,10 @@ public sealed class CatalogApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<ICatalogPublicationOperationStore, TestCatalogPublicationOperationStore>();
             services.RemoveAll<ICatalogListingDisputeRepository>();
             services.AddSingleton<ICatalogListingDisputeRepository, TestCatalogListingDisputeRepository>();
+            services.RemoveAll<ICatalogMediaStore>();
+            services.AddSingleton<ICatalogMediaStore, TestCatalogMediaStore>();
+            services.RemoveAll<ICatalogMediaObjectStore>();
+            services.AddSingleton<ICatalogMediaObjectStore, TestCatalogMediaObjectStore>();
             services
                 .AddAuthentication(options =>
                 {
