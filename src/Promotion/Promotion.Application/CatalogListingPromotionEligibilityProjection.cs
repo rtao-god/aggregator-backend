@@ -28,7 +28,6 @@ public enum PromotionEligibilityProjectionApplyResult
 {
     Applied = 1,
     Replayed = 2,
-    Superseded = 3,
 }
 
 /// <summary>Atomic Promotion-owned inbox and Catalog eligibility projection boundary.</summary>
@@ -40,19 +39,14 @@ public interface IPromotionEligibilityProjectionStore
         CancellationToken cancellationToken);
 }
 
-/// <summary>Owner context for reconciling placements against one current Catalog eligibility revision.</summary>
-public sealed record PromotionEligibilityPlacementReconciliationRequest(
-    ListingPromotionEligibility Eligibility,
-    Guid SystemActorId,
-    string CorrelationId,
-    Guid CausationId,
-    DateTimeOffset ChangedAtUtc);
-
-/// <summary>Pauses active or scheduled placements that no longer satisfy the current Catalog eligibility facts.</summary>
+/// <summary>Reconciles active Promotion placements after one authoritative Catalog eligibility change.</summary>
 public interface IPromotionEligibilityPlacementReconciler
 {
     public Task<int> PauseIneligiblePlacementsAsync(
-        PromotionEligibilityPlacementReconciliationRequest request,
+        ListingPromotionEligibility eligibility,
+        PromotionCommandContext commandContext,
+        DateTimeOffset changedAtUtc,
+        IPromotionIdSource idSource,
         CancellationToken cancellationToken);
 }
 
