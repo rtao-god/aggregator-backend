@@ -127,6 +127,86 @@ public sealed class PromotionDomainInvariantTests
     }
 
     [Fact]
+    public void CatalogEligibilityLossPausesAnActivePlacement()
+    {
+        var placement = CreatePlacement(
+            Guid.Parse("0198b100-0000-7000-8000-000000000034"),
+            Guid.Parse("0198b100-0000-7000-8000-000000000035"),
+            capacitySlot: 1,
+            locales: ["de-DE"],
+            Timestamp,
+            Timestamp.AddDays(2));
+        var eligibility = ListingPromotionEligibility.Create(
+            "berlin-recording-services",
+            placement.ListingId,
+            isPublished: false,
+            isArchived: true,
+            hasBlockingDispute: false,
+            hasVerifiedContact: false,
+            contactCapabilities: [],
+            categoryKeys: [],
+            districtKey: null,
+            sourceRevision: 2,
+            Timestamp.AddMinutes(1));
+
+        var changed = placement.PauseWhenCatalogIneligible(
+            eligibility,
+            CreateSponsoredProduct(),
+            Guid.Parse("0198b100-0000-7000-8000-000000000036"),
+            Timestamp.AddMinutes(1));
+
+        Assert.True(changed);
+        Assert.Equal(SponsoredPlacementState.Paused, placement.State);
+        Assert.False(placement.ConsumesCapacity);
+        Assert.Equal(2, placement.AggregateRevision);
+        Assert.Contains(
+            "PROMOTION_LISTING_INELIGIBLE",
+            placement.AuditReason,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EligibilityRecoveryDoesNotAutoResumeAPausedPlacement()
+    {
+        var placement = CreatePlacement(
+            Guid.Parse("0198b100-0000-7000-8000-000000000037"),
+            Guid.Parse("0198b100-0000-7000-8000-000000000038"),
+            capacitySlot: 1,
+            locales: ["de-DE"],
+            Timestamp,
+            Timestamp.AddDays(2));
+        var actorId = Guid.Parse("0198b100-0000-7000-8000-000000000039");
+        placement.Pause(
+            placement.AggregateRevision,
+            actorId,
+            "manual pause",
+            Timestamp.AddMinutes(1));
+        var eligibility = ListingPromotionEligibility.Create(
+            "berlin-recording-services",
+            placement.ListingId,
+            isPublished: true,
+            isArchived: false,
+            hasBlockingDispute: false,
+            hasVerifiedContact: true,
+            contactCapabilities: ["website"],
+            categoryKeys: ["recording-studio"],
+            districtKey: "mitte",
+            sourceRevision: 2,
+            Timestamp.AddMinutes(2));
+
+        var changed = placement.PauseWhenCatalogIneligible(
+            eligibility,
+            CreateSponsoredProduct(),
+            actorId,
+            Timestamp.AddMinutes(2));
+
+        Assert.False(changed);
+        Assert.Equal(SponsoredPlacementState.Paused, placement.State);
+        Assert.Equal(2, placement.AggregateRevision);
+        Assert.Equal("manual pause", placement.AuditReason);
+    }
+
+    [Fact]
     public void CapacityOverlapRequiresSameScopeSlotLocaleAndIntersectingTime()
     {
         var first = CreatePlacement(
