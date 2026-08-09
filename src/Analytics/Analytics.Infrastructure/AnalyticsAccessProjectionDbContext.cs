@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace Aggregator.Analytics.Infrastructure;
@@ -86,6 +87,36 @@ public sealed class AnalyticsAccessProjectionDbContext(
                 row.MessageId,
             });
         });
+
+        ApplySnakeCaseColumns(modelBuilder);
+    }
+
+    private static void ApplySnakeCaseColumns(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                property.SetColumnName(ToSnakeCase(property.Name));
+            }
+        }
+    }
+
+    private static string ToSnakeCase(string value)
+    {
+        var builder = new StringBuilder(value.Length + 8);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (char.IsUpper(character) && index > 0)
+            {
+                builder.Append('_');
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString();
     }
 }
 
