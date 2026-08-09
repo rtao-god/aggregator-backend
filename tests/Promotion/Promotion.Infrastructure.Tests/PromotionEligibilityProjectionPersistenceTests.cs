@@ -62,6 +62,34 @@ public sealed class PromotionEligibilityProjectionPersistenceTests
     }
 
     [Fact]
+    public void PlacementReconciliationSerializesWithTheEligibilityStream()
+    {
+        var reconciliation = ReadRepositoryFile(
+            "src/Promotion/Promotion.Infrastructure/EfPromotionRepository.EligibilityReconciliation.cs");
+        var registration = ReadRepositoryFile(
+            "src/Promotion/Promotion.Infrastructure/PromotionInfrastructureServiceCollectionExtensions.cs");
+
+        Assert.Contains("IsolationLevel.Serializable", reconciliation, StringComparison.Ordinal);
+        Assert.Contains(
+            "pg_advisory_xact_lock(hashtextextended",
+            reconciliation,
+            StringComparison.Ordinal);
+        Assert.Contains("currentEligibility.SourceRevision >", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("currentEligibility.SourceRevision <", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("EnsureCurrentEligibilityMatches", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("PauseWhenCatalogIneligible", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("PlacementCapacity.RemoveRange", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("PromotionOutboxMessageFactory.Create", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("await _dbContext.SaveChangesAsync", reconciliation, StringComparison.Ordinal);
+        Assert.Contains("await transaction.CommitAsync", reconciliation, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Resume(", reconciliation, StringComparison.Ordinal);
+        Assert.Contains(
+            "AddScoped<IPromotionEligibilityPlacementReconciler>",
+            registration,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BusinessRepositoryCannotWriteEligibilityProjection()
     {
         var port = ReadRepositoryFile(
