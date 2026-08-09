@@ -8,5 +8,7 @@
     <ProjectReference Include="../Acceptance.Contracts/Acceptance.Contracts.csproj" />
     <ProjectReference Include="../../../src/Analytics/Analytics.Application/Analytics.Application.csproj" />
     <ProjectReference Include="../../../src/Analytics/Analytics.Infrastructure/Analytics.Infrastructure.csproj" />
+    <ProjectReference Include="../../../src/Query/Query.Application/Query.Application.csproj" />
+    <ProjectReference Include="../../../src/Query/Query.Domain/Query.Domain.csproj" />
   </ItemGroup>
 </Project>

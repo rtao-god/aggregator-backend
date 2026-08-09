@@ -4,6 +4,8 @@ using System.Text;
 using Aggregator.Acceptance.Contracts;
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Infrastructure;
+using Aggregator.Query.Application;
+using Aggregator.Query.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 var internalKey = builder.Configuration["Acceptance:InternalKey"];
@@ -49,7 +51,7 @@ app.MapGet("/health/ready", async (
 app.MapPost("/acceptance/analytics/bootstrap", async (
     HttpRequest httpRequest,
     AnalyticsBootstrapRequest request,
-    IPublicReadReferenceProjectionWriter publicReadWriter,
+    ApplyPublicReadRevisionActivationService publicReadActivationService,
     IListingMetricsAccessProjectionWriter accessWriter,
     CancellationToken cancellationToken) =>
 {
@@ -65,26 +67,32 @@ app.MapPost("/acceptance/analytics/bootstrap", async (
         request.PromotionOverlayId.ToString("D"),
         request.SafetyOverlayId.ToString("D"),
         request.SourcePublicationId.ToString("D"));
-    var membershipDigest = ComputeDigest(
-        request.PublicReadRevisionId.ToString("D"),
-        request.ListingId.ToString("D"));
     var accessDigest = ComputeDigest(
         request.ListingId.ToString("D"),
         request.ActorId.ToString("D"),
         request.AccessSourceRevision.ToString(CultureInfo.InvariantCulture));
 
-    await publicReadWriter.ApplyAsync(
-        PublicReadReferenceProjection.Create(
-            request.PublicReadRevisionId,
-            request.CatalogKey,
-            request.BaseProjectionId,
-            request.PromotionOverlayId,
-            request.SafetyOverlayId,
-            request.SourcePublicationId,
-            publicReadDigest,
-            membershipDigest,
-            request.ActivatedAtUtc,
-            [request.ListingId]),
+    var publicReadRevision = PublicReadRevision.Restore(
+        request.PublicReadRevisionId,
+        request.CatalogKey,
+        request.BaseProjectionId,
+        request.PromotionOverlayId,
+        request.SafetyOverlayId,
+        request.SourcePublicationId,
+        request.ActivatedAtUtc,
+        publicReadDigest);
+    var activation = PublicReadActivationEventFactory.Create(
+        request.PublicReadRevisionId,
+        publicReadRevision,
+        activationRevision: 1,
+        [request.ListingId],
+        [],
+        request.ActivatedAtUtc);
+    var activationPayload = QueryCanonicalJson.Serialize(activation);
+    await publicReadActivationService.ApplyAsync(
+        activation,
+        QueryCanonicalJson.ComputeDigest(activationPayload),
+        "acceptance-analytics-bootstrap",
         cancellationToken);
     await accessWriter.ApplyAsync(
         ListingMetricsAccessProjection.Create(
