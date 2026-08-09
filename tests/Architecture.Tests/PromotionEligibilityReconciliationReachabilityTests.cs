@@ -145,6 +145,39 @@ public sealed class PromotionEligibilityReconciliationReachabilityTests
     }
 
     [Fact]
+    public void SchedulerCommitsIndependentItemsAndLocksEligibilityBeforeSnapshot()
+    {
+        var repository = RepositoryModel.Load();
+        var scheduling = Read(
+            repository,
+            "src/Promotion/Promotion.Infrastructure/EfPromotionRepository.Scheduling.cs");
+
+        Assert.Contains("SynchronizeEntitlementAsync(", scheduling, StringComparison.Ordinal);
+        Assert.Contains("SynchronizePlacementAsync(", scheduling, StringComparison.Ordinal);
+        Assert.Contains("ExecuteInTransactionAsync(async", scheduling, StringComparison.Ordinal);
+        Assert.Contains(
+            "pg_advisory_lock(hashtextextended",
+            scheduling,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "pg_advisory_unlock(hashtextextended",
+            scheduling,
+            StringComparison.Ordinal);
+        Assert.Contains("OpenConnectionAsync", scheduling, StringComparison.Ordinal);
+        Assert.Contains("CloseConnectionAsync", scheduling, StringComparison.Ordinal);
+        Assert.Contains("FOR UPDATE", scheduling, StringComparison.Ordinal);
+        Assert.Contains("FOR SHARE", scheduling, StringComparison.Ordinal);
+        Assert.Contains(
+            "await _dbContext.SaveChangesAsync(innerCancellationToken)",
+            scheduling,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "BeginTransactionAsync(\n            IsolationLevel.Serializable",
+            scheduling,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PromotionWorkerHasNoCatalogDatabaseCredential()
     {
         var repository = RepositoryModel.Load();
