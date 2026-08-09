@@ -6,8 +6,6 @@ public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> opti
 {
     internal DbSet<IngestionProducerRow> Producers => Set<IngestionProducerRow>();
 
-    internal DbSet<CatalogIngestionReferenceRow> CatalogReferences => Set<CatalogIngestionReferenceRow>();
-
     internal DbSet<ImportBatchRow> Batches => Set<ImportBatchRow>();
 
     internal DbSet<ImportBatchManifestRow> Manifests => Set<ImportBatchManifestRow>();
@@ -22,7 +20,6 @@ public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> opti
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
         ConfigureProducer(modelBuilder);
-        ConfigureCatalogReference(modelBuilder);
         ConfigureBatch(modelBuilder);
         ConfigureManifest(modelBuilder);
         ConfigureSourcePolicy(modelBuilder);
@@ -41,28 +38,6 @@ public sealed class IngestionDbContext(DbContextOptions<IngestionDbContext> opti
             .HasColumnName("supported_contract_revisions")
             .HasColumnType("integer[]");
         entity.Property(row => row.UpdatedAtUtc).HasColumnName("updated_at_utc").HasColumnType("timestamp with time zone");
-    }
-
-    private static void ConfigureCatalogReference(ModelBuilder modelBuilder)
-    {
-        var entity = modelBuilder.Entity<CatalogIngestionReferenceRow>();
-        entity.ToTable("catalog_reference", "catalog_projection");
-        entity.HasKey(row => new { row.SiteKey, row.CatalogKey });
-        entity.Property(row => row.SiteKey).HasColumnName("site_key").HasMaxLength(96);
-        entity.Property(row => row.CatalogKey).HasColumnName("catalog_key").HasMaxLength(96);
-        entity.Property(row => row.ActiveConfigurationRevisionId)
-            .HasColumnName("active_configuration_revision_id");
-        entity.Property(row => row.SupportedListingKinds)
-            .HasColumnName("supported_listing_kinds")
-            .HasColumnType("integer[]");
-        entity.Property(row => row.AggregateRevision)
-            .HasColumnName("aggregate_revision")
-            .IsConcurrencyToken();
-        entity.Property(row => row.UpdatedAtUtc).HasColumnName("updated_at_utc").HasColumnType("timestamp with time zone");
-        entity.ToTable(
-            table => table.HasCheckConstraint(
-                "ck_catalog_reference_revision_positive",
-                "aggregate_revision > 0"));
     }
 
     private static void ConfigureBatch(ModelBuilder modelBuilder)

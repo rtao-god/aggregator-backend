@@ -11,21 +11,6 @@ internal sealed class IngestionProducerRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
-internal sealed class CatalogIngestionReferenceRow
-{
-    public string SiteKey { get; set; } = string.Empty;
-
-    public string CatalogKey { get; set; } = string.Empty;
-
-    public Guid ActiveConfigurationRevisionId { get; set; }
-
-    public int[] SupportedListingKinds { get; set; } = [];
-
-    public long AggregateRevision { get; set; }
-
-    public DateTimeOffset UpdatedAtUtc { get; set; }
-}
-
 internal sealed class ImportBatchRow
 {
     public Guid Id { get; set; }
