@@ -7,6 +7,7 @@ using Npgsql;
 namespace Aggregator.Query.Api;
 
 [ApiController]
+[QuerySitemapFailureFilter]
 [Route("api/catalog-query/catalogs/{catalogKey}/sitemap-records")]
 public sealed class CatalogSitemapController : ControllerBase
 {
@@ -26,6 +27,7 @@ public sealed class CatalogSitemapController : ControllerBase
     [HttpGet]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<PublicSitemapPageDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<PublicSitemapPageDto>> ReadAsync(
         [FromRoute] string catalogKey,
