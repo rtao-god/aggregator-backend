@@ -27,7 +27,9 @@ public static class QueryInfrastructureServiceCollectionExtensions
         services.AddSingleton<IQueryClock, SystemQueryClock>();
         services.AddSingleton<NpgsqlPublicQueryStore>();
         services.AddSingleton<IPublicQueryStore, SafetyAwarePublicQueryStore>();
+        services.AddSingleton<IPublicProjectionStatusStore, PostgresPublicProjectionStatusStore>();
         services.AddSingleton<PublicQueryService>();
+        services.AddSingleton<ReadPublicProjectionStatusService>();
         return services;
     }
 
