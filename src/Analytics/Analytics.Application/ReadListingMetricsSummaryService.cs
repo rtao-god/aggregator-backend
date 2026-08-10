@@ -24,6 +24,7 @@ public sealed class ReadListingMetricsSummaryService(
             listingId,
             request,
             cancellationToken);
+        var canonicalCatalogKey = metrics[0].CatalogKey;
         var unavailableDays = metrics
             .Where(item => item.Readiness != AggregateReadinessState.Complete)
             .Select(item => new ListingMetricsSummaryUnavailableDay(
@@ -38,7 +39,7 @@ public sealed class ReadListingMetricsSummaryService(
         if (unavailableDays.Length > 0)
         {
             return new ListingMetricsSummaryResponse(
-                catalogKey,
+                canonicalCatalogKey,
                 listingId,
                 request.FromInclusive,
                 request.ToExclusive,
@@ -51,7 +52,7 @@ public sealed class ReadListingMetricsSummaryService(
 
         var counts = SumCompleteCounts(metrics);
         return new ListingMetricsSummaryResponse(
-            catalogKey,
+            canonicalCatalogKey,
             listingId,
             request.FromInclusive,
             request.ToExclusive,
