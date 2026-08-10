@@ -48,22 +48,27 @@ public sealed class PromotionUsageWindowFactoryTests
     }
 
     [Fact]
-    public void EmptyWindowIsNotPublished()
+    public void CompleteZeroCorrectionCreatesExactProducerEvent()
     {
-        var empty = CreateWindow() with
+        var correction = CreateWindow() with
         {
             AcceptedImpressions = 0,
             AcceptedListingOpens = 0,
             AcceptedOutboundClicks = 0,
+            AggregateRevision = 4,
         };
+        var eventId = Guid.Parse("0198ff70-0000-7000-8000-000000000008");
 
-        var exception = Assert.Throws<AnalyticsCommandException>(() =>
-            PromotionUsageWindowFactory.Create(
-                empty,
-                Guid.Parse("0198ff70-0000-7000-8000-000000000008"),
-                EndsAtUtc));
+        var integrationEvent = PromotionUsageWindowFactory.Create(
+            correction,
+            eventId,
+            EndsAtUtc);
 
-        Assert.Equal("ANALYTICS_PROMOTION_USAGE_EMPTY", exception.Code);
+        Assert.Equal(eventId, integrationEvent.EventId);
+        Assert.Equal(0, integrationEvent.AcceptedImpressions);
+        Assert.Equal(0, integrationEvent.AcceptedListingOpens);
+        Assert.Equal(0, integrationEvent.AcceptedOutboundClicks);
+        Assert.Equal(4, integrationEvent.AggregateRevision);
     }
 
     [Fact]

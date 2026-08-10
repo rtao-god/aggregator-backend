@@ -70,24 +70,27 @@ public sealed class AnalyticsPromotionUsageProjectionTests
     }
 
     [Fact]
-    public async Task EmptyWindowIsRejectedBeforePersistence()
+    public async Task CompleteZeroCorrectionIsPersistedExplicitly()
     {
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
             new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
-        var invalid = CreateMessage() with
+        var correction = CreateMessage() with
         {
             AcceptedImpressions = 0,
             AcceptedListingOpens = 0,
             AcceptedOutboundClicks = 0,
+            AggregateRevision = 5,
         };
 
-        var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
-            service.ApplyAsync(invalid, CancellationToken.None));
+        await service.ApplyAsync(correction, CancellationToken.None);
 
-        Assert.Equal("PROMOTION_USAGE_WINDOW_EMPTY", exception.Code);
-        Assert.Null(store.Change);
+        var projection = Assert.IsType<PromotionUsageProjectionChange>(store.Change).Projection;
+        Assert.Equal(0, projection.AcceptedImpressions);
+        Assert.Equal(0, projection.AcceptedListingOpens);
+        Assert.Equal(0, projection.AcceptedOutboundClicks);
+        Assert.Equal(5, projection.SourceAggregateRevision);
     }
 
     [Fact]
