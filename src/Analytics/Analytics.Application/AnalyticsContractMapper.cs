@@ -69,6 +69,32 @@ internal static class AnalyticsContractMapper
             interactionEvent.ListingId);
     }
 
+
+    public static AnalyticsAggregateRunResponse ToResponse(AnalyticsAggregateRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return new AnalyticsAggregateRunResponse(
+            run.RunId,
+            run.FromInclusive,
+            run.ToExclusive,
+            run.State switch
+            {
+                AnalyticsAggregateRunState.Rebuilding => AnalyticsAggregateRunStateContract.Rebuilding,
+                AnalyticsAggregateRunState.Complete => AnalyticsAggregateRunStateContract.Complete,
+                AnalyticsAggregateRunState.Blocked => AnalyticsAggregateRunStateContract.Blocked,
+                _ => throw UnsupportedDomainEnum(nameof(AnalyticsAggregateRunState), run.State),
+            },
+            run.StartedAtUtc,
+            run.CompletedAtUtc,
+            run.SourceDigest,
+            run.MaterializedMetricCount,
+            run.RemovedStaleMetricCount,
+            run.MaterializedDayCount,
+            run.FailureCode,
+            run.FailureDetail,
+            run.RequiredAction);
+    }
+
     public static DailyListingMetricsResponse ToResponse(DailyListingMetrics metrics)
     {
         ArgumentNullException.ThrowIfNull(metrics);
@@ -121,7 +147,7 @@ internal static class AnalyticsContractMapper
         _ => throw UnsupportedDomainEnum(nameof(TrafficQualityState), value),
     };
 
-    private static AggregateReadinessStateContract ToContract(AggregateReadinessState value) => value switch
+    public static AggregateReadinessStateContract ToContract(AggregateReadinessState value) => value switch
     {
         AggregateReadinessState.Complete => AggregateReadinessStateContract.Complete,
         AggregateReadinessState.Partial => AggregateReadinessStateContract.Partial,
