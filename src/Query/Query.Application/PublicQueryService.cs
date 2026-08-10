@@ -110,13 +110,13 @@ public sealed class PublicQueryService
                 criteria.DistrictKey,
                 criteria.ListingKind is null
                     ? null
-                    : MapListingKind(criteria.ListingKind.Value),
+                    : PublicQueryContractMapper.MapListingKind(criteria.ListingKind.Value),
                 criteria.ContactKind is null
                     ? null
-                    : MapContactKindContract(criteria.ContactKind.Value),
+                    : PublicQueryContractMapper.MapContactKind(criteria.ContactKind.Value),
                 criteria.MarketZone is null
                     ? null
-                    : MapMarketZoneContract(criteria.MarketZone.Value)),
+                    : PublicQueryContractMapper.MapMarketZone(criteria.MarketZone.Value)),
             sponsored,
             organic,
             snapshot.CategoryFacetCounts
@@ -130,13 +130,13 @@ public sealed class PublicQueryService
             snapshot.ListingKindFacetCounts
                 .OrderBy(item => item.Key)
                 .Select(item => new PublicListingKindFacetValue(
-                    MapListingKind(item.Key),
+                    PublicQueryContractMapper.MapListingKind(item.Key),
                     item.Value))
                 .ToArray(),
             snapshot.ContactKindFacetCounts
                 .OrderBy(item => item.Key)
                 .Select(item => new PublicContactKindFacetValue(
-                    MapContactKindContract(item.Key),
+                    PublicQueryContractMapper.MapContactKind(item.Key),
                     item.Value))
                 .ToArray(),
             nextCursor);
@@ -259,67 +259,24 @@ public sealed class PublicQueryService
             var placement = sponsored.Placement;
             if (!placementIds.Add(placement.PlacementId))
             {
-                throw StoreContractFailure(
-                    $"Query store returned sponsored placement '{placement.PlacementId}' more than once.");
+                throw StoreContractFailure("Query store returned the same sponsored placement more than once.");
             }
 
-            if (!string.Equals(
-                    placement.CatalogKey,
-                    expectedCatalogKey,
-                    StringComparison.Ordinal))
+            if (!string.Equals(placement.CatalogKey, expectedCatalogKey, StringComparison.Ordinal) ||
+                placement.ListingId != sponsored.Document.ListingId ||
+                placement.State != QueryPromotionPlacementState.Active ||
+                !placement.IsDisplayableAt(readAtUtc) ||
+                !placement.IsLocaleEligible(criteria.RequestedLocale) ||
+                !placement.IsScopeEligible(
+                    criteria.CategoryKey,
+                    criteria.DistrictKey,
+                    expectedCatalogKey))
             {
                 throw StoreContractFailure(
-                    $"Sponsored placement '{placement.PlacementId}' belongs to another catalog.");
-            }
-
-            if (placement.ListingId != sponsored.Document.ListingId)
-            {
-                throw StoreContractFailure(
-                    $"Sponsored placement '{placement.PlacementId}' is paired with another listing.");
+                    $"Sponsored placement '{placement.PlacementId}' is not valid for the current public query.");
             }
 
             EnsureDocumentMatchesCriteria(sponsored.Document, criteria);
-            if (!placement.IsVisibleAt(readAtUtc))
-            {
-                throw StoreContractFailure(
-                    $"Query store returned inactive or expired sponsored placement '{placement.PlacementId}'.");
-            }
-
-            if (!placement.LocaleScope.Contains(
-                    criteria.RequestedLocale,
-                    StringComparer.OrdinalIgnoreCase))
-            {
-                throw StoreContractFailure(
-                    $"Sponsored placement '{placement.PlacementId}' does not target locale '{criteria.RequestedLocale}'.");
-            }
-
-            var scopeMatches = placement.Scope switch
-            {
-                QueryPromotionPlacementScope.Catalog =>
-                    string.Equals(
-                        placement.ScopeKey,
-                        expectedCatalogKey,
-                        StringComparison.Ordinal),
-                QueryPromotionPlacementScope.Category =>
-                    criteria.CategoryKey is not null &&
-                    string.Equals(
-                        placement.ScopeKey,
-                        criteria.CategoryKey,
-                        StringComparison.Ordinal),
-                QueryPromotionPlacementScope.District =>
-                    criteria.DistrictKey is not null &&
-                    string.Equals(
-                        placement.ScopeKey,
-                        criteria.DistrictKey,
-                        StringComparison.Ordinal),
-                QueryPromotionPlacementScope.EditorialLanding => false,
-                _ => false,
-            };
-            if (!scopeMatches)
-            {
-                throw StoreContractFailure(
-                    $"Sponsored placement '{placement.PlacementId}' is outside the requested search scope.");
-            }
         }
     }
 
@@ -328,11 +285,10 @@ public sealed class PublicQueryService
         PublicListingSearchCriteria criteria)
     {
         ArgumentNullException.ThrowIfNull(document);
-        if (criteria.CategoryKey is not null &&
-            !document.CategoryKeys.Contains(criteria.CategoryKey, StringComparer.Ordinal))
+        if (criteria.CategoryKey is not null && !document.CategoryKeys.Contains(criteria.CategoryKey))
         {
             throw StoreContractFailure(
-                $"Listing '{document.ListingId}' does not match requested category '{criteria.CategoryKey}'.");
+                $"Listing '{document.ListingId}' does not match the requested category.");
         }
 
         if (criteria.DistrictKey is not null &&
@@ -342,28 +298,27 @@ public sealed class PublicQueryService
                 StringComparison.Ordinal))
         {
             throw StoreContractFailure(
-                $"Listing '{document.ListingId}' does not match requested district '{criteria.DistrictKey}'.");
+                $"Listing '{document.ListingId}' does not match the requested district.");
         }
 
-        if (criteria.ListingKind is not null &&
-            document.ListingKind != criteria.ListingKind.Value)
+        if (criteria.ListingKind is not null && document.ListingKind != criteria.ListingKind.Value)
         {
             throw StoreContractFailure(
-                $"Listing '{document.ListingId}' does not match requested listing kind '{criteria.ListingKind}'.");
+                $"Listing '{document.ListingId}' does not match the requested listing kind.");
         }
 
         if (criteria.ContactKind is not null &&
             !document.Contacts.Any(item => item.Kind == criteria.ContactKind.Value))
         {
             throw StoreContractFailure(
-                $"Listing '{document.ListingId}' does not match requested contact kind '{criteria.ContactKind}'.");
+                $"Listing '{document.ListingId}' does not match the requested contact capability.");
         }
 
         if (criteria.MarketZone is not null &&
             document.Geography.State != criteria.MarketZone.Value)
         {
             throw StoreContractFailure(
-                $"Listing '{document.ListingId}' does not match requested market zone '{criteria.MarketZone}'.");
+                $"Listing '{document.ListingId}' does not match the requested market zone.");
         }
     }
 
@@ -432,7 +387,7 @@ public sealed class PublicQueryService
         return new PublicListingSummary(
             document.ListingId,
             document.ListingRevisionId,
-            MapListingKind(document.ListingKind),
+            PublicQueryContractMapper.MapListingKind(document.ListingKind),
             requestedLocale,
             localization.Value.Locale,
             localization.Exact ? "exact" : "fallback",
@@ -577,35 +532,6 @@ public sealed class PublicQueryService
             400,
             $"Filter '{parameterName}' has unsupported value '{value}'.",
             requiredAction);
-
-    private static PublicListingKindContract MapListingKind(QueryListingKind value) => value switch
-    {
-        QueryListingKind.Place => PublicListingKindContract.Place,
-        QueryListingKind.Provider => PublicListingKindContract.Provider,
-        _ => throw StoreContractFailure($"Unsupported listing kind '{value}'."),
-    };
-
-    private static PublicContactKindContract MapContactKindContract(
-        QueryContactKind value) => value switch
-    {
-        QueryContactKind.Website => PublicContactKindContract.Website,
-        QueryContactKind.Email => PublicContactKindContract.Email,
-        QueryContactKind.Phone => PublicContactKindContract.Phone,
-        QueryContactKind.WhatsApp => PublicContactKindContract.WhatsApp,
-        QueryContactKind.BookingReference => PublicContactKindContract.BookingReference,
-        QueryContactKind.MapReference => PublicContactKindContract.MapReference,
-        _ => throw StoreContractFailure($"Unsupported contact kind '{value}'."),
-    };
-
-    private static PublicMarketZoneContract MapMarketZoneContract(
-        QueryGeographyState value) => value switch
-    {
-        QueryGeographyState.PrimaryMarket => PublicMarketZoneContract.PrimaryMarket,
-        QueryGeographyState.NearbyMarket => PublicMarketZoneContract.NearbyMarket,
-        QueryGeographyState.RemoteOnly => PublicMarketZoneContract.RemoteOnly,
-        QueryGeographyState.OutsideMarket => PublicMarketZoneContract.OutsideMarket,
-        _ => throw StoreContractFailure($"Unsupported market zone '{value}'."),
-    };
 
     private static PublicFieldStateContract MapFieldState(QueryFieldState state) => state switch
     {
