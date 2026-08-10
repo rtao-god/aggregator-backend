@@ -5,6 +5,8 @@ public static class AnalyticsAuthorizationPolicies
 {
     public const string ViewListing = "analytics.view-listing";
 
+    public const string ViewAggregationStatus = "analytics.view-aggregation-status";
+
     public const string TestContracts = "analytics.test-contracts";
 }
 
@@ -34,4 +36,6 @@ public static class AnalyticsOperationIds
     public const string SubmitInteractionEventBatch = "SubmitAnalyticsInteractionEventBatch";
 
     public const string ReadDailyListingMetrics = "ReadAnalyticsDailyListingMetrics";
+
+    public const string ReadAggregationStatus = "ReadAnalyticsAggregationStatus";
 }

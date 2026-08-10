@@ -76,3 +76,21 @@ public sealed class AnalyticsMetricsController(
             new DailyMetricsRangeRequest(fromInclusive, toExclusive),
             cancellationToken));
 }
+
+[ApiController]
+[Route("api/analytics")]
+[Authorize(Policy = AnalyticsAuthorizationPolicies.ViewAggregationStatus)]
+[EnableRateLimiting(AnalyticsRateLimitPolicies.Metrics)]
+public sealed class AnalyticsAggregationController(
+    ReadAnalyticsAggregationStatusService statusService) : ControllerBase
+{
+    [HttpGet("aggregation-status", Name = AnalyticsOperationIds.ReadAggregationStatus)]
+    [ProducesResponseType<AnalyticsAggregationStatusResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<AnalyticsAggregationStatusResponse>> ReadStatusAsync(
+        [FromQuery] DateOnly fromInclusive,
+        [FromQuery] DateOnly toExclusive,
+        CancellationToken cancellationToken) =>
+        Ok(await statusService.ReadAsync(
+            new DailyMetricsRangeRequest(fromInclusive, toExclusive),
+            cancellationToken));
+}

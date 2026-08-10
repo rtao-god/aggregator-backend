@@ -90,6 +90,9 @@ public partial class Program
                 AnalyticsAuthorizationPolicies.ViewListing,
                 AnalyticsAuthorizationPolicies.ViewListing)
             .AddRequiredScopePolicy(
+                AnalyticsAuthorizationPolicies.ViewAggregationStatus,
+                AnalyticsAuthorizationPolicies.ViewAggregationStatus)
+            .AddRequiredScopePolicy(
                 AnalyticsAuthorizationPolicies.TestContracts,
                 AnalyticsAuthorizationPolicies.TestContracts);
 
