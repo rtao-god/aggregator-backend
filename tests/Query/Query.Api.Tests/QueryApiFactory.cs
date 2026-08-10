@@ -22,7 +22,7 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
 
     public StubPublicQueryStore Store { get; } = new();
 
-    public StubPublicProjectionStatusStore ProjectionStatusStore { get; } = new();
+    public StubPublicFacetCatalogStore FacetStore { get; } = new();
 
     public StubQueryClock Clock { get; } = new(
         new DateTimeOffset(2026, 8, 4, 12, 0, 0, TimeSpan.Zero));
@@ -34,10 +34,10 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IPublicQueryStore>();
-            services.RemoveAll<IPublicProjectionStatusStore>();
+            services.RemoveAll<IPublicFacetCatalogStore>();
             services.RemoveAll<IQueryClock>();
             services.AddSingleton<IPublicQueryStore>(Store);
-            services.AddSingleton<IPublicProjectionStatusStore>(ProjectionStatusStore);
+            services.AddSingleton<IPublicFacetCatalogStore>(FacetStore);
             services.AddSingleton<IQueryClock>(Clock);
         });
     }
@@ -93,21 +93,25 @@ public sealed class StubPublicQueryStore : IPublicQueryStore
     }
 }
 
-public sealed class StubPublicProjectionStatusStore : IPublicProjectionStatusStore
+public sealed class StubPublicFacetCatalogStore : IPublicFacetCatalogStore
 {
-    public PublicProjectionStatusSnapshot? Snapshot { get; set; }
+    public PublicFacetCatalogSnapshot? Snapshot { get; set; }
 
     public int ReadCount { get; private set; }
 
     public string? LastCatalogKey { get; private set; }
 
-    public Task<PublicProjectionStatusSnapshot?> ReadAsync(
+    public DateTimeOffset? LastReadAtUtc { get; private set; }
+
+    public Task<PublicFacetCatalogSnapshot?> ReadAsync(
         string catalogKey,
+        DateTimeOffset readAtUtc,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ReadCount++;
         LastCatalogKey = catalogKey;
+        LastReadAtUtc = readAtUtc;
         return Task.FromResult(Snapshot);
     }
 }
