@@ -1,158 +1,130 @@
-using System.Security.Cryptography;
-using System.Text;
 using Aggregator.Query.Application;
 using Aggregator.Query.Contracts;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace Aggregator.Query.Api;
 
 [ApiController]
-[EnableRateLimiting("public-query")]
 [Route("api/catalog-query/catalogs/{catalogKey}")]
-public sealed class CatalogQueryController(
-    PublicQueryService service,
-    IQueryClock clock) : ControllerBase
+public sealed class CatalogQueryController(PublicQueryService service) : ControllerBase
 {
-    private static readonly HashSet<string> SearchQueryKeys =
-        new(["locale", "category", "pageSize", "cursor"], StringComparer.OrdinalIgnoreCase);
-    private static readonly HashSet<string> RouteQueryKeys =
-        new(["locale"], StringComparer.OrdinalIgnoreCase);
+    private static readonly IReadOnlySet<string> SupportedSearchParameters =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "locale",
+            "category",
+            "district",
+            "listingKind",
+            "contactKind",
+            "pageSize",
+            "cursor",
+        };
 
     [HttpGet("listings", Name = "SearchPublicListings")]
     [ProducesResponseType<PublicListingSearchResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status304NotModified)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> SearchAsync(
-        string catalogKey,
-        [FromQuery] string locale,
+    public async Task<ActionResult<PublicListingSearchResponse>> GetListings(
+        [FromRoute] string catalogKey,
+        [FromQuery] string locale = "de-DE",
         [FromQuery] string? category = null,
+        [FromQuery] string? district = null,
+        [FromQuery] string? listingKind = null,
+        [FromQuery] string? contactKind = null,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
-        RejectUnknownQueryKeys(SearchQueryKeys);
-        var result = await service.SearchAsync(
+        EnsureKnownSearchParameters(Request.Query.Keys);
+        var response = await service.SearchAsync(
             catalogKey,
-            locale,
-            category,
-            pageSize,
-            cursor,
+            new PublicListingSearchRequest(
+                locale,
+                category,
+                district,
+                ParseListingKind(listingKind),
+                ParseContactKind(contactKind),
+                pageSize,
+                cursor),
             cancellationToken);
-        var now = clock.GetUtcNow();
-        if (now.Offset != TimeSpan.Zero)
-        {
-            throw new QueryReadException(
-                "Query.PublicApi",
-                "QUERY_CACHE_CLOCK_NOT_UTC",
-                StatusCodes.Status500InternalServerError,
-                "Query cache clock is not normalized to UTC.",
-                "Correct the Query runtime clock before serving public traffic.");
-        }
-
-        var secondsUntilSponsoredExpiry = result.Sponsored.Count == 0
-            ? 60d
-            : (result.Sponsored.Min(item => item.HardExpiryAtUtc) - now).TotalSeconds;
-        var sponsoredMaxAge = secondsUntilSponsoredExpiry <= 0
-            ? 0
-            : secondsUntilSponsoredExpiry >= 60
-                ? 60
-                : (int)Math.Floor(secondsUntilSponsoredExpiry);
-        var sponsoredCacheIdentity = string.Join(
-            ";",
-            result.Sponsored.Select(item =>
-                $"{item.PlacementId:N}:{item.HardExpiryAtUtc:O}"));
-        return WithPublicCaching(
-            result,
-            result.Metadata.PublicReadRevisionId,
-            $"search\n{catalogKey.Trim()}\n{locale.Trim()}\n{category?.Trim()}\n{pageSize}\n{cursor}\n{sponsoredCacheIdentity}",
-            sponsoredMaxAge,
-            allowStaleWhileRevalidate: result.Sponsored.Count == 0);
+        Response.Headers.ETag = QueryHttpCache.BuildETag(response.Metadata.PublicReadRevisionId);
+        Response.Headers.CacheControl = "public,max-age=60,stale-while-revalidate=300";
+        return Ok(response);
     }
 
     [HttpGet("routes/{**path}", Name = "GetPublicListingByRoute")]
     [ProducesResponseType<PublicListingCardResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status304NotModified)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task<IActionResult> GetByRouteAsync(
-        string catalogKey,
-        string path,
-        [FromQuery] string locale,
+    public async Task<ActionResult<PublicListingCardResponse>> GetByRoute(
+        [FromRoute] string catalogKey,
+        [FromRoute] string path,
+        [FromQuery] string locale = "de-DE",
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
-        RejectUnknownQueryKeys(RouteQueryKeys);
-        var absolutePath = $"/{path.TrimStart('/')}";
-        var result = await service.GetByRouteAsync(
+        var response = await service.GetByRouteAsync(
             catalogKey,
-            absolutePath,
+            $"/{path.TrimStart('/')}",
             locale,
             cancellationToken);
-        return WithPublicCaching(
-            result,
-            result.Metadata.PublicReadRevisionId,
-            $"route\n{catalogKey.Trim()}\n{absolutePath}\n{locale.Trim()}");
-    }
-
-    private void RejectUnknownQueryKeys(HashSet<string> allowedKeys)
-    {
-        var unknownKeys = Request.Query.Keys
-            .Where(key => !allowedKeys.Contains(key))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        if (unknownKeys.Length > 0)
-        {
-            throw new QueryReadException(
-                "Query.PublicApi",
-                "QUERY_FILTER_UNSUPPORTED",
-                StatusCodes.Status400BadRequest,
-                $"Unsupported query parameters: {string.Join(", ", unknownKeys)}.",
-                "Remove parameters that are not declared by the Query API contract.",
-                new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["unknownParameters"] = unknownKeys,
-                    ["allowedParameters"] = allowedKeys.Order(StringComparer.Ordinal).ToArray(),
-                });
-        }
-    }
-
-    private IActionResult WithPublicCaching<TResponse>(
-        TResponse response,
-        Guid publicReadRevisionId,
-        string requestIdentity,
-        int maxAgeSeconds = 60,
-        bool allowStaleWhileRevalidate = true)
-    {
-        ArgumentNullException.ThrowIfNull(response);
-        ArgumentException.ThrowIfNullOrWhiteSpace(requestIdentity);
-        if (maxAgeSeconds is < 0 or > 60)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxAgeSeconds),
-                maxAgeSeconds,
-                "Public Query cache max age must be between zero and 60 seconds.");
-        }
-
-        var digestInput = Encoding.UTF8.GetBytes($"{publicReadRevisionId:N}\n{requestIdentity}");
-        var etag = $"\"{Convert.ToHexString(SHA256.HashData(digestInput)).ToLowerInvariant()}\"";
-        Response.Headers.ETag = etag;
-        Response.Headers.CacheControl = allowStaleWhileRevalidate
-            ? $"public, max-age={maxAgeSeconds}, stale-while-revalidate=300"
-            : $"public, max-age={maxAgeSeconds}, must-revalidate";
-        Response.Headers["X-Public-Read-Revision-Id"] = publicReadRevisionId.ToString("D");
-        if (Request.Headers.IfNoneMatch.Any(value => string.Equals(value, etag, StringComparison.Ordinal)))
-        {
-            return StatusCode(StatusCodes.Status304NotModified);
-        }
-
+        Response.Headers.ETag = QueryHttpCache.BuildETag(response.Metadata.PublicReadRevisionId);
+        Response.Headers.CacheControl = "public,max-age=300,stale-while-revalidate=3600";
         return Ok(response);
     }
+
+    private static void EnsureKnownSearchParameters(IEnumerable<string> parameterNames)
+    {
+        var unknown = parameterNames
+            .Where(item => !SupportedSearchParameters.Contains(item))
+            .OrderBy(item => item, StringComparer.Ordinal)
+            .ToArray();
+        if (unknown.Length == 0)
+        {
+            return;
+        }
+
+        throw new QueryReadException(
+            "Query.Search",
+            "QUERY_FILTER_UNKNOWN",
+            400,
+            $"Unknown public search parameter(s): {string.Join(", ", unknown)}.",
+            "Remove parameters that are not declared by the public Query contract.",
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["unknownParameters"] = unknown,
+            });
+    }
+
+    private static PublicListingKindContract? ParseListingKind(string? value) => value switch
+    {
+        null => null,
+        "place" => PublicListingKindContract.Place,
+        "provider" => PublicListingKindContract.Provider,
+        _ => throw InvalidFilter(
+            "listingKind",
+            value,
+            "Supported listingKind values are 'place' and 'provider'."),
+    };
+
+    private static PublicContactKindContract? ParseContactKind(string? value) => value switch
+    {
+        null => null,
+        "website" => PublicContactKindContract.Website,
+        "email" => PublicContactKindContract.Email,
+        "phone" => PublicContactKindContract.Phone,
+        "whatsapp" => PublicContactKindContract.WhatsApp,
+        "booking_reference" => PublicContactKindContract.BookingReference,
+        "map_reference" => PublicContactKindContract.MapReference,
+        _ => throw InvalidFilter(
+            "contactKind",
+            value,
+            "Supported contactKind values are 'website', 'email', 'phone', 'whatsapp', 'booking_reference', and 'map_reference'."),
+    };
+
+    private static QueryReadException InvalidFilter(
+        string parameterName,
+        string value,
+        string requiredAction) =>
+        new(
+            "Query.Search",
+            "QUERY_FILTER_INVALID",
+            400,
+            $"Filter '{parameterName}' has unsupported value '{value}'.",
+            requiredAction);
 }
