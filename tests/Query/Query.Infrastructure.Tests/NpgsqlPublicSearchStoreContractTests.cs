@@ -12,14 +12,19 @@ public sealed class NpgsqlPublicSearchStoreContractTests
         Assert.Contains("category_filter.category_key = @category_key", source, StringComparison.Ordinal);
         Assert.Contains("district_filter.district_key = @district_key", source, StringComparison.Ordinal);
         Assert.Contains("market_zone_filter.state = @market_zone", source, StringComparison.Ordinal);
-        Assert.Contains("@listing_kind IS NULL OR d.listing_kind = @listing_kind", source, StringComparison.Ordinal);
+        Assert.Contains("var listingKindClause = criteria.ListingKind is null", source, StringComparison.Ordinal);
+        Assert.Contains(": \"AND d.listing_kind = @listing_kind\";", source, StringComparison.Ordinal);
         Assert.Contains("contact_filter.kind = @contact_kind", source, StringComparison.Ordinal);
         Assert.Contains("@listing_kind IS NULL OR document.listing_kind = @listing_kind", source, StringComparison.Ordinal);
         Assert.Contains("item.scope_type = 'district'", source, StringComparison.Ordinal);
         Assert.Contains("item.scope_key = @district_key", source, StringComparison.Ordinal);
+        Assert.Contains("if (criteria.CategoryKey is not null)", source, StringComparison.Ordinal);
+        Assert.Contains("if (criteria.DistrictKey is not null)", source, StringComparison.Ordinal);
+        Assert.Contains("if (criteria.ContactKind is not null)", source, StringComparison.Ordinal);
+        Assert.Contains("if (criteria.MarketZone is not null)", source, StringComparison.Ordinal);
         Assert.Contains("\"market_zone\"", source, StringComparison.Ordinal);
         Assert.Contains("ToPersistedGeographyState(criteria.MarketZone.Value)", source, StringComparison.Ordinal);
-        Assert.Contains("AddSearchFilterParameters(command, criteria);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AddSearchFilterParameters(command, criteria);", source, StringComparison.Ordinal);
     }
 
     [Fact]
