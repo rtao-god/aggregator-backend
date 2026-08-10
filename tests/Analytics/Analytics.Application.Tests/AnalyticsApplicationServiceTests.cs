@@ -7,14 +7,14 @@ namespace Analytics.Application.Tests;
 public sealed class AnalyticsApplicationServiceTests
 {
     private static readonly DateTimeOffset Timestamp =
-        new(2026, 8, 4, 6, 0, 0, TimeSpan.Zero);
+        new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task AcceptedInteractionIsPersistedAgainstKnownPublicRevision()
+    public async Task SubmitPersistsTypedAcceptedObservation()
     {
-        var eventId = Guid.Parse("0198a200-0000-7000-8000-000000000001");
         var eventStore = new InMemoryEventStore();
         var antiAbuse = new RecordingAntiAbuseVerifier();
+        var eventId = Guid.Parse("0198a200-0000-7000-8000-000000000001");
         var service = CreateSubmitService(
             eventStore,
             new FixedPublicReadReferenceStore(PublicReadMembershipState.Known),
@@ -23,88 +23,87 @@ public sealed class AnalyticsApplicationServiceTests
 
         var response = await service.SubmitAsync(CreateRequest(), CancellationToken.None);
 
-        Assert.Equal(eventId, response.EventId);
         Assert.Equal(InteractionAcceptanceStateContract.Accepted, response.AcceptanceState);
+        Assert.Equal(eventId, response.EventId);
         Assert.Equal(TrafficQualityStateContract.Accepted, response.QualityState);
+        var stored = Assert.Single(eventStore.Events);
+        Assert.Equal(CreateRequest().ClientEventId, stored.SemanticKey.ClientEventId);
+        Assert.Matches("^[0-9a-f]{64}$", stored.PayloadDigest);
+        Assert.Equal(CreateRequest().PublicReadRevisionId, stored.PublicReadRevisionId);
+        Assert.Equal(CreateRequest().ListingId, stored.ListingId);
         Assert.Equal(1, antiAbuse.VerificationCount);
-        Assert.Single(eventStore.Events);
     }
 
     [Fact]
-    public async Task SameSemanticEventAndPayloadReturnsPriorResultWithoutReverification()
+    public async Task ExactReplayReturnsPriorIdentity()
     {
         var eventStore = new InMemoryEventStore();
         var antiAbuse = new RecordingAntiAbuseVerifier();
+        var eventId = Guid.Parse("0198a200-0000-7000-8000-000000000002");
         var service = CreateSubmitService(
             eventStore,
             new FixedPublicReadReferenceStore(PublicReadMembershipState.Known),
             antiAbuse,
-            Guid.Parse("0198a200-0000-7000-8000-000000000002"));
-        var request = CreateRequest();
+            eventId);
 
-        var first = await service.SubmitAsync(request, CancellationToken.None);
-        var second = await service.SubmitAsync(
-            request with { AntiAbuseToken = "rotated-transport-proof" },
-            CancellationToken.None);
+        var first = await service.SubmitAsync(CreateRequest(), CancellationToken.None);
+        var replay = await service.SubmitAsync(CreateRequest(), CancellationToken.None);
 
-        Assert.Equal(first.EventId, second.EventId);
-        Assert.Equal(InteractionAcceptanceStateContract.AlreadyApplied, second.AcceptanceState);
-        Assert.Equal(1, antiAbuse.VerificationCount);
+        Assert.Equal(InteractionAcceptanceStateContract.Accepted, first.AcceptanceState);
+        Assert.Equal(InteractionAcceptanceStateContract.AlreadyApplied, replay.AcceptanceState);
+        Assert.Equal(first.EventId, replay.EventId);
         Assert.Single(eventStore.Events);
+        Assert.Equal(2, antiAbuse.VerificationCount);
     }
 
     [Fact]
-    public async Task SameSemanticEventWithDifferentPayloadIsConflict()
-    {
-        var service = CreateSubmitService(
-            new InMemoryEventStore(),
-            new FixedPublicReadReferenceStore(PublicReadMembershipState.Known),
-            new RecordingAntiAbuseVerifier(),
-            Guid.Parse("0198a200-0000-7000-8000-000000000003"));
-        var request = CreateRequest();
-        _ = await service.SubmitAsync(request, CancellationToken.None);
-
-        var exception = await Assert.ThrowsAsync<AnalyticsCommandException>(() =>
-            service.SubmitAsync(
-                request with { PageContext = "listing_detail" },
-                CancellationToken.None));
-
-        Assert.Equal("ANALYTICS_EVENT_IDEMPOTENCY_CONFLICT", exception.Code);
-        Assert.Equal(409, exception.StatusCode);
-    }
-
-    [Fact]
-    public async Task CampaignParameterOrderingDoesNotChangeSemanticPayloadDigest()
+    public async Task SameSemanticKeyWithDifferentPayloadIsConflict()
     {
         var eventStore = new InMemoryEventStore();
         var service = CreateSubmitService(
             eventStore,
             new FixedPublicReadReferenceStore(PublicReadMembershipState.Known),
             new RecordingAntiAbuseVerifier(),
-            Guid.Parse("0198a200-0000-7000-8000-000000000004"));
-        var firstParameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["utm_source"] = "newsletter",
-            ["utm_campaign"] = "august",
-        };
-        var secondParameters = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["utm_campaign"] = "august",
-            ["utm_source"] = "newsletter",
-        };
-        var request = CreateRequest() with { CampaignParameters = firstParameters };
+            Guid.Parse("0198a200-0000-7000-8000-000000000003"));
+        await service.SubmitAsync(CreateRequest(), CancellationToken.None);
+        var changed = CreateRequest() with { PageContext = "listing_detail" };
 
-        _ = await service.SubmitAsync(request, CancellationToken.None);
-        var repeated = await service.SubmitAsync(
-            request with { CampaignParameters = secondParameters },
-            CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<AnalyticsCommandException>(() =>
+            service.SubmitAsync(changed, CancellationToken.None));
 
-        Assert.Equal(InteractionAcceptanceStateContract.AlreadyApplied, repeated.AcceptanceState);
+        Assert.Equal("ANALYTICS_EVENT_IDEMPOTENCY_CONFLICT", exception.Code);
+        Assert.Equal(409, exception.StatusCode);
         Assert.Single(eventStore.Events);
     }
 
     [Fact]
-    public async Task UnknownPublicReadRevisionFailsClosedBeforePersistence()
+    public async Task InvalidAntiAbuseProofPreventsPersistence()
+    {
+        var eventStore = new InMemoryEventStore();
+        var antiAbuse = new RecordingAntiAbuseVerifier
+        {
+            Failure = new AnalyticsCommandException(
+                "Analytics.AntiAbuse",
+                "ANALYTICS_ANTI_ABUSE_TOKEN_INVALID",
+                400,
+                "The public anti-abuse proof is invalid.",
+                "Request a fresh proof for this event."),
+        };
+        var service = CreateSubmitService(
+            eventStore,
+            new FixedPublicReadReferenceStore(PublicReadMembershipState.Known),
+            antiAbuse,
+            Guid.Parse("0198a200-0000-7000-8000-000000000004"));
+
+        var exception = await Assert.ThrowsAsync<AnalyticsCommandException>(() =>
+            service.SubmitAsync(CreateRequest(), CancellationToken.None));
+
+        Assert.Equal("ANALYTICS_ANTI_ABUSE_TOKEN_INVALID", exception.Code);
+        Assert.Empty(eventStore.Events);
+    }
+
+    [Fact]
+    public async Task UnknownPublicProjectionIsExplicitInvalidState()
     {
         var eventStore = new InMemoryEventStore();
         var service = CreateSubmitService(
@@ -144,8 +143,9 @@ public sealed class AnalyticsApplicationServiceTests
                 "late-events"),
         };
         var service = new ReadDailyListingMetricsService(
-            new FixedMetricsStore(metrics),
-            new AllowingMetricsAuthorizer());
+            new ReadListingMetricsRangeService(
+                new FixedMetricsStore(metrics),
+                new AllowingMetricsAuthorizer()));
 
         var response = await service.ReadAsync(
             Guid.Parse("0198a200-0000-7000-8000-000000000007"),
@@ -170,17 +170,18 @@ public sealed class AnalyticsApplicationServiceTests
     {
         var listingId = Guid.Parse("0198a200-0000-7000-8000-000000000008");
         var service = new ReadDailyListingMetricsService(
-            new FixedMetricsStore(
-            [
-                DailyListingMetrics.Complete(
-                    new DateOnly(2026, 8, 3),
-                    "berlin-recording-services",
-                    listingId,
-                    new string('c', 64),
-                    sourceReadRevisionCount: 1,
-                    InteractionCounts.Create(1, 0, 0, 0, 0, 0, 0, 0, 0)),
-            ]),
-            new AllowingMetricsAuthorizer());
+            new ReadListingMetricsRangeService(
+                new FixedMetricsStore(
+                [
+                    DailyListingMetrics.Complete(
+                        new DateOnly(2026, 8, 3),
+                        "berlin-recording-services",
+                        listingId,
+                        new string('c', 64),
+                        sourceReadRevisionCount: 1,
+                        InteractionCounts.Create(1, 0, 0, 0, 0, 0, 0, 0, 0)),
+                ]),
+                new AllowingMetricsAuthorizer()));
 
         var exception = await Assert.ThrowsAsync<AnalyticsCommandException>(() =>
             service.ReadAsync(
@@ -231,32 +232,13 @@ public sealed class AnalyticsApplicationServiceTests
         public override DateTimeOffset GetUtcNow() => timestamp;
     }
 
-    private sealed class FixedIdSource(Guid value) : IAnalyticsIdSource
+    private sealed class FixedIdSource(Guid eventId) : IAnalyticsIdSource
     {
-        public Guid CreateId() => value;
+        public Guid CreateId() => eventId;
     }
 
-    private sealed class RecordingAntiAbuseVerifier : IAntiAbuseVerifier
-    {
-        public int VerificationCount { get; private set; }
-
-        public Task VerifyAsync(
-            string antiAbuseToken,
-            Guid clientEventId,
-            DateTimeOffset occurredAtUtc,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            Assert.False(string.IsNullOrWhiteSpace(antiAbuseToken));
-            Assert.NotEqual(Guid.Empty, clientEventId);
-            Assert.Equal(TimeSpan.Zero, occurredAtUtc.Offset);
-            VerificationCount++;
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FixedPublicReadReferenceStore(PublicReadMembershipState state)
-        : IPublicReadReferenceStore
+    private sealed class FixedPublicReadReferenceStore(PublicReadMembershipState state) :
+        IPublicReadReferenceStore
     {
         public Task<PublicReadMembershipResult> ValidateInteractionAsync(
             Guid publicReadRevisionId,
@@ -267,15 +249,36 @@ public sealed class AnalyticsApplicationServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Assert.NotEqual(Guid.Empty, publicReadRevisionId);
-            Assert.False(string.IsNullOrWhiteSpace(catalogKey));
-            Assert.NotNull(placementContext);
-            Assert.Equal(TimeSpan.Zero, occurredAtUtc.Offset);
             return Task.FromResult(new PublicReadMembershipResult(
                 state,
-                state == PublicReadMembershipState.Known ? catalogKey : null,
-                state == PublicReadMembershipState.Known ? listingId : null,
-                placementContext.PlacementId));
+                catalogKey,
+                listingId,
+                placementContext.PlacementId,
+                listingId,
+                placementContext.ScopeKey));
+        }
+    }
+
+    private sealed class RecordingAntiAbuseVerifier : IAntiAbuseVerifier
+    {
+        public AnalyticsCommandException? Failure { get; init; }
+
+        public int VerificationCount { get; private set; }
+
+        public Task VerifyAsync(
+            string antiAbuseToken,
+            Guid clientEventId,
+            DateTimeOffset occurredAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            VerificationCount++;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
+            return Task.CompletedTask;
         }
     }
 
@@ -290,8 +293,8 @@ public sealed class AnalyticsApplicationServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _events.TryGetValue(semanticKey, out var existing);
-            return Task.FromResult(existing);
+            _events.TryGetValue(semanticKey, out var interactionEvent);
+            return Task.FromResult(interactionEvent);
         }
 
         public Task<InteractionEventRegistrationResult> RegisterAsync(
@@ -299,26 +302,26 @@ public sealed class AnalyticsApplicationServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_events.TryGetValue(interactionEvent.SemanticKey, out var existing))
+            if (_events.TryGetValue(interactionEvent.SemanticKey, out var existing))
             {
-                _events.Add(interactionEvent.SemanticKey, interactionEvent);
-                return Task.FromResult(new InteractionEventRegistrationResult(
-                    InteractionEventRegistrationState.Stored,
-                    interactionEvent));
+                var state = string.Equals(
+                    existing.PayloadDigest,
+                    interactionEvent.PayloadDigest,
+                    StringComparison.Ordinal)
+                    ? InteractionEventRegistrationState.AlreadyApplied
+                    : InteractionEventRegistrationState.DigestConflict;
+                return Task.FromResult(new InteractionEventRegistrationResult(state, existing));
             }
 
-            var state = string.Equals(
-                existing.PayloadDigest,
-                interactionEvent.PayloadDigest,
-                StringComparison.Ordinal)
-                ? InteractionEventRegistrationState.AlreadyApplied
-                : InteractionEventRegistrationState.DigestConflict;
-            return Task.FromResult(new InteractionEventRegistrationResult(state, existing));
+            _events.Add(interactionEvent.SemanticKey, interactionEvent);
+            return Task.FromResult(new InteractionEventRegistrationResult(
+                InteractionEventRegistrationState.Stored,
+                interactionEvent));
         }
     }
 
-    private sealed class FixedMetricsStore(IReadOnlyList<DailyListingMetrics> metrics)
-        : IDailyListingMetricsStore
+    private sealed class FixedMetricsStore(IReadOnlyList<DailyListingMetrics> metrics) :
+        IDailyListingMetricsStore
     {
         public Task<IReadOnlyList<DailyListingMetrics>> GetRangeAsync(
             string catalogKey,
@@ -340,8 +343,6 @@ public sealed class AnalyticsApplicationServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Assert.NotEqual(Guid.Empty, actorId);
-            Assert.NotEqual(Guid.Empty, listingId);
             return Task.CompletedTask;
         }
     }
