@@ -9,14 +9,16 @@ namespace Query.Api.Tests;
 public sealed class CatalogQueryApiTests
 {
     [Fact]
-    public async Task SearchReturnsRevisionMetadataFallbackAndCacheIdentity()
+    public async Task SearchReturnsRevisionMetadataTypedFiltersFacetsAndCacheIdentity()
     {
         using var factory = new QueryApiFactory();
         factory.Store.Page = CreatePageSnapshot();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(
-            "/api/catalog-query/catalogs/berlin-recording-services/listings?locale=en-GB&pageSize=20");
+            "/api/catalog-query/catalogs/berlin-recording-services/listings" +
+            "?locale=en-GB&category=recording-studio&district=mitte" +
+            "&listingKind=place&contactKind=website&pageSize=20");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.ETag);
@@ -27,6 +29,11 @@ public sealed class CatalogQueryApiTests
         Assert.Equal(
             CreateRevision().Id,
             root.GetProperty("metadata").GetProperty("publicReadRevisionId").GetGuid());
+        var query = root.GetProperty("query");
+        Assert.Equal("recording-studio", query.GetProperty("categoryKey").GetString());
+        Assert.Equal("mitte", query.GetProperty("districtKey").GetString());
+        Assert.Equal("place", query.GetProperty("listingKind").GetString());
+        Assert.Equal("website", query.GetProperty("contactKind").GetString());
         var listing = root.GetProperty("organic")[0];
         Assert.Equal("fallback", listing.GetProperty("translationState").GetString());
         Assert.Equal("de-DE", listing.GetProperty("resolvedLocale").GetString());
@@ -35,13 +42,19 @@ public sealed class CatalogQueryApiTests
             CreateListing().ListingId,
             sponsored.GetProperty("listing").GetProperty("listingId").GetGuid());
         Assert.Equal("sponsored", sponsored.GetProperty("disclosureLabelKey").GetString());
-        Assert.Equal(
-            CreateRevision().PromotionOverlayId,
-            root.GetProperty("metadata").GetProperty("promotionOverlayId").GetGuid());
-        Assert.False(
-            (response.Headers.CacheControl?.ToString() ?? string.Empty)
-                .Contains("stale-while-revalidate", StringComparison.Ordinal));
-        Assert.Equal("en-GB", factory.Store.LastRequestedLocale);
+        Assert.Equal(1, root.GetProperty("categoryFacets")[0].GetProperty("count").GetInt32());
+        Assert.Equal("mitte", root.GetProperty("districtFacets")[0].GetProperty("key").GetString());
+        Assert.Equal("place", root.GetProperty("listingKindFacets")[0].GetProperty("value").GetString());
+        Assert.Equal("website", root.GetProperty("contactKindFacets")[0].GetProperty("value").GetString());
+        Assert.Contains(
+            "stale-while-revalidate",
+            response.Headers.CacheControl?.ToString() ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.Equal("en-GB", factory.Store.LastCriteria?.RequestedLocale);
+        Assert.Equal("recording-studio", factory.Store.LastCriteria?.CategoryKey);
+        Assert.Equal("mitte", factory.Store.LastCriteria?.DistrictKey);
+        Assert.Equal(QueryListingKind.Place, factory.Store.LastCriteria?.ListingKind);
+        Assert.Equal(QueryContactKind.Website, factory.Store.LastCriteria?.ContactKind);
         Assert.Equal(factory.Clock.UtcNow, factory.Store.LastReadAtUtc);
         Assert.Equal(1, factory.Store.PageReadCount);
     }
@@ -58,7 +71,27 @@ public sealed class CatalogQueryApiTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("QUERY_FILTER_UNSUPPORTED", document.RootElement.GetProperty("code").GetString());
+        Assert.Equal("QUERY_FILTER_UNKNOWN", document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(0, factory.Store.PageReadCount);
+    }
+
+    [Theory]
+    [InlineData("listingKind", "studio")]
+    [InlineData("contactKind", "telegram")]
+    public async Task UnsupportedTypedFilterIsRejectedBeforeStoreRead(
+        string parameterName,
+        string value)
+    {
+        using var factory = new QueryApiFactory();
+        factory.Store.Page = CreatePageSnapshot();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            $"/api/catalog-query/catalogs/berlin-recording-services/listings?{parameterName}={value}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("QUERY_FILTER_INVALID", document.RootElement.GetProperty("code").GetString());
         Assert.Equal(0, factory.Store.PageReadCount);
     }
 
@@ -131,6 +164,18 @@ public sealed class CatalogQueryApiTests
             new Dictionary<string, int>(StringComparer.Ordinal)
             {
                 ["recording-studio"] = 1,
+            },
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["mitte"] = 1,
+            },
+            new Dictionary<QueryListingKind, int>
+            {
+                [QueryListingKind.Place] = 1,
+            },
+            new Dictionary<QueryContactKind, int>
+            {
+                [QueryContactKind.Website] = 1,
             });
     }
 
@@ -188,7 +233,13 @@ public sealed class CatalogQueryApiTests
             ["recording-studio"],
             [],
             new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.52m, 13.405m, "mitte"),
-            [],
+            [
+                new QueryContactDocument(
+                    Guid.Parse("0198a500-0000-7000-8000-000000000014"),
+                    QueryContactKind.Website,
+                    "https://example.test",
+                    null),
+            ],
             [],
             new string('b', 64),
             new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero));

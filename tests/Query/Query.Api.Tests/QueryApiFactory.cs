@@ -59,7 +59,7 @@ public sealed class StubPublicQueryStore : IPublicQueryStore
 
     public int RouteReadCount { get; private set; }
 
-    public string? LastRequestedLocale { get; private set; }
+    public PublicListingSearchCriteria? LastCriteria { get; private set; }
 
     public DateTimeOffset? LastReadAtUtc { get; private set; }
 
@@ -67,14 +67,13 @@ public sealed class StubPublicQueryStore : IPublicQueryStore
         string catalogKey,
         Guid? afterListingId,
         int maximumDocuments,
-        string? categoryKey,
-        string requestedLocale,
+        PublicListingSearchCriteria criteria,
         DateTimeOffset readAtUtc,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         PageReadCount++;
-        LastRequestedLocale = requestedLocale;
+        LastCriteria = criteria;
         LastReadAtUtc = readAtUtc;
         return Task.FromResult(Page);
     }
