@@ -50,14 +50,19 @@ public sealed class ReadAnalyticsAggregationStatusServiceTests
             failureDetail: null,
             requiredAction: null);
         var service = new ReadAnalyticsAggregationStatusService(
-            new StubStore(new AnalyticsAggregationStatusEvidence([], run)));
+            new StubStore(new AnalyticsAggregationStatusEvidence(
+            [
+                CreateDay(FromInclusive, 1),
+                CreateDay(FromInclusive.AddDays(1), 2),
+            ],
+            run)));
 
         var result = await service.ReadAsync(
             new DailyMetricsRangeRequest(FromInclusive, ToExclusive),
             CancellationToken.None);
 
         Assert.Equal(AggregateReadinessStateContract.Rebuilding, result.Readiness);
-        Assert.Equal([FromInclusive, FromInclusive.AddDays(1)], result.MissingDates);
+        Assert.Empty(result.MissingDates);
         Assert.Equal(AnalyticsAggregateRunStateContract.Rebuilding, result.LatestRun?.State);
         Assert.Equal("aggregation-rebuilding", result.UnavailableReason);
     }
@@ -110,6 +115,37 @@ public sealed class ReadAnalyticsAggregationStatusServiceTests
         Assert.Equal(AggregateReadinessStateContract.Partial, result.Readiness);
         Assert.Equal([FromInclusive.AddDays(1)], result.MissingDates);
         Assert.Equal("aggregation-not-materialized", result.UnavailableReason);
+    }
+
+    [Fact]
+    public async Task CompleteRunWithoutAllDayReadinessIsPersistenceCorruption()
+    {
+        var run = AnalyticsAggregateRun.Restore(
+            Guid.Parse("01990200-0000-7000-8000-000000000030"),
+            FromInclusive,
+            ToExclusive,
+            AnalyticsAggregateRunState.Complete,
+            Timestamp,
+            Timestamp.AddMinutes(1),
+            new string('c', 64),
+            materializedMetricCount: 2,
+            removedStaleMetricCount: 0,
+            materializedDayCount: 2,
+            failureCode: null,
+            failureDetail: null,
+            requiredAction: null);
+        var service = new ReadAnalyticsAggregationStatusService(
+            new StubStore(new AnalyticsAggregationStatusEvidence(
+                [CreateDay(FromInclusive, 1)],
+                run)));
+
+        var exception = await Assert.ThrowsAsync<AnalyticsCommandException>(() =>
+            service.ReadAsync(
+                new DailyMetricsRangeRequest(FromInclusive, ToExclusive),
+                CancellationToken.None));
+
+        Assert.Equal("ANALYTICS_AGGREGATION_STATUS_EVIDENCE_CORRUPT", exception.Code);
+        Assert.Equal(500, exception.StatusCode);
     }
 
     [Fact]
