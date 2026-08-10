@@ -40,6 +40,39 @@ public sealed class TestDiscoveryGuardReachabilityTests
     }
 
     [Fact]
+    public void FullRepositoryCommandUsesTheExplicitTrxGuard()
+    {
+        var command = Read("tools/repo.ps1");
+        var preflight = ExtractFunction(command, "Invoke-Preflight");
+        var fullTest = ExtractSwitchCase(command, "test-all");
+
+        Assert.Contains(
+            "$testDiscoveryGuard = Join-Path $root 'tools/run-tests-with-discovery-guard.py'",
+            command,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "function Invoke-TestDiscoveryGuardSelfTest",
+            command,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "function Invoke-TestDiscoveryGuard",
+            command,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Invoke-TestDiscoveryGuardSelfTest",
+            preflight,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Invoke-TestDiscoveryGuard",
+            fullTest,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "'test',\n                $solution",
+            fullTest,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void EveryCanonicalDotNetTestProjectDeclaresTheTestSdkOwner()
     {
         var root = FindRepositoryRoot();
@@ -93,11 +126,30 @@ public sealed class TestDiscoveryGuardReachabilityTests
         Assert.Contains("if counters.total < 1:", script, StringComparison.Ordinal);
         Assert.Contains("if counters.executed < 1:", script, StringComparison.Ordinal);
         Assert.Contains("if counters.unsuccessful > 0:", script, StringComparison.Ordinal);
+        Assert.Contains("if len(results) != len(projects):", script, StringComparison.Ordinal);
         Assert.Contains("--self-test", script, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "dotnet test AggregatorBackend.slnx",
             script,
             StringComparison.Ordinal);
+    }
+
+    private static string ExtractFunction(string source, string functionName)
+    {
+        var startMarker = $"function {functionName} {{";
+        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Function '{functionName}' was not found.");
+        var next = source.IndexOf("\nfunction ", start + startMarker.Length, StringComparison.Ordinal);
+        return next < 0 ? source[start..] : source[start..next];
+    }
+
+    private static string ExtractSwitchCase(string source, string caseName)
+    {
+        var startMarker = $"        '{caseName}' {{";
+        var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Command case '{caseName}' was not found.");
+        var next = source.IndexOf("\n        '", start + startMarker.Length, StringComparison.Ordinal);
+        return next < 0 ? source[start..] : source[start..next];
     }
 
     private static int CountOccurrences(string value, string token)
