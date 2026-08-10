@@ -26,12 +26,12 @@ public sealed class QuerySeoDocumentTests
             isSuppressed: false);
 
         Assert.Equal(QuerySeoRouteKind.Listing, document.RouteKind);
-        Assert.Equal("recording-services", document.CatalogKey);
-        Assert.Equal("de-DE", document.Locale);
-        Assert.Equal(document.Path, document.CanonicalPath);
+        Assert.Equal("recording-services", document.CatalogKey.Value);
+        Assert.Equal("de-DE", document.Locale.Value);
+        Assert.Equal(document.Path.Value, document.CanonicalPath.Value);
         Assert.Equal(
             new[] { "de-DE", "en-GB" },
-            document.Hreflang.Select(item => item.Locale));
+            document.Hreflang.Select(item => item.Locale.Value));
         Assert.Equal(Timestamp, document.LastModifiedAtUtc);
     }
 
@@ -65,8 +65,7 @@ public sealed class QuerySeoDocumentTests
     public void ArbitraryFilterUrlCannotBecomeIndexable()
     {
         var exception = Assert.Throws<QueryDomainException>(() =>
-            QueryHreflangRoute.Create(
-                "de-DE",
+            QuerySeoPath.CreateIndexable(
                 "/de-DE/studios?district=mitte"));
 
         Assert.Equal("QUERY_SEO_PATH_INVALID", exception.Code);
@@ -136,7 +135,7 @@ public sealed class QuerySeoDocumentTests
     public void LocaleMustUseExactLanguageRegionShape()
     {
         var exception = Assert.Throws<QueryDomainException>(() =>
-            QueryHreflangRoute.Create("de-de", "/de-DE/studios/exact-studio"));
+            QuerySeoLocale.Create("de-de"));
 
         Assert.Equal("QUERY_SEO_LOCALE_INVALID", exception.Code);
     }
