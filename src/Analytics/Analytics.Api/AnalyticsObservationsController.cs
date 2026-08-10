@@ -10,6 +10,7 @@ namespace Aggregator.Analytics.Api;
 [Route("api/analytics")]
 public sealed class AnalyticsInteractionsController(
     SubmitInteractionEventService interactionService,
+    SubmitInteractionEventBatchService interactionBatchService,
     AnalyticsAntiAbuseProofService antiAbuseProofService) : ControllerBase
 {
     [HttpPost("anti-abuse-tokens", Name = AnalyticsOperationIds.IssueAntiAbuseToken)]
@@ -37,6 +38,19 @@ public sealed class AnalyticsInteractionsController(
         return response.AcceptanceState == InteractionAcceptanceStateContract.AlreadyApplied
             ? Ok(response)
             : StatusCode(StatusCodes.Status201Created, response);
+    }
+
+    [HttpPost("interaction-events/batch", Name = AnalyticsOperationIds.SubmitInteractionEventBatch)]
+    [AllowAnonymous]
+    [EnableRateLimiting(AnalyticsRateLimitPolicies.InteractionEvents)]
+    [RequestSizeLimit(AnalyticsRequestLimits.InteractionEventBatchMaximumBodyBytes)]
+    [ProducesResponseType<InteractionEventBatchResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<InteractionEventBatchResponse>> SubmitBatchAsync(
+        [FromBody] SubmitInteractionEventBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Ok(await interactionBatchService.SubmitAsync(request, cancellationToken));
     }
 }
 

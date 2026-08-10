@@ -18,12 +18,20 @@ public static class AnalyticsRateLimitPolicies
     public const string Metrics = "analytics-metrics";
 }
 
+/// <summary>Declares hard transport limits independently of domain collection limits.</summary>
+public static class AnalyticsRequestLimits
+{
+    public const int InteractionEventBatchMaximumBodyBytes = 262_144;
+}
+
 /// <summary>Provides stable operation identities for generated Analytics clients.</summary>
 public static class AnalyticsOperationIds
 {
     public const string IssueAntiAbuseToken = "IssueAnalyticsAntiAbuseToken";
 
     public const string SubmitInteractionEvent = "SubmitAnalyticsInteractionEvent";
+
+    public const string SubmitInteractionEventBatch = "SubmitAnalyticsInteractionEventBatch";
 
     public const string ReadDailyListingMetrics = "ReadAnalyticsDailyListingMetrics";
 }
