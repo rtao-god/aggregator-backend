@@ -4,9 +4,9 @@ Status: in development
 
 ## Owner
 
-Promotion is the canonical owner of promotion products, manual entitlement, sponsored-placement schedules, capacity conflicts, activation windows, audit reasons, paid-placement lifecycle, and the local immutable projection of Analytics-approved placement usage.
+Promotion is the canonical owner of promotion products, manual entitlement, sponsored-placement schedules, capacity conflicts, activation windows, audit reasons, paid-placement lifecycle, and the local ordered projection of Analytics-approved placement usage.
 
-It does not own Catalog facts, verification badges, organic ranking, Analytics traffic-quality classification, payment processing, tax, or Query presentation.
+It does not own Catalog facts, verification badges, organic ranking, payment processing, tax, Analytics traffic-quality classification, or Query presentation.
 
 ## Projects
 
@@ -55,7 +55,7 @@ scheduled transition scan
 → capacity rows + placement outbox in the same transaction
 
 Analytics complete sponsored-usage revision
-→ publisher-confirmed analytics.promotion-usage-window.closed
+→ Promotion quorum consumer
 → strict Promotion envelope/message/digest validation
 → serializable inbox + immutable usage revision
 → contiguous current usage projection
@@ -129,7 +129,7 @@ Analytics usage event
 → ACK
 ```
 
-The first stream revision must be `1`; the next must be exactly `current + 1`. Stale revisions and forward gaps are explicit failures. Same message ID with a different envelope is corruption. Placement, listing, Catalog, and UTC-window identity cannot change across revisions. A complete zero-valued correction is valid owner output; an absent Analytics revision remains missing and is not materialized as zero.
+The first stream revision must be `1`; the next must be exactly `current + 1`. A forward gap is retryable owner unavailability so a delayed preceding revision may still arrive within the bounded quorum-queue delivery budget. A stale revision is a permanent conflict and cannot regress current state. Same message ID with a different envelope is corruption. Placement, listing, Catalog, and UTC-window identity cannot change across revisions. A complete zero-valued correction is valid owner output; an absent Analytics revision remains missing and is not materialized as zero.
 
 The consumer uses its own quorum queue and dead-letter queue while sharing the Promotion worker's canonical RabbitMQ URI and event exchange. The Promotion API does not register the usage application/store path and cannot consume or repair usage. Promotion stores only Analytics-owned aggregate results in `promotion_db`; it has no `analytics_db` credential or synchronous Analytics client.
 
@@ -177,7 +177,7 @@ Business state and event envelope are committed in one serializable Promotion tr
 
 - Promotion domain tests cover invalid product revision input, entitlement overlap, scope mismatch, window rules, lifecycle transitions, and capacity overlap semantics;
 - Promotion eligibility tests prove archived/disputed/unpublished listings fail closed, product contact requirements remain enforced, and recovery does not auto-resume placements;
-- Promotion consumer tests prove Catalog eligibility replay still invokes reconciliation after a crash boundary and preserves Catalog message causation;
+- Promotion consumer tests prove inbox replay still invokes reconciliation after a crash boundary and preserves Catalog message causation;
 - Promotion scheduling tests prove missing eligibility, ineligible Catalog state, ineffective entitlement, and paused state cannot produce automatic activation;
 - Catalog eligibility architecture tests prove the consumer writes/replays the projection before reconciliation, acknowledges only after reconciliation, removes capacity rows, emits placement events, and depends only on `Catalog.Contracts`;
 - scheduling architecture tests require independent transaction units, pre-snapshot listing-stream locking, row locks, local eligibility reads, and no automatic resume;
@@ -187,6 +187,5 @@ Business state and event envelope are committed in one serializable Promotion tr
 - Promotion worker tests cover fail-fast transport configuration, producer-owned Analytics routing-key pinning, strict message/digest identity, retry classification, quorum/dead-letter topology, and ACK-after-commit ordering;
 - Query application tests cover duplicate/stale/gap Promotion event handling and deterministic overlay rebuild;
 - Query infrastructure tests cover immutable event/projection enforcement and overlay-pointer switching;
-- architecture tests block Promotion state in Catalog/Query/Analytics, cross-database references, missing producer-owned Contract dependencies, synchronous Analytics calls, foreign database credentials, and legacy payment/billing concepts.
-
-Real PostgreSQL migration/concurrency proof, publisher-confirmed RabbitMQ delivery, redelivery/dead-letter replay, and Compose E2E remain repository-level acceptance work; the module is not yet marked complete.
+- cross-context architecture tests require the complete Analytics.Contracts → Promotion worker → Application → serializable store → Promotion database path, the complete Analytics usage revision/outbox producer path, exact Compose runtime configuration, and the absence of foreign database credentials or synchronous clients;
+- architecture tests block Promotion state in Catalog/Query/Analytics, cross-database references, missing Promotion contract dependency, and legacy payment/billing concepts.
