@@ -28,6 +28,15 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
     internal DbSet<AnalyticsDailyListingMetricRow> DailyListingMetrics =>
         Set<AnalyticsDailyListingMetricRow>();
 
+    internal DbSet<AnalyticsAggregateRunRow> AggregateRuns =>
+        Set<AnalyticsAggregateRunRow>();
+
+    internal DbSet<AnalyticsAggregateRunItemRow> AggregateRunItems =>
+        Set<AnalyticsAggregateRunItemRow>();
+
+    internal DbSet<AnalyticsAggregateReadinessRow> AggregateReadiness =>
+        Set<AnalyticsAggregateReadinessRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -147,11 +156,11 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("public_sponsored_placement_reference", "access_projection", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_public_placement_scope",
+                    "ck_analytics_public_sponsored_scope_type",
                     "scope_type BETWEEN 1 AND 4");
                 table.HasCheckConstraint(
-                    "ck_analytics_public_placement_interval",
-                    "starts_at_utc < hard_expiry_at_utc");
+                    "ck_analytics_public_sponsored_interval",
+                    "hard_expiry_at_utc > starts_at_utc");
             });
             entity.HasKey(row => new { row.PublicReadRevisionId, row.PlacementId });
             entity.HasAlternateKey(row => new
@@ -169,7 +178,7 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .WithMany()
                 .HasForeignKey(row => new { row.PublicReadRevisionId, row.ListingId })
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(row => new { row.PublicReadRevisionId, row.ListingId });
+            entity.HasIndex(row => new { row.PlacementId, row.ListingId });
         });
 
         modelBuilder.Entity<AnalyticsPublicReadActivationCheckpointRow>(entity =>
@@ -177,16 +186,15 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("public_read_activation_checkpoint", "access_projection", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_public_checkpoint_revision",
+                    "ck_analytics_public_read_checkpoint_revision",
                     "activation_revision > 0");
                 table.HasCheckConstraint(
-                    "ck_analytics_public_checkpoint_digest",
+                    "ck_analytics_public_read_checkpoint_digest",
                     "projection_digest ~ '^[0-9a-f]{64}$'");
             });
             entity.HasKey(row => row.CatalogKey);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
             entity.Property(row => row.ProjectionDigest).HasMaxLength(64).IsFixedLength();
-            entity.Property(row => row.ActivationRevision).IsConcurrencyToken();
             entity.HasOne(row => row.PublicReadReference)
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
@@ -195,27 +203,24 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
 
         modelBuilder.Entity<AnalyticsInboxMessageRow>(entity =>
         {
-            entity.ToTable("inbox_message", "messaging", table =>
+            entity.ToTable("public_read_activation_inbox", "messaging", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_inbox_payload_digest",
-                    "payload_digest ~ '^[0-9a-f]{64}$'");
-                table.HasCheckConstraint(
-                    "ck_analytics_inbox_activation_revision",
+                    "ck_analytics_public_read_inbox_revision",
                     "activation_revision > 0");
                 table.HasCheckConstraint(
-                    "ck_analytics_inbox_disposition",
-                    "disposition BETWEEN 1 AND 3");
+                    "ck_analytics_public_read_inbox_payload_digest",
+                    "payload_digest ~ '^[0-9a-f]{64}$'");
                 table.HasCheckConstraint(
-                    "ck_analytics_inbox_result_digest",
+                    "ck_analytics_public_read_inbox_result_digest",
                     "result_projection_digest ~ '^[0-9a-f]{64}$'");
                 table.HasCheckConstraint(
-                    "ck_analytics_inbox_processing_time",
-                    "processed_at_utc >= received_at_utc");
+                    "ck_analytics_public_read_inbox_disposition",
+                    "disposition BETWEEN 1 AND 3");
             });
             entity.HasKey(row => row.MessageId);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
-            entity.Property(row => row.RoutingKey).HasMaxLength(200);
+            entity.Property(row => row.RoutingKey).HasMaxLength(160);
             entity.Property(row => row.ContractIdentity).HasMaxLength(200);
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.CorrelationId).HasMaxLength(128);
@@ -257,6 +262,82 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.Property(row => row.AggregationSourceDigest).HasMaxLength(64).IsFixedLength();
             entity.Property(row => row.UnavailableReason).HasMaxLength(1000);
             entity.HasIndex(row => new { row.ListingId, row.MetricDate });
+        });
+
+        modelBuilder.Entity<AnalyticsAggregateRunRow>(entity =>
+        {
+            entity.ToTable("aggregate_run", "aggregates", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_id",
+                    "id <> '00000000-0000-0000-0000-000000000000'::uuid");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_range",
+                    "to_exclusive > from_inclusive AND to_exclusive - from_inclusive <= 31");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_state",
+                    "state BETWEEN 1 AND 3");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_shape",
+                    "(state = 1 AND completed_at_utc IS NULL AND lease_token IS NOT NULL AND lease_expires_at_utc > started_at_utc AND source_digest IS NULL AND materialized_day_count IS NULL AND materialized_metric_count IS NULL AND removed_stale_metric_count IS NULL AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 2 AND completed_at_utc >= started_at_utc AND lease_token IS NULL AND lease_expires_at_utc IS NULL AND source_digest ~ '^[0-9a-f]{64}$' AND materialized_day_count = to_exclusive - from_inclusive AND materialized_metric_count >= 0 AND removed_stale_metric_count >= 0 AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 3 AND completed_at_utc >= started_at_utc AND lease_token IS NULL AND lease_expires_at_utc IS NULL AND source_digest IS NULL AND materialized_day_count IS NULL AND materialized_metric_count IS NULL AND removed_stale_metric_count IS NULL AND length(btrim(failure_code)) > 0 AND length(btrim(failure_detail)) > 0 AND length(btrim(required_action)) > 0)");
+            });
+            entity.HasKey(row => row.Id);
+            entity.Property(row => row.SourceDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.FailureCode).HasMaxLength(160);
+            entity.Property(row => row.FailureDetail).HasMaxLength(2000);
+            entity.Property(row => row.RequiredAction).HasMaxLength(2000);
+            entity.HasIndex(row => row.State)
+                .IsUnique()
+                .HasFilter("state = 1")
+                .HasDatabaseName("ux_analytics_aggregate_run_rebuilding");
+            entity.HasIndex(row => row.StartedAtUtc)
+                .IsDescending()
+                .HasDatabaseName("ix_analytics_aggregate_run_started_at_utc");
+            entity.HasIndex(row => new
+                {
+                    row.FromInclusive,
+                    row.ToExclusive,
+                    row.StartedAtUtc,
+                })
+                .HasDatabaseName("ix_analytics_aggregate_run_range");
+        });
+
+        modelBuilder.Entity<AnalyticsAggregateRunItemRow>(entity =>
+        {
+            entity.ToTable("aggregate_run_item", "aggregates", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_item_digest",
+                    "source_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_item_count",
+                    "metric_count >= 0");
+            });
+            entity.HasKey(row => new { row.RunId, row.MetricDate });
+            entity.Property(row => row.SourceDigest).HasMaxLength(64).IsFixedLength();
+            entity.HasOne(row => row.Run)
+                .WithMany()
+                .HasForeignKey(row => row.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AnalyticsAggregateReadinessRow>(entity =>
+        {
+            entity.ToTable("aggregate_readiness", "aggregates", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_readiness_digest",
+                    "source_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_readiness_count",
+                    "metric_count >= 0");
+            });
+            entity.HasKey(row => row.MetricDate);
+            entity.Property(row => row.SourceDigest).HasMaxLength(64).IsFixedLength();
+            entity.HasOne(row => row.RunItem)
+                .WithMany()
+                .HasForeignKey(row => new { row.RunId, row.MetricDate })
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         ApplySnakeCaseColumns(modelBuilder);

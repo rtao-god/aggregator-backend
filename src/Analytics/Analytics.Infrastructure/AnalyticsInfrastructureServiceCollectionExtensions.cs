@@ -39,6 +39,9 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
         services.AddScoped<IDailyListingMetricsStore>(provider =>
             provider.GetRequiredService<EfAnalyticsRepository>());
         services.AddScoped<IAnalyticsAggregateWriter, EfAnalyticsAggregateWriter>();
+        services.AddScoped<
+            IAnalyticsAggregationOperationStore,
+            PostgresAnalyticsAggregationOperationStore>();
         services.AddScoped<AnalyticsReadinessProbe>();
         services.AddSingleton<IAnalyticsIdSource, UuidV7AnalyticsIdSource>();
         return services;

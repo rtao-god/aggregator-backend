@@ -183,3 +183,66 @@ internal sealed class AnalyticsDailyListingMetricRow
 
     public string? UnavailableReason { get; set; }
 }
+
+internal sealed class AnalyticsAggregateRunRow
+{
+    public Guid Id { get; set; }
+
+    public DateOnly FromInclusive { get; set; }
+
+    public DateOnly ToExclusive { get; set; }
+
+    public int State { get; set; }
+
+    public DateTimeOffset StartedAtUtc { get; set; }
+
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+
+    public Guid? LeaseToken { get; set; }
+
+    public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+
+    public string? SourceDigest { get; set; }
+
+    public int? MaterializedDayCount { get; set; }
+
+    public int? MaterializedMetricCount { get; set; }
+
+    public int? RemovedStaleMetricCount { get; set; }
+
+    public string? FailureCode { get; set; }
+
+    public string? FailureDetail { get; set; }
+
+    public string? RequiredAction { get; set; }
+}
+
+internal sealed class AnalyticsAggregateRunItemRow
+{
+    public Guid RunId { get; set; }
+
+    public AnalyticsAggregateRunRow Run { get; set; } = null!;
+
+    public DateOnly MetricDate { get; set; }
+
+    public required string SourceDigest { get; set; }
+
+    public int MetricCount { get; set; }
+
+    public DateTimeOffset CompletedAtUtc { get; set; }
+}
+
+internal sealed class AnalyticsAggregateReadinessRow
+{
+    public DateOnly MetricDate { get; set; }
+
+    public Guid RunId { get; set; }
+
+    public AnalyticsAggregateRunItemRow RunItem { get; set; } = null!;
+
+    public required string SourceDigest { get; set; }
+
+    public int MetricCount { get; set; }
+
+    public DateTimeOffset CompletedAtUtc { get; set; }
+}
