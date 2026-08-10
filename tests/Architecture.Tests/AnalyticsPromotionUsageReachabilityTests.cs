@@ -204,6 +204,14 @@ public sealed class AnalyticsPromotionUsageReachabilityTests
             "Analytics__PublicReadProjection__BrokerUri",
             analyticsWorker,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Analytics__Outbox__DispatcherIdentity",
+            analyticsWorker,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Analytics__Outbox__MaximumDeliveryAttempts",
+            analyticsWorker,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "ConnectionStrings__Promotion",
             analyticsWorker,
@@ -213,6 +221,18 @@ public sealed class AnalyticsPromotionUsageReachabilityTests
             promotionWorker,
             StringComparison.Ordinal);
         Assert.Contains("Messaging__BrokerUri", promotionWorker, StringComparison.Ordinal);
+        Assert.Contains(
+            "Promotion__UsageProjection__Queue",
+            promotionWorker,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Promotion__UsageProjection__RoutingKey: analytics.promotion-usage-window.closed",
+            promotionWorker,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Promotion__UsageProjection__DeadLetterQueue",
+            promotionWorker,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "ConnectionStrings__Analytics",
             promotionWorker,
