@@ -36,13 +36,16 @@ public sealed class PostgresOutboxDispatcher
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                await MarkFailedAsync(
+                var deadLettered = await MarkFailedAsync(
                     message.MessageId,
                     leaseToken,
                     exception,
                     _timeProvider.GetUtcNow(),
                     cancellationToken);
-                throw;
+                throw new OutboxDispatchAttemptException(
+                    message.MessageId,
+                    deadLettered,
+                    exception);
             }
 
             await MarkDispatchedAsync(
@@ -192,7 +195,7 @@ public sealed class PostgresOutboxDispatcher
         }
     }
 
-    private async Task MarkFailedAsync(
+    private async Task<bool> MarkFailedAsync(
         Guid messageId,
         Guid leaseToken,
         Exception exception,
@@ -225,7 +228,8 @@ public sealed class PostgresOutboxDispatcher
             WHERE message_id = @messageId
               AND lease_token = @leaseToken
               AND dispatched_at_utc IS NULL
-              AND dead_lettered_at_utc IS NULL;
+              AND dead_lettered_at_utc IS NULL
+            RETURNING dead_lettered_at_utc IS NOT NULL;
             """;
         command.Parameters.AddWithValue("messageId", NpgsqlDbType.Uuid, messageId);
         command.Parameters.AddWithValue("leaseToken", NpgsqlDbType.Uuid, leaseToken);
@@ -235,8 +239,8 @@ public sealed class PostgresOutboxDispatcher
             NpgsqlDbType.Integer,
             _options.MaximumDeliveryAttempts);
         command.Parameters.AddWithValue("failedAtUtc", NpgsqlDbType.TimestampTz, failedAtUtc);
-        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
-        if (affected != 1)
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is not bool deadLettered)
         {
             throw new OutboxLeaseLostException(
                 messageId,
@@ -244,5 +248,7 @@ public sealed class PostgresOutboxDispatcher
                 _options.DispatcherIdentity,
                 exception);
         }
+
+        return deadLettered;
     }
 }

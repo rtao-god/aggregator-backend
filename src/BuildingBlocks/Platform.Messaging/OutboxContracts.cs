@@ -1,3 +1,5 @@
+using Npgsql;
+
 namespace Platform.Messaging;
 
 /// <summary>A durable owner event awaiting broker delivery.</summary>
@@ -15,6 +17,75 @@ public sealed record OutboxMessage(
 public interface IIntegrationEventPublisher
 {
     public Task PublishAsync(OutboxMessage message, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Reports that one failed dispatch attempt was durably recorded before control returned to the execution host.
+/// </summary>
+public sealed class OutboxDispatchAttemptException : InvalidOperationException
+{
+    /// <summary>Creates the exact recorded-attempt diagnostic.</summary>
+    public OutboxDispatchAttemptException(
+        Guid messageId,
+        bool deadLettered,
+        Exception innerException)
+        : base(CreateMessage(messageId, deadLettered, innerException), innerException)
+    {
+        MessageId = messageId;
+        DeadLettered = deadLettered;
+    }
+
+    /// <summary>The outbox message whose dispatch attempt failed.</summary>
+    public Guid MessageId { get; }
+
+    /// <summary>Whether the persisted delivery-attempt budget moved the message to dead letter.</summary>
+    public bool DeadLettered { get; }
+
+    private static string CreateMessage(
+        Guid messageId,
+        bool deadLettered,
+        Exception innerException)
+    {
+        if (messageId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "A non-empty outbox message ID is required.",
+                nameof(messageId));
+        }
+
+        ArgumentNullException.ThrowIfNull(innerException);
+        var state = deadLettered
+            ? "was dead-lettered"
+            : "remains eligible for another bounded attempt";
+        return $"Outbox message '{messageId:D}' failed dispatch, the exact attempt was persisted, and the message {state}. Failure: {innerException.Message}";
+    }
+}
+
+/// <summary>Classifies only execution-host failures that may safely return to the durable retry loop.</summary>
+public static class OutboxDispatchFailurePolicy
+{
+    /// <summary>
+    /// Returns true when durable attempt state is already recorded, another lease owns the transition,
+    /// or the underlying PostgreSQL/I/O failure is explicitly transient.
+    /// </summary>
+    public static bool IsRecoverable(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception switch
+        {
+            OutboxDispatchAttemptException => true,
+            OutboxLeaseLostException => true,
+            NpgsqlException { IsTransient: true } => true,
+            TimeoutException => true,
+            IOException => true,
+            AggregateException aggregateException =>
+                aggregateException.InnerExceptions.Count > 0 &&
+                aggregateException.InnerExceptions.All(IsRecoverable),
+            _ when exception.InnerException is not null =>
+                IsRecoverable(exception.InnerException),
+            _ => false,
+        };
+    }
 }
 
 /// <summary>Reports that an outbox transition no longer owns the exact leased message.</summary>

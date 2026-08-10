@@ -30,7 +30,8 @@ public sealed class PromotionOwnerWorker(
             {
                 break;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (
+                OutboxDispatchFailurePolicy.IsRecoverable(exception))
             {
                 PromotionOwnerWorkerLog.OutboxDispatchFailed(
                     logger,
@@ -66,7 +67,7 @@ internal static partial class PromotionOwnerWorkerLog
     [LoggerMessage(
         EventId = 5101,
         Level = LogLevel.Error,
-        Message = "Promotion outbox dispatch failed after durable failure recording. Retrying after {RetryDelay}.")]
+        Message = "Promotion outbox dispatch failed; durable state remains authoritative. Retrying after {RetryDelay}.")]
     public static partial void OutboxDispatchFailed(
         ILogger logger,
         Exception exception,

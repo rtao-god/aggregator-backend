@@ -26,7 +26,8 @@ public sealed class AnalyticsOutboxWorker(
             {
                 break;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (
+                OutboxDispatchFailurePolicy.IsRecoverable(exception))
             {
                 AnalyticsOutboxWorkerLog.DispatchFailed(
                     logger,
@@ -43,7 +44,7 @@ internal static partial class AnalyticsOutboxWorkerLog
     [LoggerMessage(
         EventId = 2101,
         Level = LogLevel.Error,
-        Message = "Analytics outbox dispatch failed after durable failure recording. Retrying after {RetryDelay}.")]
+        Message = "Analytics outbox dispatch failed; durable state remains authoritative. Retrying after {RetryDelay}.")]
     public static partial void DispatchFailed(
         ILogger logger,
         Exception exception,

@@ -26,7 +26,8 @@ public sealed class CatalogOutboxWorker(
             {
                 break;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (
+                OutboxDispatchFailurePolicy.IsRecoverable(exception))
             {
                 CatalogOutboxWorkerLog.DispatchFailed(
                     logger,
@@ -43,7 +44,7 @@ internal static partial class CatalogOutboxWorkerLog
     [LoggerMessage(
         EventId = 3101,
         Level = LogLevel.Error,
-        Message = "Catalog outbox dispatch failed after durable failure recording. Retrying after {RetryDelay}.")]
+        Message = "Catalog outbox dispatch failed; durable state remains authoritative. Retrying after {RetryDelay}.")]
     public static partial void DispatchFailed(
         ILogger logger,
         Exception exception,

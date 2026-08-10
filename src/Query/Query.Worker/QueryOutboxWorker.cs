@@ -26,7 +26,8 @@ public sealed class QueryOutboxWorker(
             {
                 break;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (
+                OutboxDispatchFailurePolicy.IsRecoverable(exception))
             {
                 QueryOutboxWorkerLog.DispatchFailed(
                     logger,
@@ -43,7 +44,7 @@ internal static partial class QueryOutboxWorkerLog
     [LoggerMessage(
         EventId = 4101,
         Level = LogLevel.Error,
-        Message = "Query outbox dispatch failed after durable failure recording. Retrying after {RetryDelay}.")]
+        Message = "Query outbox dispatch failed; durable state remains authoritative. Retrying after {RetryDelay}.")]
     public static partial void DispatchFailed(
         ILogger logger,
         Exception exception,
