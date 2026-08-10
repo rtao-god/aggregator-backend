@@ -8,6 +8,7 @@ namespace Aggregator.Query.Application;
 /// <summary>Immutable Query-owned sitemap revision ready for atomic persistence and activation.</summary>
 public sealed record PublicSitemapProjectionArtifact(
     Guid PublicReadRevisionId,
+    Guid? ExpectedCurrentPublicReadRevisionId,
     QuerySeoCatalogKey CatalogKey,
     IReadOnlyList<QuerySitemapDocument> Records,
     string ContentDigest,
@@ -39,6 +40,21 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
         string catalogKey,
         IReadOnlyCollection<QuerySitemapDocument> records,
         DateTimeOffset builtAtUtc,
+        CancellationToken cancellationToken) =>
+        BuildAndActivateAsync(
+            publicReadRevisionId,
+            expectedCurrentPublicReadRevisionId: null,
+            catalogKey,
+            records,
+            builtAtUtc,
+            cancellationToken);
+
+    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
+        Guid publicReadRevisionId,
+        Guid? expectedCurrentPublicReadRevisionId,
+        string catalogKey,
+        IReadOnlyCollection<QuerySitemapDocument> records,
+        DateTimeOffset builtAtUtc,
         CancellationToken cancellationToken)
     {
         if (publicReadRevisionId == Guid.Empty)
@@ -46,6 +62,13 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
             throw Failure(
                 "QUERY_SITEMAP_REVISION_ID_INVALID",
                 "Sitemap projection requires an exact public-read revision identity.");
+        }
+
+        if (expectedCurrentPublicReadRevisionId == Guid.Empty)
+        {
+            throw Failure(
+                "QUERY_SITEMAP_EXPECTED_REVISION_INVALID",
+                "Expected active sitemap revision cannot be the empty identity.");
         }
 
         if (builtAtUtc.Offset != TimeSpan.Zero)
@@ -69,6 +92,7 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
         return store.ActivateAsync(
             new PublicSitemapProjectionArtifact(
                 publicReadRevisionId,
+                expectedCurrentPublicReadRevisionId,
                 normalizedCatalogKey,
                 orderedRecords,
                 digest,
