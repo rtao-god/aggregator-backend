@@ -229,8 +229,9 @@ public sealed class QuerySitemapProjectionException : Exception
     public QuerySitemapProjectionException(
         string code,
         string detail,
-        string requiredAction)
-        : base(detail)
+        string requiredAction,
+        Exception? innerException = null)
+        : base(detail, innerException)
     {
         Code = string.IsNullOrWhiteSpace(code)
             ? throw new ArgumentException("Failure code is required.", nameof(code))
