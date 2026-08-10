@@ -5,14 +5,24 @@ using Aggregator.Query.Domain;
 
 namespace Aggregator.Query.Application;
 
-/// <summary>Immutable Query-owned sitemap revision ready for atomic persistence and activation.</summary>
+/// <summary>Immutable Query-owned SEO revision ready for atomic persistence and activation.</summary>
 public sealed record PublicSitemapProjectionArtifact(
     Guid PublicReadRevisionId,
     Guid? ExpectedCurrentPublicReadRevisionId,
     QuerySeoCatalogKey CatalogKey,
     IReadOnlyList<QuerySitemapDocument> Records,
     string ContentDigest,
-    DateTimeOffset BuiltAtUtc);
+    DateTimeOffset BuiltAtUtc)
+{
+    private IReadOnlyList<QueryRouteRedirectDocument> redirects =
+        Array.Empty<QueryRouteRedirectDocument>();
+
+    public IReadOnlyList<QueryRouteRedirectDocument> Redirects
+    {
+        get => redirects;
+        init => redirects = value ?? throw new ArgumentNullException(nameof(value));
+    }
+}
 
 public enum PublicSitemapProjectionDisposition
 {
@@ -32,72 +42,96 @@ public interface IPublicSitemapProjectionStore
         CancellationToken cancellationToken);
 }
 
-/// <summary>Single application owner for sitemap validation, digesting and activation.</summary>
-public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjectionStore store)
+/// <summary>Single pure owner for validating and digesting one complete Query SEO revision.</summary>
+public static class PublicSitemapProjectionArtifactBuilder
 {
-    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
-        Guid publicReadRevisionId,
-        string catalogKey,
-        IReadOnlyCollection<QuerySitemapDocument> records,
-        DateTimeOffset builtAtUtc,
-        CancellationToken cancellationToken) =>
-        BuildAndActivateAsync(
-            publicReadRevisionId,
-            expectedCurrentPublicReadRevisionId: null,
-            catalogKey,
-            records,
-            builtAtUtc,
-            cancellationToken);
-
-    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
+    public static PublicSitemapProjectionArtifact Build(
         Guid publicReadRevisionId,
         Guid? expectedCurrentPublicReadRevisionId,
         string catalogKey,
         IReadOnlyCollection<QuerySitemapDocument> records,
-        DateTimeOffset builtAtUtc,
-        CancellationToken cancellationToken)
+        IReadOnlyCollection<QueryRouteRedirectDocument> redirects,
+        DateTimeOffset builtAtUtc)
     {
         if (publicReadRevisionId == Guid.Empty)
         {
             throw Failure(
                 "QUERY_SITEMAP_REVISION_ID_INVALID",
-                "Sitemap projection requires an exact public-read revision identity.");
+                "SEO projection requires an exact public-read revision identity.");
         }
 
         if (expectedCurrentPublicReadRevisionId == Guid.Empty)
         {
             throw Failure(
                 "QUERY_SITEMAP_EXPECTED_REVISION_INVALID",
-                "Expected active sitemap revision cannot be the empty identity.");
+                "Expected active SEO revision cannot be the empty identity.");
         }
 
         if (builtAtUtc.Offset != TimeSpan.Zero)
         {
             throw Failure(
                 "QUERY_SITEMAP_BUILD_TIME_NOT_UTC",
-                "Sitemap projection build timestamp must be UTC.");
+                "SEO projection build timestamp must be UTC.");
         }
 
         var normalizedCatalogKey = QuerySeoCatalogKey.Create(catalogKey);
         ArgumentNullException.ThrowIfNull(records);
-        var orderedRecords = records
-            .OrderBy(record => record.Locale.Value, StringComparer.Ordinal)
-            .ThenBy(record => record.Path.Value, StringComparer.Ordinal)
-            .ToArray();
+        ArgumentNullException.ThrowIfNull(redirects);
+        var orderedRecords = CopyAndOrderRecords(records);
+        var orderedRedirects = CopyAndOrderRedirects(redirects);
         ValidateRecords(normalizedCatalogKey, orderedRecords, builtAtUtc);
+        ValidateRedirects(
+            normalizedCatalogKey,
+            orderedRecords,
+            orderedRedirects,
+            builtAtUtc);
         var digest = ComputeDigest(
             publicReadRevisionId,
             normalizedCatalogKey,
-            orderedRecords);
-        return store.ActivateAsync(
-            new PublicSitemapProjectionArtifact(
-                publicReadRevisionId,
-                expectedCurrentPublicReadRevisionId,
-                normalizedCatalogKey,
-                orderedRecords,
-                digest,
-                builtAtUtc),
-            cancellationToken);
+            orderedRecords,
+            orderedRedirects);
+        return new PublicSitemapProjectionArtifact(
+            publicReadRevisionId,
+            expectedCurrentPublicReadRevisionId,
+            normalizedCatalogKey,
+            orderedRecords,
+            digest,
+            builtAtUtc)
+        {
+            Redirects = orderedRedirects,
+        };
+    }
+
+    private static QuerySitemapDocument[] CopyAndOrderRecords(
+        IReadOnlyCollection<QuerySitemapDocument> records)
+    {
+        var copy = new List<QuerySitemapDocument>(records.Count);
+        foreach (var record in records)
+        {
+            ArgumentNullException.ThrowIfNull(record);
+            copy.Add(record);
+        }
+
+        return copy
+            .OrderBy(record => record.Locale.Value, StringComparer.Ordinal)
+            .ThenBy(record => record.Path.Value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static QueryRouteRedirectDocument[] CopyAndOrderRedirects(
+        IReadOnlyCollection<QueryRouteRedirectDocument> redirects)
+    {
+        var copy = new List<QueryRouteRedirectDocument>(redirects.Count);
+        foreach (var redirect in redirects)
+        {
+            ArgumentNullException.ThrowIfNull(redirect);
+            copy.Add(redirect);
+        }
+
+        return copy
+            .OrderBy(redirect => redirect.Locale.Value, StringComparer.Ordinal)
+            .ThenBy(redirect => redirect.SourcePath.Value, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static void ValidateRecords(
@@ -107,7 +141,6 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
     {
         foreach (var record in records)
         {
-            ArgumentNullException.ThrowIfNull(record);
             if (!string.Equals(
                     record.CatalogKey.Value,
                     catalogKey.Value,
@@ -118,6 +151,7 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
                     "Every sitemap record must belong to the exact projection Catalog.");
             }
 
+            EnsureLocalePath(record.Locale, record.Path, "sitemap route");
             if (record.LastModifiedAtUtc > builtAtUtc)
             {
                 throw Failure(
@@ -134,7 +168,16 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
         {
             throw Failure(
                 "QUERY_SITEMAP_ROUTE_DUPLICATE",
-                "A sitemap revision cannot contain duplicate locale/path route identities.");
+                "An SEO revision cannot contain duplicate locale/path route identities.");
+        }
+
+        if (records
+            .GroupBy(record => record.Path.Value, StringComparer.Ordinal)
+            .Any(group => group.Count() != 1))
+        {
+            throw Failure(
+                "QUERY_SITEMAP_PATH_DUPLICATE",
+                "An SEO revision cannot assign one exact path to multiple routes.");
         }
 
         var byRoute = records.ToDictionary(
@@ -171,10 +214,85 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
         }
     }
 
+    private static void ValidateRedirects(
+        QuerySeoCatalogKey catalogKey,
+        IReadOnlyList<QuerySitemapDocument> records,
+        IReadOnlyList<QueryRouteRedirectDocument> redirects,
+        DateTimeOffset builtAtUtc)
+    {
+        var canonicalRoutes = records.ToDictionary(
+            record => (record.Locale.Value, record.Path.Value),
+            EqualityComparer<(string, string)>.Default);
+        var canonicalPaths = records
+            .Select(record => record.Path.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var sourceRoutes = new HashSet<(string Locale, string Path)>();
+        var sourcePaths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var redirect in redirects)
+        {
+            if (!string.Equals(
+                    redirect.CatalogKey.Value,
+                    catalogKey.Value,
+                    StringComparison.Ordinal))
+            {
+                throw Failure(
+                    "QUERY_SEO_REDIRECT_CATALOG_MISMATCH",
+                    "Every permanent redirect must belong to the exact projection Catalog.");
+            }
+
+            EnsureLocalePath(redirect.Locale, redirect.SourcePath, "redirect source");
+            EnsureLocalePath(redirect.Locale, redirect.TargetPath, "redirect target");
+            if (redirect.CreatedAtUtc > builtAtUtc)
+            {
+                throw Failure(
+                    "QUERY_SEO_REDIRECT_CREATED_IN_FUTURE",
+                    "Permanent redirect creation time cannot be after the projection build time.");
+            }
+
+            if (!sourceRoutes.Add((redirect.Locale.Value, redirect.SourcePath.Value)) ||
+                !sourcePaths.Add(redirect.SourcePath.Value))
+            {
+                throw Failure(
+                    "QUERY_SEO_REDIRECT_SOURCE_DUPLICATE",
+                    "An SEO revision cannot contain duplicate permanent-redirect sources.");
+            }
+
+            if (canonicalPaths.Contains(redirect.SourcePath.Value))
+            {
+                throw Failure(
+                    "QUERY_SEO_REDIRECT_SOURCE_IS_CANONICAL",
+                    "A permanent-redirect source cannot also be a current canonical route.");
+            }
+
+            if (!canonicalRoutes.ContainsKey((
+                    redirect.Locale.Value,
+                    redirect.TargetPath.Value)))
+            {
+                throw Failure(
+                    "QUERY_SEO_REDIRECT_TARGET_MISSING",
+                    "Every permanent redirect must target an exact canonical route in the same revision.");
+            }
+        }
+    }
+
+    private static void EnsureLocalePath(
+        QuerySeoLocale locale,
+        QuerySeoPath path,
+        string owner)
+    {
+        if (!path.Value.StartsWith($"/{locale.Value}/", StringComparison.Ordinal))
+        {
+            throw Failure(
+                "QUERY_SEO_ROUTE_LOCALE_MISMATCH",
+                $"The {owner} path does not belong to locale '{locale.Value}'.");
+        }
+    }
+
     private static string ComputeDigest(
         Guid publicReadRevisionId,
         QuerySeoCatalogKey catalogKey,
-        IReadOnlyList<QuerySitemapDocument> records)
+        IReadOnlyList<QuerySitemapDocument> records,
+        IReadOnlyList<QueryRouteRedirectDocument> redirects)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
@@ -211,6 +329,25 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
             }
 
             writer.WriteEndArray();
+            writer.WritePropertyName("redirects");
+            writer.WriteStartArray();
+            foreach (var redirect in redirects)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("locale", redirect.Locale.Value);
+                writer.WriteString("sourcePath", redirect.SourcePath.Value);
+                writer.WriteString("targetPath", redirect.TargetPath.Value);
+                writer.WriteString(
+                    "sourcePublicationId",
+                    redirect.SourcePublicationId.ToString("D"));
+                writer.WriteString("reason", redirect.Reason);
+                writer.WriteString(
+                    "createdAtUtc",
+                    redirect.CreatedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
             writer.WriteEndObject();
         }
 
@@ -222,6 +359,59 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
             code,
             detail,
             "Rebuild the exact public-read revision after correcting its Query-owned SEO route set.");
+}
+
+/// <summary>Single application owner for SEO validation, digesting and activation.</summary>
+public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjectionStore store)
+{
+    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
+        Guid publicReadRevisionId,
+        string catalogKey,
+        IReadOnlyCollection<QuerySitemapDocument> records,
+        DateTimeOffset builtAtUtc,
+        CancellationToken cancellationToken) =>
+        BuildAndActivateAsync(
+            publicReadRevisionId,
+            expectedCurrentPublicReadRevisionId: null,
+            catalogKey,
+            records,
+            Array.Empty<QueryRouteRedirectDocument>(),
+            builtAtUtc,
+            cancellationToken);
+
+    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
+        Guid publicReadRevisionId,
+        Guid? expectedCurrentPublicReadRevisionId,
+        string catalogKey,
+        IReadOnlyCollection<QuerySitemapDocument> records,
+        DateTimeOffset builtAtUtc,
+        CancellationToken cancellationToken) =>
+        BuildAndActivateAsync(
+            publicReadRevisionId,
+            expectedCurrentPublicReadRevisionId,
+            catalogKey,
+            records,
+            Array.Empty<QueryRouteRedirectDocument>(),
+            builtAtUtc,
+            cancellationToken);
+
+    public Task<PublicSitemapProjectionResult> BuildAndActivateAsync(
+        Guid publicReadRevisionId,
+        Guid? expectedCurrentPublicReadRevisionId,
+        string catalogKey,
+        IReadOnlyCollection<QuerySitemapDocument> records,
+        IReadOnlyCollection<QueryRouteRedirectDocument> redirects,
+        DateTimeOffset builtAtUtc,
+        CancellationToken cancellationToken) =>
+        store.ActivateAsync(
+            PublicSitemapProjectionArtifactBuilder.Build(
+                publicReadRevisionId,
+                expectedCurrentPublicReadRevisionId,
+                catalogKey,
+                records,
+                redirects,
+                builtAtUtc),
+            cancellationToken);
 }
 
 public sealed class QuerySitemapProjectionException : Exception

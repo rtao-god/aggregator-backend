@@ -44,7 +44,36 @@ public sealed record QueryProjectionActivation(
     QueryBaseProjection BaseProjection,
     QueryOverlayRevision PromotionOverlay,
     QueryOverlayRevision SafetyOverlay,
-    PublicReadRevision PublicReadRevision);
+    PublicReadRevision PublicReadRevision,
+    PublicSitemapProjectionArtifact SeoProjection)
+{
+    public QueryProjectionActivation(
+        QueryBaseProjection baseProjection,
+        QueryOverlayRevision promotionOverlay,
+        QueryOverlayRevision safetyOverlay,
+        PublicReadRevision publicReadRevision)
+        : this(
+            baseProjection,
+            promotionOverlay,
+            safetyOverlay,
+            publicReadRevision,
+            CreateEmptySeoProjection(publicReadRevision))
+    {
+    }
+
+    private static PublicSitemapProjectionArtifact CreateEmptySeoProjection(
+        PublicReadRevision publicReadRevision)
+    {
+        ArgumentNullException.ThrowIfNull(publicReadRevision);
+        return PublicSitemapProjectionArtifactBuilder.Build(
+            publicReadRevision.Id,
+            expectedCurrentPublicReadRevisionId: null,
+            publicReadRevision.CatalogKey,
+            Array.Empty<QuerySitemapDocument>(),
+            Array.Empty<QueryRouteRedirectDocument>(),
+            publicReadRevision.CreatedAtUtc);
+    }
+}
 
 public enum QueryProjectionActivationDisposition
 {

@@ -21,9 +21,13 @@ public static class CatalogPublicationProjectionBuilder
         ValidateSourceIdentity(activation, artifact);
 
         var localePolicy = QueryLocalePolicy.Create(artifact.DefaultLocale, artifact.SupportedLocales);
+        var listingRoutes = BuildListingRouteMap(artifact, localePolicy);
         var documents = artifact.Listings
             .OrderBy(item => item.ListingId)
-            .Select(item => MapDocument(item, artifact.CreatedAtUtc))
+            .Select(item => MapDocument(
+                item,
+                artifact.CreatedAtUtc,
+                listingRoutes))
             .ToArray();
         var baseDigest = QueryCanonicalJson.ComputeDigest(new
         {
@@ -75,11 +79,21 @@ public static class CatalogPublicationProjectionBuilder
             artifact.PublicationSequence,
             builtAtUtc,
             safetyDigest);
+        var seoDocuments = PublicSeoProjectionDocumentBuilder.Build(
+            BuildSeoRouteSources(artifact, localePolicy));
+        var seoProjection = PublicSitemapProjectionArtifactBuilder.Build(
+            publicReadRevisionId,
+            expectedCurrentPublicReadRevisionId: null,
+            artifact.CatalogKey,
+            seoDocuments.SitemapRecords,
+            seoDocuments.Redirects,
+            builtAtUtc);
         var publicReadDigest = QueryCanonicalJson.ComputeDigest(new
         {
             baseProjectionDigest = baseProjection.ContentDigest,
             promotionOverlayDigest = promotionOverlay.ContentDigest,
             safetyOverlayDigest = safetyOverlay.ContentDigest,
+            seoProjectionDigest = seoProjection.ContentDigest,
             artifact.PublicationId,
         });
         var publicReadRevision = PublicReadRevision.Create(
@@ -89,10 +103,18 @@ public static class CatalogPublicationProjectionBuilder
             safetyOverlay,
             builtAtUtc,
             publicReadDigest);
-        return new QueryProjectionActivation(baseProjection, promotionOverlay, safetyOverlay, publicReadRevision);
+        return new QueryProjectionActivation(
+            baseProjection,
+            promotionOverlay,
+            safetyOverlay,
+            publicReadRevision,
+            seoProjection);
     }
 
-    private static QueryListingDocument MapDocument(PublicListingDocument source, DateTimeOffset publishedAtUtc)
+    private static QueryListingDocument MapDocument(
+        PublicListingDocument source,
+        DateTimeOffset publishedAtUtc,
+        IReadOnlyDictionary<ListingRouteIdentity, PublicRouteDocument> listingRoutes)
     {
         var listingKind = source.SubjectKind switch
         {
@@ -125,7 +147,7 @@ public static class CatalogPublicationProjectionBuilder
                     : null;
                 return new QueryLocalizedDocument(
                     item.Locale,
-                    BuildRoute(item.Locale, source.ListingId),
+                    GetListingRoute(source.ListingId, item.Locale, listingRoutes),
                     item.Value,
                     descriptionState,
                     descriptionValue);
@@ -244,11 +266,171 @@ public static class CatalogPublicationProjectionBuilder
             "Upgrade Query to the exact Catalog contract before consuming this publication."),
     };
 
-    private static string BuildRoute(string locale, Guid listingId)
+    private static IReadOnlyDictionary<ListingRouteIdentity, PublicRouteDocument> BuildListingRouteMap(
+        CatalogPublicationArtifact artifact,
+        QueryLocalePolicy localePolicy)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(locale);
-        return $"/{locale}/listings/{listingId:N}";
+        var listingByGroup = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        foreach (var listing in artifact.Listings)
+        {
+            var groupKey = CatalogPublicationRouteManifest.ListingGroupKey(listing.ListingId);
+            if (!listingByGroup.TryAdd(groupKey, listing.ListingId))
+            {
+                throw Failure(
+                    "QUERY_ROUTE_LISTING_DUPLICATE",
+                    $"Catalog publication repeats listing '{listing.ListingId}'.",
+                    "Correct and republish the exact Catalog publication artifact.");
+            }
+        }
+
+        var routes = new Dictionary<ListingRouteIdentity, PublicRouteDocument>();
+        foreach (var route in artifact.Routes.Where(route =>
+                     route.RouteKind == CatalogPublicRouteKindContract.Listing))
+        {
+            if (!listingByGroup.TryGetValue(route.RouteGroupKey, out var listingId))
+            {
+                throw Failure(
+                    "QUERY_ROUTE_LISTING_ORPHANED",
+                    $"Listing route group '{route.RouteGroupKey}' has no listing in the exact publication.",
+                    "Correct the Catalog route manifest and create a new publication.");
+            }
+
+            if (!localePolicy.Supports(route.Locale))
+            {
+                throw Failure(
+                    "QUERY_ROUTE_LOCALE_UNSUPPORTED",
+                    $"Route locale '{route.Locale}' is not supported by Catalog '{artifact.CatalogKey}'.",
+                    "Correct the Catalog route manifest and create a new publication.");
+            }
+
+            var identity = new ListingRouteIdentity(listingId, route.Locale);
+            if (!routes.TryAdd(identity, route))
+            {
+                throw Failure(
+                    "QUERY_ROUTE_LISTING_LOCALE_DUPLICATE",
+                    $"Listing '{listingId}' has multiple current routes for locale '{route.Locale}'.",
+                    "Correct the Catalog route manifest and create a new publication.");
+            }
+        }
+
+        foreach (var listing in artifact.Listings)
+        {
+            var observedLocales = listing.Names
+                .Where(name => name.State == FieldValueStateContract.Observed)
+                .Select(name => name.Locale)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var locale in observedLocales)
+            {
+                if (!routes.ContainsKey(new ListingRouteIdentity(listing.ListingId, locale)))
+                {
+                    throw Failure(
+                        "QUERY_ROUTE_LISTING_MISSING",
+                        $"Listing '{listing.ListingId}' has no current route for observed locale '{locale}'.",
+                        "Correct the Catalog route manifest and create a new publication.");
+                }
+            }
+
+            var unexpectedRoute = routes
+                .Where(pair => pair.Key.ListingId == listing.ListingId)
+                .Select(pair => pair.Key.Locale)
+                .FirstOrDefault(locale => !observedLocales.Contains(locale));
+            if (unexpectedRoute is not null)
+            {
+                throw Failure(
+                    "QUERY_ROUTE_LISTING_LOCALE_UNPUBLISHED",
+                    $"Listing '{listing.ListingId}' route locale '{unexpectedRoute}' has no observed public title.",
+                    "Correct the Catalog route manifest and create a new publication.");
+            }
+        }
+
+        return routes;
     }
+
+    private static string GetListingRoute(
+        Guid listingId,
+        string locale,
+        IReadOnlyDictionary<ListingRouteIdentity, PublicRouteDocument> routes)
+    {
+        if (!routes.TryGetValue(new ListingRouteIdentity(listingId, locale), out var route))
+        {
+            throw Failure(
+                "QUERY_ROUTE_LISTING_MISSING",
+                $"Listing '{listingId}' has no current route for observed locale '{locale}'.",
+                "Correct the Catalog route manifest and create a new publication.");
+        }
+
+        return route.Path;
+    }
+
+    private static IReadOnlyList<PublicSeoRouteSource> BuildSeoRouteSources(
+        CatalogPublicationArtifact artifact,
+        QueryLocalePolicy localePolicy)
+    {
+        var sources = new List<PublicSeoRouteSource>(
+            artifact.Routes.Count + artifact.Redirects.Count);
+        foreach (var route in artifact.Routes)
+        {
+            EnsureSupportedRouteLocale(artifact.CatalogKey, localePolicy, route.Locale);
+            sources.Add(new PublicSeoRouteSource(
+                MapRouteKind(route.RouteKind),
+                route.RouteGroupKey,
+                artifact.CatalogKey,
+                route.Locale,
+                route.Path,
+                route.LastModifiedAtUtc,
+                route.IsDraft,
+                RedirectTargetPath: null,
+                IsSuppressed: route.IsSuppressed));
+        }
+
+        foreach (var redirect in artifact.Redirects)
+        {
+            EnsureSupportedRouteLocale(artifact.CatalogKey, localePolicy, redirect.Locale);
+            sources.Add(new PublicSeoRouteSource(
+                MapRouteKind(redirect.RouteKind),
+                redirect.RouteGroupKey,
+                artifact.CatalogKey,
+                redirect.Locale,
+                redirect.SourcePath,
+                redirect.CreatedAtUtc,
+                IsDraft: false,
+                RedirectTargetPath: redirect.TargetPath,
+                IsSuppressed: false,
+                RedirectSourcePublicationId: redirect.SourcePublicationId,
+                RedirectReason: redirect.Reason,
+                RedirectCreatedAtUtc: redirect.CreatedAtUtc));
+        }
+
+        return sources;
+    }
+
+    private static void EnsureSupportedRouteLocale(
+        string catalogKey,
+        QueryLocalePolicy localePolicy,
+        string locale)
+    {
+        if (!localePolicy.Supports(locale))
+        {
+            throw Failure(
+                "QUERY_ROUTE_LOCALE_UNSUPPORTED",
+                $"Route locale '{locale}' is not supported by Catalog '{catalogKey}'.",
+                "Correct the Catalog route manifest and create a new publication.");
+        }
+    }
+
+    private static QuerySeoRouteKind MapRouteKind(CatalogPublicRouteKindContract routeKind) =>
+        routeKind switch
+        {
+            CatalogPublicRouteKindContract.Listing => QuerySeoRouteKind.Listing,
+            CatalogPublicRouteKindContract.Category => QuerySeoRouteKind.Category,
+            CatalogPublicRouteKindContract.EditorialLanding => QuerySeoRouteKind.EditorialLanding,
+            _ => throw Failure(
+                "QUERY_ROUTE_KIND_UNSUPPORTED",
+                $"Catalog route kind '{routeKind}' is unsupported.",
+                "Upgrade Query to the exact Catalog route contract before consuming this publication."),
+        };
+
+    private sealed record ListingRouteIdentity(Guid ListingId, string Locale);
 
     private static void ValidateSourceIdentity(
         CatalogPublicationActivated activation,
