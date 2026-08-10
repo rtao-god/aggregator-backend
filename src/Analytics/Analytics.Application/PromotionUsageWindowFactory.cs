@@ -59,15 +59,6 @@ public static class PromotionUsageWindowFactory
         RequireCount(window.AcceptedImpressions, nameof(window.AcceptedImpressions));
         RequireCount(window.AcceptedListingOpens, nameof(window.AcceptedListingOpens));
         RequireCount(window.AcceptedOutboundClicks, nameof(window.AcceptedOutboundClicks));
-        if (window.AcceptedImpressions == 0 &&
-            window.AcceptedListingOpens == 0 &&
-            window.AcceptedOutboundClicks == 0)
-        {
-            throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_EMPTY",
-                "An empty usage window is not a publishable Promotion integration event.");
-        }
-
         return new PromotionUsageWindowClosed(
             eventId,
             window.UsageWindowId,

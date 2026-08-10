@@ -137,15 +137,6 @@ public sealed class ApplyAnalyticsPromotionUsageWindowService(
         RequireCount(message.AcceptedImpressions, nameof(message.AcceptedImpressions));
         RequireCount(message.AcceptedListingOpens, nameof(message.AcceptedListingOpens));
         RequireCount(message.AcceptedOutboundClicks, nameof(message.AcceptedOutboundClicks));
-        if (message.AcceptedImpressions == 0 &&
-            message.AcceptedListingOpens == 0 &&
-            message.AcceptedOutboundClicks == 0)
-        {
-            throw Failure(
-                "PROMOTION_USAGE_WINDOW_EMPTY",
-                "Promotion does not persist empty Analytics usage windows.");
-        }
-
         return new PromotionUsageWindowProjection(
             message.UsageWindowId,
             message.PlacementId,
