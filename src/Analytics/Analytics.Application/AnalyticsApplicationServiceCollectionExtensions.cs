@@ -14,6 +14,7 @@ public static class AnalyticsApplicationServiceCollectionExtensions
         services.AddScoped<ApplyCatalogListingAccessGrantChangedService>();
         services.AddScoped<ReadListingMetricsRangeService>();
         services.AddScoped<ReadDailyListingMetricsService>();
+        services.AddScoped<ReadListingMetricsSummaryService>();
         services.AddScoped<RebuildDailyAnalyticsMetricsService>();
         services.AddScoped<ReadAnalyticsAggregationStatusService>();
         return services;
