@@ -18,7 +18,7 @@ public sealed class CatalogQueryApiTests
         using var response = await client.GetAsync(
             "/api/catalog-query/catalogs/berlin-recording-services/listings" +
             "?locale=en-GB&category=recording-studio&district=mitte" +
-            "&listingKind=place&contactKind=website&pageSize=20");
+            "&marketZone=primary_market&listingKind=place&contactKind=website&pageSize=20");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(response.Headers.ETag);
@@ -34,6 +34,7 @@ public sealed class CatalogQueryApiTests
         Assert.Equal("mitte", query.GetProperty("districtKey").GetString());
         Assert.Equal("place", query.GetProperty("listingKind").GetString());
         Assert.Equal("website", query.GetProperty("contactKind").GetString());
+        Assert.Equal("primaryMarket", query.GetProperty("marketZone").GetString());
         var listing = root.GetProperty("organic")[0];
         Assert.Equal("fallback", listing.GetProperty("translationState").GetString());
         Assert.Equal("de-DE", listing.GetProperty("resolvedLocale").GetString());
@@ -55,6 +56,7 @@ public sealed class CatalogQueryApiTests
         Assert.Equal("mitte", factory.Store.LastCriteria?.DistrictKey);
         Assert.Equal(QueryListingKind.Place, factory.Store.LastCriteria?.ListingKind);
         Assert.Equal(QueryContactKind.Website, factory.Store.LastCriteria?.ContactKind);
+        Assert.Equal(QueryGeographyState.PrimaryMarket, factory.Store.LastCriteria?.MarketZone);
         Assert.Equal(factory.Clock.UtcNow, factory.Store.LastReadAtUtc);
         Assert.Equal(1, factory.Store.PageReadCount);
     }
@@ -78,6 +80,7 @@ public sealed class CatalogQueryApiTests
     [Theory]
     [InlineData("listingKind", "studio")]
     [InlineData("contactKind", "telegram")]
+    [InlineData("marketZone", "urban")]
     public async Task UnsupportedTypedFilterIsRejectedBeforeStoreRead(
         string parameterName,
         string value)
