@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Platform.Messaging;
 
 namespace Aggregator.Query.Worker;
@@ -6,17 +7,45 @@ namespace Aggregator.Query.Worker;
 /// <summary>Delivers Query-owned public-read activation events from the durable outbox.</summary>
 public sealed class QueryOutboxWorker(
     PostgresOutboxDispatcher dispatcher,
-    QueryOutboxWorkerOptions options) : BackgroundService
+    QueryOutboxWorkerOptions options,
+    ILogger<QueryOutboxWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var dispatched = await dispatcher.DispatchOnceAsync(stoppingToken);
-            if (dispatched == 0)
+            try
             {
+                var dispatched = await dispatcher.DispatchOnceAsync(stoppingToken);
+                if (dispatched == 0)
+                {
+                    await Task.Delay(options.EmptyDelay, stoppingToken);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                QueryOutboxWorkerLog.DispatchFailed(
+                    logger,
+                    exception,
+                    options.EmptyDelay);
                 await Task.Delay(options.EmptyDelay, stoppingToken);
             }
         }
     }
+}
+
+internal static partial class QueryOutboxWorkerLog
+{
+    [LoggerMessage(
+        EventId = 4101,
+        Level = LogLevel.Error,
+        Message = "Query outbox dispatch failed after durable failure recording. Retrying after {RetryDelay}.")]
+    public static partial void DispatchFailed(
+        ILogger logger,
+        Exception exception,
+        TimeSpan retryDelay);
 }
