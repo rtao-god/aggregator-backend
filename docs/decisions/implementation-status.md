@@ -35,6 +35,8 @@ This document records implemented production owners and exact remaining work. An
 - [x] PostgreSQL projection/read stores, Query migrations, one worker composition root, and public API returning sponsored and organic rows from one revision snapshot.
 - [x] Block-first visibility-safety inbox, immutable overlay materialization, atomic `PublicReadRevision` switch, and listing/route/media/contact filtering.
 - [x] Catalog publication recomposition preserves the exact current Promotion and safety overlays under a per-catalog mutation lease and blocks incompatible Promotion membership.
+- [x] Immutable revision-bound sitemap projection, active pointer, keyset read API, reciprocal route groups, and explicit owner failures.
+- [x] Public-safe read-only projection-status API over exact public-read, Catalog checkpoint, read-block, and sitemap evidence.
 - [ ] Complete real PostgreSQL/RabbitMQ/object-storage migration, concurrency, failure-injection, and E2E proof for visibility safety.
 
 ## Ingestion owner progress
