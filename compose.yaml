@@ -366,6 +366,11 @@ services:
       Analytics__PublicReadProjection__PrefetchCount: "8"
       Analytics__PublicReadProjection__DeliveryLimit: "8"
       Analytics__PublicReadProjection__RetryDelay: "00:00:00.500"
+      Analytics__Outbox__DispatcherIdentity: analytics-promotion-usage-outbox
+      Analytics__Outbox__BatchSize: "50"
+      Analytics__Outbox__MaximumDeliveryAttempts: "8"
+      Analytics__Outbox__LeaseDurationSeconds: "120"
+      Analytics__Outbox__EmptyDelayMilliseconds: "2000"
     depends_on: {analytics-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
   promotion-api:
     <<: *api
@@ -397,6 +402,13 @@ services:
       Promotion__EligibilityProjection__PrefetchCount: "8"
       Promotion__EligibilityProjection__DeliveryLimit: "8"
       Promotion__EligibilityProjection__RetryDelayMilliseconds: "500"
+      Promotion__UsageProjection__Queue: promotion.analytics-usage
+      Promotion__UsageProjection__DeadLetterExchange: aggregator.dead-letter
+      Promotion__UsageProjection__DeadLetterQueue: promotion.analytics-usage.dead-letter
+      Promotion__UsageProjection__RoutingKey: analytics.promotion-usage-window.closed
+      Promotion__UsageProjection__PrefetchCount: "8"
+      Promotion__UsageProjection__DeliveryLimit: "8"
+      Promotion__UsageProjection__RetryDelayMilliseconds: "500"
     depends_on: {promotion-grants: {condition: service_completed_successfully}, rabbitmq: {condition: service_healthy}}
 
   reverse-proxy:
