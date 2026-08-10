@@ -24,6 +24,8 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
 
     public StubPublicFacetCatalogStore FacetStore { get; } = new();
 
+    public StubPublicProjectionStatusStore ProjectionStatusStore { get; } = new();
+
     public StubQueryClock Clock { get; } = new(
         new DateTimeOffset(2026, 8, 4, 12, 0, 0, TimeSpan.Zero));
 
@@ -35,9 +37,11 @@ public sealed class QueryApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IPublicQueryStore>();
             services.RemoveAll<IPublicFacetCatalogStore>();
+            services.RemoveAll<IPublicProjectionStatusStore>();
             services.RemoveAll<IQueryClock>();
             services.AddSingleton<IPublicQueryStore>(Store);
             services.AddSingleton<IPublicFacetCatalogStore>(FacetStore);
+            services.AddSingleton<IPublicProjectionStatusStore>(ProjectionStatusStore);
             services.AddSingleton<IQueryClock>(Clock);
         });
     }
@@ -112,6 +116,25 @@ public sealed class StubPublicFacetCatalogStore : IPublicFacetCatalogStore
         ReadCount++;
         LastCatalogKey = catalogKey;
         LastReadAtUtc = readAtUtc;
+        return Task.FromResult(Snapshot);
+    }
+}
+
+public sealed class StubPublicProjectionStatusStore : IPublicProjectionStatusStore
+{
+    public PublicProjectionStatusSnapshot? Snapshot { get; set; }
+
+    public int ReadCount { get; private set; }
+
+    public string? LastCatalogKey { get; private set; }
+
+    public Task<PublicProjectionStatusSnapshot?> ReadAsync(
+        string catalogKey,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ReadCount++;
+        LastCatalogKey = catalogKey;
         return Task.FromResult(Snapshot);
     }
 }
