@@ -2,6 +2,7 @@ using Aggregator.Promotion.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Aggregator.Promotion.Infrastructure;
 
@@ -20,8 +21,9 @@ public static class PromotionInfrastructureServiceCollectionExtensions
             throw new InvalidOperationException("Connection string 'Promotion' cannot be empty.");
         }
 
-        services.AddDbContext<PromotionDbContext>(options =>
-            options.UseNpgsql(connectionString));
+        services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+        services.AddDbContext<PromotionDbContext>((serviceProvider, options) =>
+            options.UseNpgsql(serviceProvider.GetRequiredService<NpgsqlDataSource>()));
         services.AddScoped<EfPromotionRepository>();
         services.AddScoped<IPromotionRepository>(services =>
             services.GetRequiredService<EfPromotionRepository>());
