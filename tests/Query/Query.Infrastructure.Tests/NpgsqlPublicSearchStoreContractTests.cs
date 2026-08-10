@@ -11,11 +11,14 @@ public sealed class NpgsqlPublicSearchStoreContractTests
         Assert.Contains("PublicListingSearchCriteria criteria", source, StringComparison.Ordinal);
         Assert.Contains("category_filter.category_key = @category_key", source, StringComparison.Ordinal);
         Assert.Contains("district_filter.district_key = @district_key", source, StringComparison.Ordinal);
+        Assert.Contains("market_zone_filter.state = @market_zone", source, StringComparison.Ordinal);
         Assert.Contains("@listing_kind IS NULL OR d.listing_kind = @listing_kind", source, StringComparison.Ordinal);
         Assert.Contains("contact_filter.kind = @contact_kind", source, StringComparison.Ordinal);
         Assert.Contains("@listing_kind IS NULL OR document.listing_kind = @listing_kind", source, StringComparison.Ordinal);
         Assert.Contains("item.scope_type = 'district'", source, StringComparison.Ordinal);
         Assert.Contains("item.scope_key = @district_key", source, StringComparison.Ordinal);
+        Assert.Contains("\"market_zone\"", source, StringComparison.Ordinal);
+        Assert.Contains("ToPersistedGeographyState(criteria.MarketZone.Value)", source, StringComparison.Ordinal);
         Assert.Contains("AddSearchFilterParameters(command, criteria);", source, StringComparison.Ordinal);
     }
 
@@ -73,6 +76,18 @@ public sealed class NpgsqlPublicSearchStoreContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             "ON projection.promotion_overlay_item\n    (overlay_id, scope_type, scope_key, placement_id)",
+            migration,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MarketZoneSearchIndexIsOwnedByQueryMigration()
+    {
+        var migration = ReadRepositoryFile(
+            "src/Query/Query.Migrations/Migrations/V013__market_zone_search_index.sql");
+
+        Assert.Contains(
+            "ON documents.listing_geography\n    (base_projection_id, state, listing_id)",
             migration,
             StringComparison.Ordinal);
     }
