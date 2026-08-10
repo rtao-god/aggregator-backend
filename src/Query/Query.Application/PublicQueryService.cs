@@ -17,18 +17,13 @@ public sealed class PublicQueryService
 
     public async Task<PublicListingSearchResponse> SearchAsync(
         string catalogKey,
-        string locale,
-        string? categoryKey,
-        int pageSize,
-        string? cursor,
+        PublicListingSearchRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var normalizedCatalogKey = RequireKey(catalogKey, nameof(catalogKey));
-        var normalizedLocale = RequireLocale(locale, nameof(locale));
-        var normalizedCategoryKey = categoryKey is null
-            ? null
-            : RequireKey(categoryKey, nameof(categoryKey));
-        if (pageSize is < 1 or > 100)
+        var criteria = CreateSearchCriteria(request);
+        if (request.PageSize is < 1 or > 100)
         {
             throw new QueryReadException(
                 "Query.PublicApi",
@@ -38,14 +33,11 @@ public sealed class PublicQueryService
                 "Submit a page size within the supported range.");
         }
 
-        var queryDigest = QueryCursorCodec.ComputeQueryDigest(
-            normalizedCatalogKey,
-            normalizedLocale,
-            normalizedCategoryKey);
+        var queryDigest = QueryCursorCodec.ComputeQueryDigest(normalizedCatalogKey, criteria);
         QueryCursor? decodedCursor = null;
-        if (cursor is not null)
+        if (request.Cursor is not null)
         {
-            decodedCursor = QueryCursorCodec.Decode(cursor);
+            decodedCursor = QueryCursorCodec.Decode(request.Cursor);
             if (!string.Equals(decodedCursor.Value.QueryDigest, queryDigest, StringComparison.Ordinal))
             {
                 throw new QueryReadException(
@@ -61,9 +53,8 @@ public sealed class PublicQueryService
         var snapshot = await _store.ReadPageAsync(
             normalizedCatalogKey,
             decodedCursor?.LastListingId,
-            checked(pageSize + 1),
-            normalizedCategoryKey,
-            normalizedLocale,
+            checked(request.PageSize + 1),
+            criteria,
             readAtUtc,
             cancellationToken);
         if (snapshot is null)
@@ -71,14 +62,13 @@ public sealed class PublicQueryService
             throw ProjectionUnavailable(normalizedCatalogKey);
         }
 
-        EnsureLocaleSupported(snapshot.LocalePolicy, normalizedLocale);
+        EnsureLocaleSupported(snapshot.LocalePolicy, criteria.RequestedLocale);
         EnsurePageContract(
             snapshot,
             normalizedCatalogKey,
             decodedCursor?.LastListingId,
-            pageSize + 1,
-            normalizedLocale,
-            normalizedCategoryKey,
+            request.PageSize + 1,
+            criteria,
             readAtUtc);
         if (decodedCursor is { } expected && expected.PublicReadRevisionId != snapshot.Revision.Id)
         {
@@ -95,29 +85,57 @@ public sealed class PublicQueryService
                 });
         }
 
-        var hasMore = snapshot.Documents.Count > pageSize;
-        var page = snapshot.Documents.Take(pageSize).ToArray();
+        var hasMore = snapshot.Documents.Count > request.PageSize;
+        var page = snapshot.Documents.Take(request.PageSize).ToArray();
         var nextCursor = hasMore && page.Length > 0
             ? QueryCursorCodec.Encode(snapshot.Revision.Id, page[^1].ListingId, queryDigest)
             : null;
         var organic = page
-            .Select(document => ToSummary(document, normalizedLocale, snapshot.LocalePolicy))
+            .Select(document => ToSummary(
+                document,
+                criteria.RequestedLocale,
+                snapshot.LocalePolicy))
             .ToArray();
         var sponsored = snapshot.SponsoredDocuments
             .Select(item => ToSponsoredSummary(
                 item,
-                normalizedLocale,
+                criteria.RequestedLocale,
                 snapshot.LocalePolicy))
-            .ToArray();
-        var facets = snapshot.CategoryFacetCounts
-            .OrderBy(item => item.Key, StringComparer.Ordinal)
-            .Select(item => new PublicFacetValue(item.Key, item.Value))
             .ToArray();
         return new PublicListingSearchResponse(
             ToMetadata(snapshot.Revision),
+            new PublicListingSearchQuerySummary(
+                criteria.RequestedLocale,
+                criteria.CategoryKey,
+                criteria.DistrictKey,
+                criteria.ListingKind is null
+                    ? null
+                    : MapListingKind(criteria.ListingKind.Value),
+                criteria.ContactKind is null
+                    ? null
+                    : MapContactKindContract(criteria.ContactKind.Value)),
             sponsored,
             organic,
-            facets,
+            snapshot.CategoryFacetCounts
+                .OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new PublicFacetValue(item.Key, item.Value))
+                .ToArray(),
+            snapshot.DistrictFacetCounts
+                .OrderBy(item => item.Key, StringComparer.Ordinal)
+                .Select(item => new PublicFacetValue(item.Key, item.Value))
+                .ToArray(),
+            snapshot.ListingKindFacetCounts
+                .OrderBy(item => item.Key)
+                .Select(item => new PublicListingKindFacetValue(
+                    MapListingKind(item.Key),
+                    item.Value))
+                .ToArray(),
+            snapshot.ContactKindFacetCounts
+                .OrderBy(item => item.Key)
+                .Select(item => new PublicContactKindFacetValue(
+                    MapContactKindContract(item.Key),
+                    item.Value))
+                .ToArray(),
             nextCursor);
     }
 
@@ -194,8 +212,7 @@ public sealed class PublicQueryService
         string expectedCatalogKey,
         Guid? afterListingId,
         int maximumDocuments,
-        string requestedLocale,
-        string? categoryKey,
+        PublicListingSearchCriteria criteria,
         DateTimeOffset readAtUtc)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -203,6 +220,10 @@ public sealed class PublicQueryService
         ArgumentNullException.ThrowIfNull(snapshot.Documents);
         ArgumentNullException.ThrowIfNull(snapshot.SponsoredDocuments);
         ArgumentNullException.ThrowIfNull(snapshot.CategoryFacetCounts);
+        ArgumentNullException.ThrowIfNull(snapshot.DistrictFacetCounts);
+        ArgumentNullException.ThrowIfNull(snapshot.ListingKindFacetCounts);
+        ArgumentNullException.ThrowIfNull(snapshot.ContactKindFacetCounts);
+        ArgumentNullException.ThrowIfNull(criteria);
         EnsureRevisionCatalog(snapshot.Revision, expectedCatalogKey);
         if (snapshot.Documents.Count > maximumDocuments)
         {
@@ -217,13 +238,14 @@ public sealed class PublicQueryService
                 throw StoreContractFailure("Query store returned an unordered or duplicate listing page.");
             }
 
+            EnsureDocumentMatchesCriteria(document, criteria);
             previous = document.ListingId;
         }
 
-        if (snapshot.CategoryFacetCounts.Any(item => string.IsNullOrWhiteSpace(item.Key) || item.Value < 0))
-        {
-            throw StoreContractFailure("Query store returned an invalid category facet count.");
-        }
+        EnsureStringFacets(snapshot.CategoryFacetCounts, "category");
+        EnsureStringFacets(snapshot.DistrictFacetCounts, "district");
+        EnsureEnumFacets(snapshot.ListingKindFacetCounts, "listing-kind");
+        EnsureEnumFacets(snapshot.ContactKindFacetCounts, "contact-kind");
 
         var placementIds = new HashSet<Guid>();
         foreach (var sponsored in snapshot.SponsoredDocuments)
@@ -253,16 +275,19 @@ public sealed class PublicQueryService
                     $"Sponsored placement '{placement.PlacementId}' is paired with another listing.");
             }
 
+            EnsureDocumentMatchesCriteria(sponsored.Document, criteria);
             if (!placement.IsVisibleAt(readAtUtc))
             {
                 throw StoreContractFailure(
                     $"Query store returned inactive or expired sponsored placement '{placement.PlacementId}'.");
             }
 
-            if (!placement.LocaleScope.Contains(requestedLocale, StringComparer.OrdinalIgnoreCase))
+            if (!placement.LocaleScope.Contains(
+                    criteria.RequestedLocale,
+                    StringComparer.OrdinalIgnoreCase))
             {
                 throw StoreContractFailure(
-                    $"Sponsored placement '{placement.PlacementId}' does not target locale '{requestedLocale}'.");
+                    $"Sponsored placement '{placement.PlacementId}' does not target locale '{criteria.RequestedLocale}'.");
             }
 
             var scopeMatches = placement.Scope switch
@@ -273,12 +298,17 @@ public sealed class PublicQueryService
                         expectedCatalogKey,
                         StringComparison.Ordinal),
                 QueryPromotionPlacementScope.Category =>
-                    categoryKey is not null &&
+                    criteria.CategoryKey is not null &&
                     string.Equals(
                         placement.ScopeKey,
-                        categoryKey,
+                        criteria.CategoryKey,
                         StringComparison.Ordinal),
-                QueryPromotionPlacementScope.District => false,
+                QueryPromotionPlacementScope.District =>
+                    criteria.DistrictKey is not null &&
+                    string.Equals(
+                        placement.ScopeKey,
+                        criteria.DistrictKey,
+                        StringComparison.Ordinal),
                 QueryPromotionPlacementScope.EditorialLanding => false,
                 _ => false,
             };
@@ -287,6 +317,69 @@ public sealed class PublicQueryService
                 throw StoreContractFailure(
                     $"Sponsored placement '{placement.PlacementId}' is outside the requested search scope.");
             }
+        }
+    }
+
+    private static void EnsureDocumentMatchesCriteria(
+        QueryListingDocument document,
+        PublicListingSearchCriteria criteria)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (criteria.CategoryKey is not null &&
+            !document.CategoryKeys.Contains(criteria.CategoryKey, StringComparer.Ordinal))
+        {
+            throw StoreContractFailure(
+                $"Listing '{document.ListingId}' does not match requested category '{criteria.CategoryKey}'.");
+        }
+
+        if (criteria.DistrictKey is not null &&
+            !string.Equals(
+                document.Geography.DistrictKey,
+                criteria.DistrictKey,
+                StringComparison.Ordinal))
+        {
+            throw StoreContractFailure(
+                $"Listing '{document.ListingId}' does not match requested district '{criteria.DistrictKey}'.");
+        }
+
+        if (criteria.ListingKind is not null &&
+            document.ListingKind != criteria.ListingKind.Value)
+        {
+            throw StoreContractFailure(
+                $"Listing '{document.ListingId}' does not match requested listing kind '{criteria.ListingKind}'.");
+        }
+
+        if (criteria.ContactKind is not null &&
+            !document.Contacts.Any(item => item.Kind == criteria.ContactKind.Value))
+        {
+            throw StoreContractFailure(
+                $"Listing '{document.ListingId}' does not match requested contact kind '{criteria.ContactKind}'.");
+        }
+    }
+
+    private static void EnsureStringFacets(
+        IReadOnlyDictionary<string, int> facets,
+        string facetKind)
+    {
+        if (facets.Any(item =>
+                string.IsNullOrWhiteSpace(item.Key) ||
+                !string.Equals(item.Key, item.Key.Trim(), StringComparison.Ordinal) ||
+                item.Value <= 0))
+        {
+            throw StoreContractFailure(
+                $"Query store returned an invalid {facetKind} facet count.");
+        }
+    }
+
+    private static void EnsureEnumFacets<TEnum>(
+        IReadOnlyDictionary<TEnum, int> facets,
+        string facetKind)
+        where TEnum : struct, Enum
+    {
+        if (facets.Any(item => !Enum.IsDefined(item.Key) || item.Value <= 0))
+        {
+            throw StoreContractFailure(
+                $"Query store returned an invalid {facetKind} facet count.");
         }
     }
 
@@ -329,12 +422,7 @@ public sealed class PublicQueryService
         return new PublicListingSummary(
             document.ListingId,
             document.ListingRevisionId,
-            document.ListingKind switch
-            {
-                QueryListingKind.Place => PublicListingKindContract.Place,
-                QueryListingKind.Provider => PublicListingKindContract.Provider,
-                _ => throw StoreContractFailure($"Unsupported listing kind '{document.ListingKind}'."),
-            },
+            MapListingKind(document.ListingKind),
             requestedLocale,
             localization.Value.Locale,
             localization.Exact ? "exact" : "fallback",
@@ -417,6 +505,74 @@ public sealed class PublicQueryService
             revision.SafetyOverlayId,
             revision.SourcePublicationId,
             revision.CreatedAtUtc);
+
+    private static PublicListingSearchCriteria CreateSearchCriteria(
+        PublicListingSearchRequest request)
+    {
+        var listingKind = request.ListingKind switch
+        {
+            null => null,
+            PublicListingKindContract.Place => QueryListingKind.Place,
+            PublicListingKindContract.Provider => QueryListingKind.Provider,
+            _ => throw InvalidFilter(
+                nameof(request.ListingKind),
+                request.ListingKind,
+                "Use one of the declared public listing-kind values."),
+        };
+        var contactKind = request.ContactKind switch
+        {
+            null => null,
+            PublicContactKindContract.Website => QueryContactKind.Website,
+            PublicContactKindContract.Email => QueryContactKind.Email,
+            PublicContactKindContract.Phone => QueryContactKind.Phone,
+            PublicContactKindContract.WhatsApp => QueryContactKind.WhatsApp,
+            PublicContactKindContract.BookingReference => QueryContactKind.BookingReference,
+            PublicContactKindContract.MapReference => QueryContactKind.MapReference,
+            _ => throw InvalidFilter(
+                nameof(request.ContactKind),
+                request.ContactKind,
+                "Use one of the declared public contact-kind values."),
+        };
+        return new PublicListingSearchCriteria(
+            RequireLocale(request.Locale, nameof(request.Locale)),
+            NormalizeOptionalKey(request.CategoryKey, nameof(request.CategoryKey)),
+            NormalizeOptionalKey(request.DistrictKey, nameof(request.DistrictKey)),
+            listingKind,
+            contactKind);
+    }
+
+    private static string? NormalizeOptionalKey(string? value, string parameterName) =>
+        value is null ? null : RequireKey(value, parameterName);
+
+    private static QueryReadException InvalidFilter(
+        string parameterName,
+        object? value,
+        string requiredAction) =>
+        new(
+            "Query.Search",
+            "QUERY_FILTER_INVALID",
+            400,
+            $"Filter '{parameterName}' has unsupported value '{value}'.",
+            requiredAction);
+
+    private static PublicListingKindContract MapListingKind(QueryListingKind value) => value switch
+    {
+        QueryListingKind.Place => PublicListingKindContract.Place,
+        QueryListingKind.Provider => PublicListingKindContract.Provider,
+        _ => throw StoreContractFailure($"Unsupported listing kind '{value}'."),
+    };
+
+    private static PublicContactKindContract MapContactKindContract(
+        QueryContactKind value) => value switch
+    {
+        QueryContactKind.Website => PublicContactKindContract.Website,
+        QueryContactKind.Email => PublicContactKindContract.Email,
+        QueryContactKind.Phone => PublicContactKindContract.Phone,
+        QueryContactKind.WhatsApp => PublicContactKindContract.WhatsApp,
+        QueryContactKind.BookingReference => PublicContactKindContract.BookingReference,
+        QueryContactKind.MapReference => PublicContactKindContract.MapReference,
+        _ => throw StoreContractFailure($"Unsupported contact kind '{value}'."),
+    };
 
     private static PublicFieldStateContract MapFieldState(QueryFieldState state) => state switch
     {
