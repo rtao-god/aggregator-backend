@@ -26,7 +26,7 @@ public sealed record PublicReadPageSnapshot(
 public sealed record PublicReadDocumentSnapshot(
     PublicReadRevision Revision,
     QueryLocalePolicy LocalePolicy,
-    QueryListingDocument Document);
+    QueryListingDocument? Document);
 
 public interface IPublicQueryStore
 {
