@@ -106,9 +106,9 @@ public sealed class AnalyticsListingAccessConsumerReachabilityTests
         var authorizer = Read(
             repository,
             "src/Analytics/Analytics.Infrastructure/EfListingMetricsAuthorizer.cs");
-        var metricsService = Read(
+        var metricsRangeService = Read(
             repository,
-            "src/Analytics/Analytics.Application/ReadDailyListingMetricsService.cs");
+            "src/Analytics/Analytics.Application/ReadListingMetricsRangeService.cs");
 
         Assert.Contains(
             "IF EXISTS (SELECT 1 FROM access_projection.listing_access_projection)",
@@ -155,19 +155,19 @@ public sealed class AnalyticsListingAccessConsumerReachabilityTests
         Assert.Contains("row.RevokedAtUtc == null", authorizer, StringComparison.Ordinal);
         Assert.Contains("row.ExpiresAtUtc > nowUtc", authorizer, StringComparison.Ordinal);
 
-        var authorizationOffset = metricsService.IndexOf(
+        var authorizationOffset = metricsRangeService.IndexOf(
             "await authorizer.AuthorizeAsync(",
             StringComparison.Ordinal);
-        var metricsReadOffset = metricsService.IndexOf(
+        var metricsReadOffset = metricsRangeService.IndexOf(
             "await metricsStore.GetRangeAsync(",
             StringComparison.Ordinal);
         Assert.True(
             authorizationOffset >= 0 && metricsReadOffset > authorizationOffset,
             "Metrics authorization must complete before aggregate rows are read.");
         Assert.DoesNotContain("HttpClient", authorizer, StringComparison.Ordinal);
-        Assert.DoesNotContain("Catalog.Contracts", metricsService, StringComparison.Ordinal);
-        Assert.DoesNotContain("Catalog.Api", metricsService, StringComparison.Ordinal);
-        Assert.DoesNotContain("ICatalog", metricsService, StringComparison.Ordinal);
+        Assert.DoesNotContain("Catalog.Contracts", metricsRangeService, StringComparison.Ordinal);
+        Assert.DoesNotContain("Catalog.Api", metricsRangeService, StringComparison.Ordinal);
+        Assert.DoesNotContain("ICatalog", metricsRangeService, StringComparison.Ordinal);
     }
 
     [Fact]
