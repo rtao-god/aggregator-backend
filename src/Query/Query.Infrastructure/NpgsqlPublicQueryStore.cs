@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace Aggregator.Query.Infrastructure;
 
-public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
+public sealed partial class NpgsqlPublicQueryStore : IPublicQueryStore
 {
     private readonly NpgsqlDataSource _dataSource;
 
@@ -129,18 +129,22 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
               AND @requested_locale = ANY (item.locale_scope)
               AND
               (
-                  (item.scope_type = 'catalog' AND item.scope_key = @catalog_key)
-                  OR
+                  item.scope_type = 'editorial_landing'
+                  OR (item.scope_type = 'catalog' AND item.scope_key = @catalog_key)
+                  OR (item.scope_type = 'category' AND @category_key IS NOT NULL AND item.scope_key = @category_key)
+                  OR (item.scope_type = 'district' AND @district_key IS NOT NULL AND item.scope_key = @district_key)
+              )
+              AND (@listing_kind IS NULL OR document.listing_kind = @listing_kind)
+              AND
+              (
+                  @contact_kind IS NULL
+                  OR EXISTS
                   (
-                      item.scope_type = 'category'
-                      AND @category_key IS NOT NULL
-                      AND item.scope_key = @category_key
-                  )
-                  OR
-                  (
-                      item.scope_type = 'district'
-                      AND @district_key IS NOT NULL
-                      AND item.scope_key = @district_key
+                      SELECT 1
+                      FROM documents.listing_contact contact_filter
+                      WHERE contact_filter.base_projection_id = document.base_projection_id
+                        AND contact_filter.listing_id = document.listing_id
+                        AND contact_filter.kind = @contact_kind
                   )
               )
               AND
@@ -179,37 +183,27 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                         AND market_zone_filter.state = @market_zone
                   )
               )
-              AND (@listing_kind IS NULL OR document.listing_kind = @listing_kind)
-              AND
-              (
-                  @contact_kind IS NULL
-                  OR EXISTS
-                  (
-                      SELECT 1
-                      FROM documents.listing_contact contact_filter
-                      WHERE contact_filter.base_projection_id = document.base_projection_id
-                        AND contact_filter.listing_id = document.listing_id
-                        AND contact_filter.kind = @contact_kind
-                  )
-              )
             ORDER BY item.priority_band DESC,
                      item.capacity_slot,
                      item.placement_id;
             """;
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.Add(new NpgsqlParameter<Guid>(
-            "promotion_overlay_id",
-            revision.PromotionOverlayId));
-        command.Parameters.Add(new NpgsqlParameter<Guid>(
-            "base_projection_id",
-            revision.BaseProjectionId));
+        command.Parameters.Add(new NpgsqlParameter<Guid>("promotion_overlay_id", revision.PromotionOverlayId));
+        command.Parameters.Add(new NpgsqlParameter<Guid>("base_projection_id", revision.BaseProjectionId));
         command.Parameters.Add(new NpgsqlParameter<string>("catalog_key", catalogKey));
-        command.Parameters.Add(new NpgsqlParameter<string>(
-            "requested_locale",
-            criteria.RequestedLocale));
         command.Parameters.Add(new NpgsqlParameter<DateTimeOffset>("read_at_utc", readAtUtc));
-        AddSearchFilterParameters(command, criteria);
-
+        command.Parameters.Add(new NpgsqlParameter<string>("requested_locale", criteria.RequestedLocale));
+        command.Parameters.Add(new NpgsqlParameter<string?>("category_key", criteria.CategoryKey));
+        command.Parameters.Add(new NpgsqlParameter<string?>("district_key", criteria.DistrictKey));
+        command.Parameters.Add(new NpgsqlParameter<string?>(
+            "listing_kind",
+            criteria.ListingKind is null ? null : ToPersistedListingKind(criteria.ListingKind.Value)));
+        command.Parameters.Add(new NpgsqlParameter<string?>(
+            "contact_kind",
+            criteria.ContactKind is null ? null : ToPersistedContactKind(criteria.ContactKind.Value)));
+        command.Parameters.Add(new NpgsqlParameter<string?>(
+            "market_zone",
+            criteria.MarketZone is null ? null : ToPersistedGeographyState(criteria.MarketZone.Value)));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<SponsoredCoreRow>();
         while (await reader.ReadAsync(cancellationToken))
@@ -217,9 +211,9 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
             if (reader.IsDBNull(14) || reader.IsDBNull(16))
             {
                 throw StoreFailure(
-                    "QUERY_SPONSORED_COMPONENT_MISSING",
-                    $"Promotion overlay '{revision.PromotionOverlayId}' references a missing placement state or base listing.",
-                    "Rebuild the Query promotion overlay from the current Promotion placement events.");
+                    "QUERY_SPONSORED_REFERENCE_MISSING",
+                    "Active Promotion overlay references missing current placement or base listing state.",
+                    "Replay the exact Promotion event or rebuild Query against the sealed Catalog publication.");
             }
 
             var placement = QueryPromotionPlacement.Create(
@@ -389,6 +383,57 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         var afterClause = afterListingId is null
             ? string.Empty
             : "AND d.listing_id > @after_listing_id";
+        var categoryClause = criteria.CategoryKey is null
+            ? string.Empty
+            : """
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM documents.listing_category category_filter
+                  WHERE category_filter.base_projection_id = d.base_projection_id
+                    AND category_filter.listing_id = d.listing_id
+                    AND category_filter.category_key = @category_key
+              )
+              """;
+        var districtClause = criteria.DistrictKey is null
+            ? string.Empty
+            : """
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM documents.listing_geography district_filter
+                  WHERE district_filter.base_projection_id = d.base_projection_id
+                    AND district_filter.listing_id = d.listing_id
+                    AND district_filter.district_key = @district_key
+              )
+              """;
+        var listingKindClause = criteria.ListingKind is null
+            ? string.Empty
+            : "AND d.listing_kind = @listing_kind";
+        var contactKindClause = criteria.ContactKind is null
+            ? string.Empty
+            : """
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM documents.listing_contact contact_filter
+                  WHERE contact_filter.base_projection_id = d.base_projection_id
+                    AND contact_filter.listing_id = d.listing_id
+                    AND contact_filter.kind = @contact_kind
+              )
+              """;
+        var marketZoneClause = criteria.MarketZone is null
+            ? string.Empty
+            : """
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM documents.listing_geography market_zone_filter
+                  WHERE market_zone_filter.base_projection_id = d.base_projection_id
+                    AND market_zone_filter.listing_id = d.listing_id
+                    AND market_zone_filter.state = @market_zone
+              )
+              """;
         var sql = $"""
             SELECT d.listing_id,
                    d.listing_revision_id,
@@ -399,68 +444,54 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                    d.published_at_utc
             FROM documents.listing_document d
             WHERE d.base_projection_id = @base_projection_id
-              {afterClause}
-              AND
-              (
-                  @category_key IS NULL
-                  OR EXISTS
-                  (
-                      SELECT 1
-                      FROM documents.listing_category category_filter
-                      WHERE category_filter.base_projection_id = d.base_projection_id
-                        AND category_filter.listing_id = d.listing_id
-                        AND category_filter.category_key = @category_key
-                  )
-              )
-              AND
-              (
-                  @district_key IS NULL
-                  OR EXISTS
-                  (
-                      SELECT 1
-                      FROM documents.listing_geography district_filter
-                      WHERE district_filter.base_projection_id = d.base_projection_id
-                        AND district_filter.listing_id = d.listing_id
-                        AND district_filter.district_key = @district_key
-                  )
-              )
-              AND
-              (
-                  @market_zone IS NULL
-                  OR EXISTS
-                  (
-                      SELECT 1
-                      FROM documents.listing_geography market_zone_filter
-                      WHERE market_zone_filter.base_projection_id = d.base_projection_id
-                        AND market_zone_filter.listing_id = d.listing_id
-                        AND market_zone_filter.state = @market_zone
-                  )
-              )
-              AND (@listing_kind IS NULL OR d.listing_kind = @listing_kind)
-              AND
-              (
-                  @contact_kind IS NULL
-                  OR EXISTS
-                  (
-                      SELECT 1
-                      FROM documents.listing_contact contact_filter
-                      WHERE contact_filter.base_projection_id = d.base_projection_id
-                        AND contact_filter.listing_id = d.listing_id
-                        AND contact_filter.kind = @contact_kind
-                  )
-              )
+            {afterClause}
+            {categoryClause}
+            {districtClause}
+            {listingKindClause}
+            {contactKindClause}
+            {marketZoneClause}
             ORDER BY d.listing_id
             LIMIT @maximum_documents;
             """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(new NpgsqlParameter<Guid>("base_projection_id", baseProjectionId));
         command.Parameters.Add(new NpgsqlParameter<int>("maximum_documents", maximumDocuments));
-        if (afterListingId is { } after)
+        if (afterListingId is not null)
         {
-            command.Parameters.Add(new NpgsqlParameter<Guid>("after_listing_id", after));
+            command.Parameters.Add(new NpgsqlParameter<Guid>("after_listing_id", afterListingId.Value));
         }
 
-        AddSearchFilterParameters(command, criteria);
+        if (criteria.CategoryKey is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter<string>("category_key", criteria.CategoryKey));
+        }
+
+        if (criteria.DistrictKey is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter<string>("district_key", criteria.DistrictKey));
+        }
+
+        if (criteria.ListingKind is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter<string>(
+                "listing_kind",
+                ToPersistedListingKind(criteria.ListingKind.Value)));
+        }
+
+        if (criteria.ContactKind is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter<string>(
+                "contact_kind",
+                ToPersistedContactKind(criteria.ContactKind.Value)));
+        }
+
+        if (criteria.MarketZone is not null)
+        {
+            command.Parameters.Add(new NpgsqlParameter<string>(
+                "market_zone",
+                ToPersistedGeographyState(criteria.MarketZone.Value)));
+        }
+
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<ListingCoreRow>();
         while (await reader.ReadAsync(cancellationToken))
@@ -469,48 +500,6 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         }
 
         return rows;
-    }
-
-    private static void AddSearchFilterParameters(
-        NpgsqlCommand command,
-        PublicListingSearchCriteria criteria)
-    {
-        command.Parameters.Add(new NpgsqlParameter(
-            "category_key",
-            NpgsqlTypes.NpgsqlDbType.Text)
-        {
-            Value = criteria.CategoryKey is null ? DBNull.Value : criteria.CategoryKey,
-        });
-        command.Parameters.Add(new NpgsqlParameter(
-            "district_key",
-            NpgsqlTypes.NpgsqlDbType.Text)
-        {
-            Value = criteria.DistrictKey is null ? DBNull.Value : criteria.DistrictKey,
-        });
-        command.Parameters.Add(new NpgsqlParameter(
-            "market_zone",
-            NpgsqlTypes.NpgsqlDbType.Text)
-        {
-            Value = criteria.MarketZone is null
-                ? DBNull.Value
-                : ToPersistedGeographyState(criteria.MarketZone.Value),
-        });
-        command.Parameters.Add(new NpgsqlParameter(
-            "listing_kind",
-            NpgsqlTypes.NpgsqlDbType.Text)
-        {
-            Value = criteria.ListingKind is null
-                ? DBNull.Value
-                : ToPersistedListingKind(criteria.ListingKind.Value),
-        });
-        command.Parameters.Add(new NpgsqlParameter(
-            "contact_kind",
-            NpgsqlTypes.NpgsqlDbType.Text)
-        {
-            Value = criteria.ContactKind is null
-                ? DBNull.Value
-                : ToPersistedContactKind(criteria.ContactKind.Value),
-        });
     }
 
     private static ListingCoreRow ReadCoreRow(NpgsqlDataReader reader) =>
@@ -529,53 +518,28 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         IReadOnlyList<ListingCoreRow> coreRows,
         CancellationToken cancellationToken)
     {
-        var listingIds = coreRows.Select(row => row.ListingId).ToArray();
-        var localizations = await ReadLocalizationsAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-        var categories = await ReadCategoriesAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-        var attributes = await ReadAttributesAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-        var geographies = await ReadGeographiesAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-        var contacts = await ReadContactsAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-        var media = await ReadMediaAsync(
-            connection,
-            baseProjectionId,
-            listingIds,
-            cancellationToken);
-
+        var listingIds = coreRows.Select(item => item.ListingId).ToArray();
+        var localizations = await ReadLocalizationsAsync(connection, baseProjectionId, listingIds, cancellationToken);
+        var categories = await ReadCategoriesAsync(connection, baseProjectionId, listingIds, cancellationToken);
+        var attributes = await ReadAttributesAsync(connection, baseProjectionId, listingIds, cancellationToken);
+        var geographies = await ReadGeographiesAsync(connection, baseProjectionId, listingIds, cancellationToken);
+        var contacts = await ReadContactsAsync(connection, baseProjectionId, listingIds, cancellationToken);
+        var media = await ReadMediaAsync(connection, baseProjectionId, listingIds, cancellationToken);
         return coreRows
-            .Select(core => QueryListingDocument.Create(
-                core.ListingId,
-                core.ListingRevisionId,
-                core.SubjectId,
-                core.SubjectRevisionId,
-                core.ListingKind,
-                RequireOwnedValues(localizations, core.ListingId, "localizations"),
-                RequireOwnedValues(categories, core.ListingId, "categories"),
-                attributes.GetValueOrDefault(core.ListingId) ?? [],
-                RequireGeography(geographies, core.ListingId),
-                contacts.GetValueOrDefault(core.ListingId) ?? [],
-                media.GetValueOrDefault(core.ListingId) ?? [],
-                core.SourceContentDigest,
-                core.PublishedAtUtc))
+            .Select(row => QueryListingDocument.Create(
+                row.ListingId,
+                row.ListingRevisionId,
+                row.SubjectId,
+                row.SubjectRevisionId,
+                row.ListingKind,
+                RequireOwned(localizations, row.ListingId, "localization"),
+                RequireOwned(categories, row.ListingId, "category"),
+                RequireOwned(attributes, row.ListingId, "attribute"),
+                RequireGeography(geographies, row.ListingId),
+                RequireOwned(contacts, row.ListingId, "contact"),
+                RequireOwned(media, row.ListingId, "media"),
+                row.SourceContentDigest,
+                row.PublishedAtUtc))
             .ToArray();
     }
 
@@ -947,14 +911,14 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         Dictionary<Guid, List<T>> values) =>
         values.ToDictionary(
             item => item.Key,
-            item => (IReadOnlyList<T>)item.Value.AsReadOnly());
+            item => (IReadOnlyList<T>)item.Value.ToArray());
 
-    private static IReadOnlyList<T> RequireOwnedValues<T>(
-        IReadOnlyDictionary<Guid, IReadOnlyList<T>> values,
+    private static IReadOnlyList<T> RequireOwned<T>(
+        Dictionary<Guid, IReadOnlyList<T>> values,
         Guid listingId,
         string valueKind)
     {
-        if (!values.TryGetValue(listingId, out var owned) || owned.Count == 0)
+        if (!values.TryGetValue(listingId, out var owned))
         {
             throw StoreFailure(
                 "QUERY_DOCUMENT_COMPONENT_MISSING",
@@ -1033,7 +997,7 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         _ => throw UnsupportedValue("attribute value kind", value),
     };
 
-    private static QueryGeographyState MapGeographyState(string value) => value switch
+    internal static QueryGeographyState MapGeographyState(string value) => value switch
     {
         "primary_market" => QueryGeographyState.PrimaryMarket,
         "nearby_market" => QueryGeographyState.NearbyMarket,

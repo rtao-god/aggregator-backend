@@ -7,7 +7,7 @@ namespace Aggregator.Query.Infrastructure;
 /// Applies one exact immutable safety overlay to all public reads and refuses traffic while any
 /// Catalog suppression event is known but not yet represented by the current public-read revision.
 /// </summary>
-public sealed partial class SafetyAwarePublicQueryStore : IPublicQueryStore
+public sealed partial class SafetyAwarePublicQueryStore : IPublicQueryStore, IPublicFacetCatalogStore
 {
     private const int InnerPageSize = 101;
     private readonly NpgsqlPublicQueryStore _inner;
