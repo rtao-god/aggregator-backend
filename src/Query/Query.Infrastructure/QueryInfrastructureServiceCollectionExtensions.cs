@@ -26,9 +26,14 @@ public static class QueryInfrastructureServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IQueryClock, SystemQueryClock>();
         services.AddSingleton<NpgsqlPublicQueryStore>();
-        services.AddSingleton<IPublicQueryStore, SafetyAwarePublicQueryStore>();
+        services.AddSingleton<SafetyAwarePublicQueryStore>();
+        services.AddSingleton<IPublicQueryStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<SafetyAwarePublicQueryStore>());
+        services.AddSingleton<IPublicFacetCatalogStore>(serviceProvider =>
+            serviceProvider.GetRequiredService<SafetyAwarePublicQueryStore>());
         services.AddSingleton<IPublicProjectionStatusStore, PostgresPublicProjectionStatusStore>();
         services.AddSingleton<PublicQueryService>();
+        services.AddSingleton<PublicFacetCatalogService>();
         services.AddSingleton<ReadPublicProjectionStatusService>();
         return services;
     }
