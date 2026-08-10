@@ -145,6 +145,59 @@ public static class PromotionUsageWindowDeriver
         return result;
     }
 
+    /// <summary>Creates an explicit complete zero revision for an existing sponsored usage window.</summary>
+    public static DerivedPromotionUsageWindow CreateZeroCorrection(
+        Guid placementId,
+        Guid listingId,
+        string catalogKey,
+        DateTimeOffset windowStartsAtUtc,
+        DateTimeOffset windowEndsAtUtc)
+    {
+        RequireIdentity(placementId, nameof(placementId));
+        RequireIdentity(listingId, nameof(listingId));
+        if (string.IsNullOrWhiteSpace(catalogKey) ||
+            catalogKey.Length > 200 ||
+            catalogKey.Any(char.IsControl) ||
+            !string.Equals(catalogKey, catalogKey.Trim(), StringComparison.Ordinal))
+        {
+            throw Failure(
+                "ANALYTICS_PROMOTION_USAGE_CATALOG_INVALID",
+                "Promotion usage zero correction has an invalid Catalog identity.");
+        }
+
+        if (windowStartsAtUtc.Offset != TimeSpan.Zero ||
+            windowEndsAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw Failure(
+                "ANALYTICS_PROMOTION_USAGE_TIME_NOT_UTC",
+                "Promotion usage zero-correction window must be UTC.");
+        }
+
+        if (windowEndsAtUtc <= windowStartsAtUtc ||
+            windowEndsAtUtc != windowStartsAtUtc.AddDays(1))
+        {
+            throw Failure(
+                "ANALYTICS_PROMOTION_USAGE_WINDOW_INVALID",
+                "Promotion usage zero correction requires one exact positive UTC day.");
+        }
+
+        return new DerivedPromotionUsageWindow(
+            placementId,
+            listingId,
+            catalogKey,
+            windowStartsAtUtc,
+            windowEndsAtUtc,
+            AcceptedImpressions: 0,
+            AcceptedListingOpens: 0,
+            AcceptedOutboundClicks: 0,
+            ComputeSourceDigest(
+                windowStartsAtUtc,
+                placementId,
+                listingId,
+                catalogKey,
+                []));
+    }
+
     private static AcceptedSponsoredInteraction Validate(AcceptedSponsoredInteraction interaction)
     {
         ArgumentNullException.ThrowIfNull(interaction);
