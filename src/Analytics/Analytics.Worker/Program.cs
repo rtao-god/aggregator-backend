@@ -129,6 +129,9 @@ internal sealed class AnalyticsAggregationWorker(
                     stoppingToken);
                 AnalyticsAggregationWorkerLog.RebuildCompleted(
                     logger,
+                    result.RunId,
+                    result.SourceDigest,
+                    result.MaterializedDayCount,
                     result.MaterializedMetricCount,
                     result.RemovedStaleMetricCount,
                     result.FromInclusive,
@@ -164,9 +167,12 @@ internal static partial class AnalyticsAggregationWorkerLog
     [LoggerMessage(
         EventId = 2001,
         Level = LogLevel.Information,
-        Message = "Analytics aggregate rebuild materialized {MetricCount} rows and removed {StaleMetricCount} stale rows for [{FromDate}, {ToDate}).")]
+        Message = "Analytics aggregate run {RunId} completed with source {SourceDigest}: {DayCount} days, {MetricCount} metric rows, {StaleMetricCount} stale rows removed for [{FromDate}, {ToDate}).")]
     public static partial void RebuildCompleted(
         ILogger logger,
+        Guid runId,
+        string sourceDigest,
+        int dayCount,
         int metricCount,
         int staleMetricCount,
         DateOnly fromDate,
