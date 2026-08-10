@@ -87,12 +87,19 @@ public sealed class PromotionUsageProjectionWorkerContractTests
         var gap = new PromotionApplicationException(
             "Promotion.Usage",
             "PROMOTION_USAGE_REVISION_GAP",
-            409,
+            503,
             "Promotion usage revision is missing.",
             "Replay the missing exact revision.");
+        var stale = new PromotionApplicationException(
+            "Promotion.Usage",
+            "PROMOTION_USAGE_REVISION_STALE",
+            409,
+            "Promotion usage revision is stale.",
+            "Discard the stale revision.");
 
         Assert.True(PromotionUsageProjectionWorker.IsRetryable(unavailable));
-        Assert.False(PromotionUsageProjectionWorker.IsRetryable(gap));
+        Assert.True(PromotionUsageProjectionWorker.IsRetryable(gap));
+        Assert.False(PromotionUsageProjectionWorker.IsRetryable(stale));
         Assert.True(PromotionUsageProjectionWorker.IsRetryable(new TimeoutException()));
     }
 

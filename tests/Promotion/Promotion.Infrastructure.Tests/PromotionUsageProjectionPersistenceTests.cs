@@ -74,6 +74,11 @@ public sealed class PromotionUsageProjectionPersistenceTests
         Assert.Contains("PROMOTION_USAGE_WINDOW_IDENTITY_CONFLICT", source, StringComparison.Ordinal);
         Assert.Contains("PROMOTION_USAGE_REVISION_STALE", source, StringComparison.Ordinal);
         Assert.Contains("PROMOTION_USAGE_REVISION_GAP", source, StringComparison.Ordinal);
+        Assert.Contains("isStale ? 409 : 503", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "$\"New Promotion usage window '{change.Projection.UsageWindowId:D}' must start at source revision 1, but received {change.Projection.SourceAggregateRevision}.\",\n                    503);",
+            source,
+            StringComparison.Ordinal);
         Assert.Contains("InsertRevisionAsync", source, StringComparison.Ordinal);
         Assert.Contains("UpdateCurrentAsync", source, StringComparison.Ordinal);
         Assert.Contains(
