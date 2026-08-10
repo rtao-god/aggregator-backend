@@ -1,8 +1,4 @@
-using System.Data.Common;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Aggregator.Catalog.Contracts;
 using Aggregator.Promotion.Application;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +12,8 @@ namespace Aggregator.Promotion.Worker;
 /// <summary>Consumes Catalog listing eligibility events into the Promotion-local fail-closed projection.</summary>
 public sealed class PromotionEligibilityProjectionWorker : BackgroundService
 {
-    private static readonly JsonSerializerOptions SerializerOptions = CreateSerializerOptions();
+    private static readonly JsonSerializerOptions SerializerOptions =
+        PromotionMessageEnvelopeValidation.CreateSerializerOptions();
     private readonly PromotionEligibilityProjectionWorkerOptions _options;
     private readonly PromotionWorkerOptions _ownerOptions;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -99,23 +96,31 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
         var cancellationToken = eventArgs.CancellationToken;
         try
         {
-            ValidateEnvelope(eventArgs);
-            var payloadDigest = ReadRequiredHeader(
+            PromotionMessageEnvelopeValidation.ValidateEnvelope(
+                eventArgs,
+                _options.RoutingKey,
+                CatalogIntegrationEventContracts.ListingPromotionEligibilityChanged,
+                "Catalog listing eligibility");
+            var payloadDigest = PromotionMessageEnvelopeValidation.ReadRequiredHeader(
                 eventArgs.BasicProperties.Headers,
                 "payload-digest");
-            VerifyPayloadIntegrity(eventArgs.Body.Span, payloadDigest);
+            PromotionMessageEnvelopeValidation.VerifyPayloadIntegrity(
+                eventArgs.Body.Span,
+                payloadDigest,
+                "Catalog listing eligibility");
             var integrationEvent = JsonSerializer.Deserialize<
                     CatalogListingPromotionEligibilityChanged>(
                     eventArgs.Body.Span,
                     SerializerOptions)
                 ?? throw new JsonException(
                     "Catalog listing eligibility payload is empty.");
-            var messageId = ValidateMessageIdentity(
+            var messageId = PromotionMessageEnvelopeValidation.ValidateMessageIdentity(
                 integrationEvent.EventId,
-                eventArgs.BasicProperties.MessageId);
-            var correlationId = ReadRequiredCorrelationId(
+                eventArgs.BasicProperties.MessageId,
+                "Catalog eligibility");
+            var correlationId = PromotionMessageEnvelopeValidation.ReadRequiredCorrelationId(
                 eventArgs.BasicProperties.CorrelationId);
-            var causationId = ReadOptionalGuidHeader(
+            var causationId = PromotionMessageEnvelopeValidation.ReadOptionalGuidHeader(
                 eventArgs.BasicProperties.Headers,
                 "causation-id");
 
@@ -149,7 +154,7 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
         {
             throw;
         }
-        catch (Exception exception) when (IsRetryable(exception))
+        catch (Exception exception) when (PromotionMessageEnvelopeValidation.IsRetryable(exception))
         {
             PromotionEligibilityProjectionWorkerLog.TransientFailure(
                 _logger,
@@ -232,160 +237,27 @@ public sealed class PromotionEligibilityProjectionWorker : BackgroundService
             cancellationToken: cancellationToken);
     }
 
-    private void ValidateEnvelope(BasicDeliverEventArgs eventArgs)
-    {
-        if (!string.Equals(eventArgs.RoutingKey, _options.RoutingKey, StringComparison.Ordinal))
-        {
-            throw new JsonException(
-                $"Catalog event routing key '{eventArgs.RoutingKey}' is unsupported by Promotion.");
-        }
-
-        if (!string.Equals(
-                eventArgs.BasicProperties.Type,
-                CatalogIntegrationEventContracts.ListingPromotionEligibilityChanged,
-                StringComparison.Ordinal))
-        {
-            throw new JsonException(
-                $"Catalog event contract '{eventArgs.BasicProperties.Type}' is unsupported by Promotion.");
-        }
-
-        if (!string.Equals(
-                eventArgs.BasicProperties.ContentType,
-                "application/json",
-                StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(
-                eventArgs.BasicProperties.ContentEncoding,
-                "utf-8",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            throw new JsonException(
-                "Catalog listing eligibility events must use application/json with utf-8 encoding.");
-        }
-    }
-
     internal static void VerifyPayloadIntegrity(
         ReadOnlySpan<byte> payload,
-        string expectedDigest)
-    {
-        if (expectedDigest.Length != 64 || expectedDigest.Any(character => !Uri.IsHexDigit(character)))
-        {
-            throw new JsonException("Catalog eligibility payload digest is invalid.");
-        }
+        string expectedDigest) =>
+        PromotionMessageEnvelopeValidation.VerifyPayloadIntegrity(
+            payload,
+            expectedDigest,
+            "Catalog eligibility");
 
-        var computedDigest = SHA256.HashData(payload);
-        byte[] expectedBytes;
-        try
-        {
-            expectedBytes = Convert.FromHexString(expectedDigest);
-        }
-        catch (FormatException exception)
-        {
-            throw new JsonException("Catalog eligibility payload digest is invalid.", exception);
-        }
+    internal static Guid ValidateMessageIdentity(Guid eventId, string? messageId) =>
+        PromotionMessageEnvelopeValidation.ValidateMessageIdentity(
+            eventId,
+            messageId,
+            "Catalog eligibility");
 
-        if (!CryptographicOperations.FixedTimeEquals(computedDigest, expectedBytes))
-        {
-            throw new JsonException("Catalog eligibility payload digest does not match the exact message bytes.");
-        }
-    }
-
-    internal static Guid ValidateMessageIdentity(Guid eventId, string? messageId)
-    {
-        if (eventId == Guid.Empty ||
-            !Guid.TryParse(messageId, out var parsedMessageId) ||
-            parsedMessageId == Guid.Empty ||
-            parsedMessageId != eventId)
-        {
-            throw new JsonException(
-                "RabbitMQ message ID must match the Catalog eligibility event ID.");
-        }
-
-        return parsedMessageId;
-    }
-
-    internal static bool IsRetryable(Exception exception)
-    {
-        ArgumentNullException.ThrowIfNull(exception);
-        return exception is PromotionApplicationException { StatusCode: 503 } ||
-               exception is DbException { IsTransient: true } ||
-               exception is TimeoutException or IOException ||
-               exception.InnerException is not null && IsRetryable(exception.InnerException);
-    }
+    internal static bool IsRetryable(Exception exception) =>
+        PromotionMessageEnvelopeValidation.IsRetryable(exception);
 
     internal static Guid? ReadOptionalGuidHeader(
         IDictionary<string, object?>? headers,
-        string name)
-    {
-        if (headers is null || !headers.TryGetValue(name, out var rawValue) || rawValue is null)
-        {
-            return null;
-        }
-
-        var value = ReadHeaderValue(rawValue, name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return Guid.TryParse(value, out var identifier) && identifier != Guid.Empty
-            ? identifier
-            : throw new JsonException(
-                $"RabbitMQ header '{name}' must contain an absent value or a non-empty UUID.");
-    }
-
-    private static string ReadRequiredCorrelationId(string? correlationId)
-    {
-        if (string.IsNullOrWhiteSpace(correlationId) ||
-            correlationId.Length > 128 ||
-            correlationId.Any(char.IsControl))
-        {
-            throw new JsonException(
-                "RabbitMQ correlation ID is absent or invalid for the Promotion contract.");
-        }
-
-        return correlationId.Trim();
-    }
-
-    private static string ReadRequiredHeader(
-        IDictionary<string, object?>? headers,
-        string name)
-    {
-        if (headers is null || !headers.TryGetValue(name, out var rawValue) || rawValue is null)
-        {
-            throw new JsonException($"Required RabbitMQ header '{name}' is absent.");
-        }
-
-        var value = ReadHeaderValue(rawValue, name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new JsonException($"RabbitMQ header '{name}' is empty.");
-        }
-
-        return value.Trim();
-    }
-
-    private static string ReadHeaderValue(object rawValue, string name) =>
-        rawValue switch
-        {
-            byte[] bytes => Encoding.UTF8.GetString(bytes),
-            ReadOnlyMemory<byte> memory => Encoding.UTF8.GetString(memory.Span),
-            string text => text,
-            _ => throw new JsonException(
-                $"RabbitMQ header '{name}' has an unsupported value type."),
-        };
-
-    private static JsonSerializerOptions CreateSerializerOptions()
-    {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
-        {
-            PropertyNameCaseInsensitive = false,
-            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        };
-        options.Converters.Add(new JsonStringEnumConverter(
-            JsonNamingPolicy.CamelCase,
-            allowIntegerValues: false));
-        return options;
-    }
+        string name) =>
+        PromotionMessageEnvelopeValidation.ReadOptionalGuidHeader(headers, name);
 }
 
 internal static partial class PromotionEligibilityProjectionWorkerLog
