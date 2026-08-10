@@ -4,17 +4,17 @@ Status: in development
 
 ## Owner
 
-Analytics is the canonical owner of accepted public interaction events, semantic idempotency, traffic-quality state, public-reference validation, listing-metrics authorization projections, durable daily aggregation runs, date-level aggregate readiness, and owner-facing daily and summary listing metrics. A click remains an interaction; it is never renamed to a lead or conversion without a separate proven source contract.
+Analytics is the canonical owner of accepted public interaction events, semantic idempotency, traffic-quality state, public-reference validation, listing-metrics authorization projections, durable daily aggregation runs, date-level aggregate readiness, Analytics-approved Promotion usage revisions and their durable outbox, and owner-facing daily and summary listing metrics. A click remains an interaction; it is never renamed to a lead or conversion without a separate proven source contract.
 
 ## Projects
 
 - `Analytics.Domain`: interaction vocabulary, placement attribution, campaign allowlist, event-time bounds, traffic-quality states, and aggregate readiness semantics.
-- `Analytics.Contracts`: public single/batch interaction write contracts plus daily, summary, and aggregation-status read contracts with explicit unavailable states.
-- `Analytics.Application`: strict mapping of producer-owned Query activation events and Catalog listing-access events, canonical membership-digest validation, exact public-read and sponsored-placement interaction validation, anti-abuse verification port, explicit bounded batch outcomes, atomic event and access-projection registration contracts, lease-bound closed-range aggregate orchestration, deterministic listing summary ownership, typed failure translation, and fail-closed aggregate coverage/status reads.
-- `Analytics.Infrastructure`: EF Core/PostgreSQL persistence for accepted events, immutable public-read/listing/placement references, monotonic activation checkpoints, exact Query and Catalog inbox results, grant-scoped listing-access projections, active/unrevoked/unexpired report authorization, lease-bound aggregate runs, immutable date results, current date-readiness pointers, complete daily aggregates, UUIDv7 identity, and read-only DB readiness.
+- `Analytics.Contracts`: public single/batch interaction write contracts, daily/summary/aggregation-status read contracts with explicit unavailable states, and the producer-owned closed Promotion usage event contract.
+- `Analytics.Application`: strict mapping of producer-owned Query activation events and Catalog listing-access events, canonical membership-digest validation, exact public-read and sponsored-placement interaction validation, anti-abuse verification port, explicit bounded batch outcomes, atomic event and access-projection registration contracts, lease-bound closed-range aggregate orchestration, deterministic sponsored-usage derivation and canonical outbox-envelope creation, deterministic listing summary ownership, typed failure translation, and fail-closed aggregate coverage/status reads.
+- `Analytics.Infrastructure`: EF Core/PostgreSQL persistence for accepted events, immutable public-read/listing/placement references, monotonic activation checkpoints, exact Query and Catalog inbox results, grant-scoped listing-access projections, active/unrevoked/unexpired report authorization, lease-bound aggregate runs, immutable date results, current date-readiness pointers, complete daily aggregates, revisioned Promotion usage streams, transactional Analytics outbox rows, UUIDv7 identity, and read-only DB readiness.
 - `Analytics.Api`: public anti-abuse proof plus single and bounded batch interaction intake; authenticated daily/summary listing metrics and protected aggregation status; strict JSON, typed access failures, resource authorization, bounded request/rate limits, and read-only health.
-- `Analytics.Worker`: strict RabbitMQ consumers for Query public-read activations and Catalog listing-access changes plus bounded rebuild of closed UTC daily aggregate ranges; both consumers share one host-owned broker transport while retaining independent quorum queues and dead-letter contracts.
-- `Analytics.Migrations`: one-shot owner migrations for events, access projections, messaging inbox/checkpoints, aggregates, durable aggregate runs, immutable date results, and readiness pointers. API and worker startup never apply DDL.
+- `Analytics.Worker`: strict RabbitMQ consumers for Query public-read activations and Catalog listing-access changes, bounded rebuild of closed UTC daily aggregate ranges, and publisher-confirmed delivery of Analytics-owned Promotion usage events from the durable outbox. Consumers and producer share one host-owned broker transport while retaining independent queue and dispatcher contracts.
+- `Analytics.Migrations`: one-shot owner migrations for events, access projections, messaging inbox/checkpoints, aggregates, durable aggregate runs, immutable date results, readiness pointers, revisioned Promotion usage, and the Analytics outbox. API and worker startup never apply DDL.
 
 The obsolete parallel `AnalyticsRuntime*` contracts, service, persistence path, tests, and source generator were removed. They duplicated event and metric ownership, fabricated missing metrics as zero, and exposed a second incompatible wire contract.
 
@@ -99,8 +99,10 @@ rebuilding aggregate run + exact lease
 → write complete daily rows, including observed zero
 → write immutable run item for every requested date
 → advance current date-readiness pointers
+→ derive accepted sponsored usage per placement and UTC day
+→ write immutable usage revisions and Analytics outbox events
 → remove stale rows only inside the exact rebuilt range
-→ complete run, metrics, run items, and readiness in one transaction
+→ complete run, metrics, usage effects, run items, and readiness in one transaction
 ```
 
 The run lifecycle is only `rebuilding → complete|blocked`. Run identity/range/start and completed date items are immutable; readiness pointers may advance only to a newer complete run and cannot be deleted. A complete run must cover every date in its exact range.
@@ -108,6 +110,25 @@ The run lifecycle is only `rebuilding → complete|blocked`. Run identity/range/
 `GET /api/analytics/aggregation-status` reports the latest overlapping run together with exact missing dates. A current `rebuilding` or `blocked` run takes precedence over older complete date pointers. A complete run missing one of its date pointers is persistence corruption, not partial success.
 
 A requested listing metrics range is returned only when every date has an explicit daily row. The shared range owner performs authorization before persistence read and provides the same domain rows to daily and summary transports. `complete` may contain observed zero counts. `partial`, `blocked`, and `rebuilding` contain no counts and carry an explicit unavailable reason. The summary emits numeric totals and a deterministic source digest only when every day is complete; otherwise counts/digest are absent and every unavailable day is listed explicitly.
+
+## Promotion usage publication
+
+```text
+complete Analytics aggregation run
+→ accepted sponsored interactions only
+→ deterministic placement/day source digest
+→ stable usage-window identity + contiguous aggregate revision
+→ immutable Analytics usage revision
+→ exact canonical event bytes + SHA-256 digest
+→ Analytics outbox in the aggregation transaction
+→ publisher-confirmed analytics.promotion-usage-window.closed
+```
+
+Analytics owns traffic-quality filtering and the accepted usage counts. Promotion receives the owner-approved aggregate and must not re-run bot/abuse classification. A missing or incomplete window produces no successful usage revision. A proven complete correction to zero is represented by an explicit zero-valued revision; missing is never encoded as zero.
+
+The stable stream identity is one exact placement and one UTC day. The first committed revision is `1`; later corrections advance by exactly one and preserve placement, listing, Catalog, and window identity. Same source digest with different counts is corruption. Usage revision, current stream, outbox row, and aggregation-run completion are committed in one serializable Analytics transaction. Broker failure after commit leaves the outbox row pending; it does not regress the completed aggregate.
+
+The outbox dispatcher uses the worker's existing RabbitMQ URI and event exchange. A separate Analytics outbox broker or exchange is not configurable. Delivery is at least once; Promotion supplies inbox/idempotency and revision ordering.
 
 ## Persistence and migration boundary
 
@@ -125,10 +146,10 @@ The migration from the obsolete `analytics` schema fails closed when legacy rows
 ## Proof
 
 - domain tests cover listing requirements, placement exposure, campaign parameter allowlisting, event-time bounds, negative metrics, and observed-zero versus unavailable states;
-- application tests cover accepted intake, exact replay, digest conflict, bounded batch partial outcomes, canonical parameter ordering, unknown public-read revision rejection, lease-bound failure recording, complete/partial/rebuilding/blocked aggregate status, deterministic listing summaries, canonical Query activation ordering/digest validation, public membership ordering, and strict Catalog grant envelope/permission/state/revision validation;
+- application tests cover accepted intake, exact replay, digest conflict, bounded batch partial outcomes, canonical parameter ordering, unknown public-read revision rejection, lease-bound failure recording, complete/partial/rebuilding/blocked aggregate status, deterministic listing summaries, deterministic sponsored-usage derivation, explicit zero corrections, exact canonical outbox bytes/digests, canonical Query activation ordering/digest validation, public membership ordering, and strict Catalog grant envelope/permission/state/revision validation;
 - API tests cover anonymous liveness, exact anti-abuse binding, semantic and batch replay, unknown-member and numeric-enum rejection, authentication, actor mapping, observed zero, missing aggregate coverage, protected aggregation status, and complete/unavailable listing summaries;
-- infrastructure model tests cover semantic-key uniqueness, event shape and time constraints, restrictive immutable public-read/listing/placement ownership, Query activation checkpoint/inbox lineage, Catalog grant-level primary identity/inbox lineage, access revision concurrency, aggregate run/date/readiness ownership, incomplete metric value shape, and absence of raw-IP storage;
-- worker tests cover required shared broker configuration, prevention of divergent access-consumer transport, producer routing-key pinning, payload/message identity, retry classification, and host registration of both Analytics consumers;
-- architecture tests require both complete producer-owned paths—Query.Contracts → Analytics and Catalog.Contracts → Analytics—plus grant inbox/store/authorizer reachability, batch/summary/status endpoints, lease-before-materialization ordering, atomic aggregate completion, exact Compose worker configuration, absence of Query/Catalog database credentials or synchronous clients, and structural removal of obsolete owners.
+- infrastructure model tests cover semantic-key uniqueness, event shape and time constraints, restrictive immutable public-read/listing/placement ownership, Query activation checkpoint/inbox lineage, Catalog grant-level primary identity/inbox lineage, access revision concurrency, aggregate run/date/readiness ownership, transactional Promotion-usage revision/outbox persistence, incomplete metric value shape, and absence of raw-IP storage;
+- worker tests cover required shared broker configuration, prevention of divergent access-consumer or outbox transport, producer routing-key pinning, payload/message identity, retry classification, host registration of both Analytics consumers, and Analytics outbox dispatch registration;
+- architecture tests require the complete Query.Contracts → Analytics, Catalog.Contracts → Analytics, and Analytics.Contracts → Promotion paths; grant inbox/store/authorizer reachability; batch/summary/status endpoints; lease-before-materialization ordering; atomic aggregate/usage/outbox completion; exact Compose worker configuration; absence of foreign database credentials or synchronous clients; and structural removal of obsolete owners.
 
-Real PostgreSQL uniqueness races, concurrent serializable projection ordering, migration execution, live RabbitMQ delivery/dead-letter behavior, and aggregate rebuild remain integration-proof requirements for the repository-wide acceptance stage.
+Real PostgreSQL uniqueness races, concurrent serializable projection and usage-revision ordering, Analytics/Promotion migration execution, live RabbitMQ publish/consume/dead-letter behavior, and aggregate rebuild remain integration-proof requirements for the repository-wide acceptance stage.
