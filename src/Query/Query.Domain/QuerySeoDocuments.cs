@@ -212,8 +212,8 @@ internal static class QuerySeoRules
             value.Length > 2048 ||
             !value.StartsWith('/', StringComparison.Ordinal) ||
             value.StartsWith("//", StringComparison.Ordinal) ||
-            value.Contains('?', StringComparison.Ordinal) ||
-            value.Contains('#', StringComparison.Ordinal) ||
+            value.Contains('?') ||
+            value.Contains('#') ||
             value.Any(char.IsControl) ||
             !string.Equals(value, value.Trim(), StringComparison.Ordinal))
         {

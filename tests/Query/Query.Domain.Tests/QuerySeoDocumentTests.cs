@@ -29,7 +29,9 @@ public sealed class QuerySeoDocumentTests
         Assert.Equal("recording-services", document.CatalogKey);
         Assert.Equal("de-DE", document.Locale);
         Assert.Equal(document.Path, document.CanonicalPath);
-        Assert.Equal(["de-DE", "en-GB"], document.Hreflang.Select(item => item.Locale));
+        Assert.Equal(
+            new[] { "de-DE", "en-GB" },
+            document.Hreflang.Select(item => item.Locale));
         Assert.Equal(Timestamp, document.LastModifiedAtUtc);
     }
 
