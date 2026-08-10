@@ -60,6 +60,49 @@ public sealed class AnalyticsApiContractTests
     }
 
     [Fact]
+    public async Task InteractionBatchReturnsExactAcceptedAndReplayCounts()
+    {
+        using var factory = new AnalyticsApiFactory();
+        using var client = factory.CreateClient();
+        var occurredAtUtc = factory.Clock.GetUtcNow().AddSeconds(-1);
+        var firstId = Guid.Parse("0198fc00-0000-7000-8000-000000000201");
+        var secondId = Guid.Parse("0198fc00-0000-7000-8000-000000000202");
+        var firstToken = await IssueTokenAsync(client, firstId, occurredAtUtc);
+        var secondToken = await IssueTokenAsync(client, secondId, occurredAtUtc);
+        var batch = new SubmitInteractionEventBatchRequest(
+        [
+            CreateRequest(factory, firstId, occurredAtUtc, firstToken.Token),
+            CreateRequest(factory, secondId, occurredAtUtc, secondToken.Token),
+        ]);
+
+        using var firstResponse = await client.PostAsJsonAsync(
+            "/api/analytics/interaction-events/batch",
+            batch,
+            JsonOptions);
+        using var replayResponse = await client.PostAsJsonAsync(
+            "/api/analytics/interaction-events/batch",
+            batch,
+            JsonOptions);
+        var first = await firstResponse.Content.ReadFromJsonAsync<InteractionEventBatchResponse>(JsonOptions);
+        var replay = await replayResponse.Content.ReadFromJsonAsync<InteractionEventBatchResponse>(JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+        Assert.NotNull(first);
+        Assert.NotNull(replay);
+        Assert.Equal(2, first.AcceptedCount);
+        Assert.Equal(0, first.AlreadyAppliedCount);
+        Assert.Equal(0, first.RejectedCount);
+        Assert.All(first.Items, item =>
+            Assert.Equal(InteractionEventBatchItemStateContract.Accepted, item.State));
+        Assert.Equal(0, replay.AcceptedCount);
+        Assert.Equal(2, replay.AlreadyAppliedCount);
+        Assert.Equal(0, replay.RejectedCount);
+        Assert.All(replay.Items, item =>
+            Assert.Equal(InteractionEventBatchItemStateContract.AlreadyApplied, item.State));
+    }
+
+    [Fact]
     public async Task AntiAbuseProofCannotBeUsedForAnotherEventIdentity()
     {
         using var factory = new AnalyticsApiFactory();
