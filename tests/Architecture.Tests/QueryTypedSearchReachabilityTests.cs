@@ -90,7 +90,7 @@ public sealed class QueryTypedSearchReachabilityTests
 
         var marketZoneMigration = Read(
             repository,
-            "src/Query/Query.Migrations/Migrations/V013__market_zone_search_index.sql");
+            "src/Query/Query.Migrations/Migrations/V016__market_zone_search_index.sql");
         Assert.Contains("ix_query_listing_market_zone_search", marketZoneMigration, StringComparison.Ordinal);
     }
 
