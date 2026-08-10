@@ -37,5 +37,7 @@ public static class AnalyticsOperationIds
 
     public const string ReadDailyListingMetrics = "ReadAnalyticsDailyListingMetrics";
 
+    public const string ReadListingMetricsSummary = "ReadAnalyticsListingMetricsSummary";
+
     public const string ReadAggregationStatus = "ReadAnalyticsAggregationStatus";
 }

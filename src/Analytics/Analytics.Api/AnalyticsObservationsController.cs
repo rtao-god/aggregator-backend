@@ -59,7 +59,8 @@ public sealed class AnalyticsInteractionsController(
 [Authorize(Policy = AnalyticsAuthorizationPolicies.ViewListing)]
 [EnableRateLimiting(AnalyticsRateLimitPolicies.Metrics)]
 public sealed class AnalyticsMetricsController(
-    ReadDailyListingMetricsService metricsService) : ControllerBase
+    ReadDailyListingMetricsService metricsService,
+    ReadListingMetricsSummaryService summaryService) : ControllerBase
 {
     [HttpGet("daily-metrics", Name = AnalyticsOperationIds.ReadDailyListingMetrics)]
     [ProducesResponseType<IReadOnlyList<DailyListingMetricsResponse>>(StatusCodes.Status200OK)]
@@ -70,6 +71,21 @@ public sealed class AnalyticsMetricsController(
         [FromQuery] DateOnly toExclusive,
         CancellationToken cancellationToken) =>
         Ok(await metricsService.ReadAsync(
+            AnalyticsActorAccessor.Require(HttpContext),
+            catalogKey,
+            listingId,
+            new DailyMetricsRangeRequest(fromInclusive, toExclusive),
+            cancellationToken));
+
+    [HttpGet("summary", Name = AnalyticsOperationIds.ReadListingMetricsSummary)]
+    [ProducesResponseType<ListingMetricsSummaryResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<ListingMetricsSummaryResponse>> ReadSummaryAsync(
+        Guid listingId,
+        [FromQuery] string catalogKey,
+        [FromQuery] DateOnly fromInclusive,
+        [FromQuery] DateOnly toExclusive,
+        CancellationToken cancellationToken) =>
+        Ok(await summaryService.ReadAsync(
             AnalyticsActorAccessor.Require(HttpContext),
             catalogKey,
             listingId,
