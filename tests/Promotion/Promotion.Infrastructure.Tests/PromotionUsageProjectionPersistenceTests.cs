@@ -15,38 +15,48 @@ public sealed class PromotionUsageProjectionPersistenceTests
     }
 
     [Fact]
-    public void UsageProjectionMigrationOwnsImmutableInboxAndWindow()
+    public void UsageProjectionMigrationsOwnRevisionedInboxAndWindow()
     {
-        var migration = ReadRepositoryFile(
+        var initialMigration = ReadRepositoryFile(
             "src/Promotion/Promotion.Migrations/Migrations/V005__analytics_promotion_usage_projection.sql");
+        var revisionMigration = ReadRepositoryFile(
+            "src/Promotion/Promotion.Migrations/Migrations/V006__analytics_promotion_usage_revisions.sql");
 
         Assert.Contains(
             "CREATE TABLE analytics_usage_projection.inbox_message",
-            migration,
+            initialMigration,
             StringComparison.Ordinal);
         Assert.Contains(
             "CREATE TABLE analytics_usage_projection.promotion_usage_window",
-            migration,
+            initialMigration,
             StringComparison.Ordinal);
         Assert.Contains(
             "UNIQUE (placement_id, window_starts_at_utc, window_ends_at_utc)",
-            migration,
+            initialMigration,
             StringComparison.Ordinal);
         Assert.Contains(
-            "source_message_id uuid NOT NULL UNIQUE",
-            migration,
+            "CREATE TABLE analytics_usage_projection.promotion_usage_window_revision",
+            revisionMigration,
             StringComparison.Ordinal);
         Assert.Contains(
+            "PRIMARY KEY (usage_window_id, source_aggregate_revision)",
+            revisionMigration,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "NEW.source_aggregate_revision <> OLD.source_aggregate_revision + 1",
+            revisionMigration,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "trg_promotion_usage_current_has_revision",
+            revisionMigration,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "trg_promotion_usage_revision_immutable",
+            revisionMigration,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "accepted_impressions > 0 OR accepted_listing_opens > 0 OR accepted_outbound_clicks > 0",
-            migration,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "trg_promotion_usage_inbox_immutable",
-            migration,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "trg_promotion_usage_window_immutable",
-            migration,
+            revisionMigration,
             StringComparison.Ordinal);
     }
 
@@ -62,6 +72,14 @@ public sealed class PromotionUsageProjectionPersistenceTests
         Assert.Contains("PROMOTION_USAGE_INBOX_MESSAGE_CORRUPT", source, StringComparison.Ordinal);
         Assert.Contains("PROMOTION_USAGE_INBOX_ORPHANED", source, StringComparison.Ordinal);
         Assert.Contains("PROMOTION_USAGE_WINDOW_IDENTITY_CONFLICT", source, StringComparison.Ordinal);
+        Assert.Contains("PROMOTION_USAGE_REVISION_STALE", source, StringComparison.Ordinal);
+        Assert.Contains("PROMOTION_USAGE_REVISION_GAP", source, StringComparison.Ordinal);
+        Assert.Contains("InsertRevisionAsync", source, StringComparison.Ordinal);
+        Assert.Contains("UpdateCurrentAsync", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "FROM analytics_usage_projection.promotion_usage_window_revision",
+            source,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("AnalyticsDbContext", source, StringComparison.Ordinal);
         Assert.DoesNotContain("catalog_db", source, StringComparison.OrdinalIgnoreCase);
     }
