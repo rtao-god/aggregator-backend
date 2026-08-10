@@ -16,7 +16,7 @@ public sealed class AnalyticsPromotionUsageProjectionTests
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
-            new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
+            new FixedClock(EndsAtUtc.AddMinutes(10)));
 
         var result = await service.ApplyAsync(CreateMessage(), CancellationToken.None);
 
@@ -40,7 +40,7 @@ public sealed class AnalyticsPromotionUsageProjectionTests
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
-            new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
+            new FixedClock(EndsAtUtc.AddMinutes(10)));
         var invalid = CreateMessage() with
         {
             EventId = Guid.Parse("0198ff80-0000-7000-8000-000000000099"),
@@ -59,7 +59,7 @@ public sealed class AnalyticsPromotionUsageProjectionTests
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
-            new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
+            new FixedClock(EndsAtUtc.AddMinutes(10)));
         var invalid = CreateMessage() with { AcceptedOutboundClicks = -1 };
 
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
@@ -75,7 +75,7 @@ public sealed class AnalyticsPromotionUsageProjectionTests
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
-            new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
+            new FixedClock(EndsAtUtc.AddMinutes(10)));
         var correction = CreateMessage() with
         {
             AcceptedImpressions = 0,
@@ -99,7 +99,7 @@ public sealed class AnalyticsPromotionUsageProjectionTests
         var store = new CapturingStore();
         var service = new ApplyAnalyticsPromotionUsageWindowService(
             store,
-            new FixedTimeProvider(EndsAtUtc.AddMinutes(10)));
+            new FixedClock(EndsAtUtc.AddMinutes(10)));
         var invalid = CreateMessage() with { OccurredAtUtc = EndsAtUtc.AddTicks(-1) };
 
         var exception = await Assert.ThrowsAsync<PromotionApplicationException>(() =>
@@ -130,9 +130,9 @@ public sealed class AnalyticsPromotionUsageProjectionTests
             AggregateRevision: 4,
             EndsAtUtc.AddMinutes(5));
 
-    private sealed class FixedTimeProvider(DateTimeOffset nowUtc) : TimeProvider
+    private sealed class FixedClock(DateTimeOffset nowUtc) : IPromotionClock
     {
-        public override DateTimeOffset GetUtcNow() => nowUtc;
+        public DateTimeOffset GetUtcNow() => nowUtc;
     }
 
     private sealed class CapturingStore : IPromotionUsageProjectionStore

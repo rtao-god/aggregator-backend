@@ -68,7 +68,7 @@ public sealed record PromotionUsageProjectionChange(
 /// <summary>Applies one Analytics-owned closed usage window without re-evaluating traffic quality.</summary>
 public sealed class ApplyAnalyticsPromotionUsageWindowService(
     IPromotionUsageProjectionStore store,
-    TimeProvider timeProvider)
+    IPromotionClock clock)
 {
     public Task<PromotionUsageProjectionResult> ApplyAsync(
         AnalyticsPromotionUsageProjectionMessage message,
@@ -85,7 +85,7 @@ public sealed class ApplyAnalyticsPromotionUsageWindowService(
                 message.CorrelationId,
                 message.CausationId,
                 projection),
-            RequireUtc(timeProvider.GetUtcNow(), nameof(TimeProvider)),
+            RequireUtc(clock.GetUtcNow(), nameof(IPromotionClock)),
             cancellationToken);
     }
 
