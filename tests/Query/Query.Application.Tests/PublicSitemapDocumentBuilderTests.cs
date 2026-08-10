@@ -72,12 +72,12 @@ public sealed class PublicSitemapDocumentBuilderTests
 
     private static PublicSeoRouteSource Source(string locale, string path) =>
         new(
-            QuerySeoRouteKind.Listing,
+            RouteKind: QuerySeoRouteKind.Listing,
             RouteGroupKey: "listing:01990f40-0000-7000-8000-000000000001",
             CatalogKey: "recording-services",
-            locale,
-            path,
-            Timestamp,
+            Locale: locale,
+            Path: path,
+            LastModifiedAtUtc: Timestamp,
             IsDraft: false,
             RedirectTargetPath: null,
             IsSuppressed: false);
