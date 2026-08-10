@@ -31,7 +31,7 @@ public sealed class OutboxWorkerResilienceTests
 
     [Theory]
     [MemberData(nameof(DurableWorkers))]
-    public void DurableOutboxHostLogsAndRetriesAfterDispatchFailure(
+    public void DurableOutboxHostLogsAndRetriesOnlyRecoverableDispatchFailures(
         string relativePath,
         string logMarker,
         string retryDelayMarker)
@@ -45,16 +45,20 @@ public sealed class OutboxWorkerResilienceTests
             "DispatchOnceAsync(stoppingToken)",
             StringComparison.Ordinal);
         var catchOffset = source.IndexOf(
-            "catch (Exception exception)",
+            "catch (Exception exception) when (",
             dispatchOffset,
             StringComparison.Ordinal);
-        var logOffset = source.IndexOf(logMarker, catchOffset, StringComparison.Ordinal);
+        var policyOffset = source.IndexOf(
+            "OutboxDispatchFailurePolicy.IsRecoverable(exception)",
+            catchOffset,
+            StringComparison.Ordinal);
+        var logOffset = source.IndexOf(logMarker, policyOffset, StringComparison.Ordinal);
         var delayOffset = source.IndexOf(retryDelayMarker, logOffset, StringComparison.Ordinal);
 
         Assert.True(
             dispatchOffset >= 0 && catchOffset > dispatchOffset &&
-            logOffset > catchOffset && delayOffset > logOffset,
-            $"Outbox host '{relativePath}' must log and delay before retrying a failed durable dispatch.");
+            policyOffset > catchOffset && logOffset > policyOffset && delayOffset > logOffset,
+            $"Outbox host '{relativePath}' must classify, log, and delay before retrying a recoverable durable dispatch failure.");
         Assert.Contains(
             "catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)",
             source,
@@ -63,7 +67,7 @@ public sealed class OutboxWorkerResilienceTests
     }
 
     [Fact]
-    public void DispatcherRecordsTheExactFailureBeforeReturningControlToTheHostLoop()
+    public void DispatcherRecordsPublishFailureBeforeReturningTypedControlToTheHostLoop()
     {
         var repository = RepositoryModel.Load();
         var source = File.ReadAllText(Path.Combine(
@@ -75,13 +79,17 @@ public sealed class OutboxWorkerResilienceTests
             "await _publisher.PublishAsync(message, cancellationToken);",
             StringComparison.Ordinal);
         var failureOffset = source.IndexOf(
-            "await MarkFailedAsync(",
+            "var deadLettered = await MarkFailedAsync(",
             publishOffset,
             StringComparison.Ordinal);
-        var rethrowOffset = source.IndexOf("throw;", failureOffset, StringComparison.Ordinal);
+        var typedFailureOffset = source.IndexOf(
+            "throw new OutboxDispatchAttemptException(",
+            failureOffset,
+            StringComparison.Ordinal);
 
         Assert.True(
-            publishOffset >= 0 && failureOffset > publishOffset && rethrowOffset > failureOffset,
-            "The dispatcher must persist the failed attempt before the execution host applies its retry delay.");
+            publishOffset >= 0 && failureOffset > publishOffset &&
+            typedFailureOffset > failureOffset,
+            "The dispatcher must persist the failed attempt before returning a typed recoverable failure to the execution host.");
     }
 }
