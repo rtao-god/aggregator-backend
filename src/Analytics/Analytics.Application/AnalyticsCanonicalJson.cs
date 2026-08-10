@@ -33,7 +33,7 @@ internal static class AnalyticsCanonicalJson
         });
     }
 
-    public static string ComputeDigest<T>(T value)
+    public static byte[] Serialize<T>(T value)
     {
         ArgumentNullException.ThrowIfNull(value);
         var element = JsonSerializer.SerializeToElement(value, SerializerOptions);
@@ -43,8 +43,14 @@ internal static class AnalyticsCanonicalJson
             WriteCanonical(element, writer);
         }
 
-        return Convert.ToHexString(SHA256.HashData(stream.ToArray())).ToLowerInvariant();
+        return stream.ToArray();
     }
+
+    public static string ComputeDigest<T>(T value) =>
+        ComputeDigest(Serialize(value));
+
+    public static string ComputeDigest(ReadOnlySpan<byte> value) =>
+        Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
 
     private static JsonSerializerOptions CreateOptions()
     {
