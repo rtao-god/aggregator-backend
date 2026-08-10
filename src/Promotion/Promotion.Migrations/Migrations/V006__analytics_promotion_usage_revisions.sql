@@ -39,7 +39,7 @@ CREATE TABLE analytics_usage_projection.promotion_usage_window_revision
         CHECK
         (
             usage_window_id <> '00000000-0000-0000-0000-000000000000'::uuid
-            AND placement_id <> '00000000-0000-0000-8000-000000000000'::uuid
+            AND placement_id <> '00000000-0000-0000-0000-000000000000'::uuid
             AND listing_id <> '00000000-0000-0000-0000-000000000000'::uuid
             AND aggregation_run_id <> '00000000-0000-0000-0000-000000000000'::uuid
         ),
