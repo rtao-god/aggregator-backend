@@ -167,6 +167,18 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                         AND district_filter.district_key = @district_key
                   )
               )
+              AND
+              (
+                  @market_zone IS NULL
+                  OR EXISTS
+                  (
+                      SELECT 1
+                      FROM documents.listing_geography market_zone_filter
+                      WHERE market_zone_filter.base_projection_id = document.base_projection_id
+                        AND market_zone_filter.listing_id = document.listing_id
+                        AND market_zone_filter.state = @market_zone
+                  )
+              )
               AND (@listing_kind IS NULL OR document.listing_kind = @listing_kind)
               AND
               (
@@ -412,6 +424,18 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
                         AND district_filter.district_key = @district_key
                   )
               )
+              AND
+              (
+                  @market_zone IS NULL
+                  OR EXISTS
+                  (
+                      SELECT 1
+                      FROM documents.listing_geography market_zone_filter
+                      WHERE market_zone_filter.base_projection_id = d.base_projection_id
+                        AND market_zone_filter.listing_id = d.listing_id
+                        AND market_zone_filter.state = @market_zone
+                  )
+              )
               AND (@listing_kind IS NULL OR d.listing_kind = @listing_kind)
               AND
               (
@@ -462,6 +486,14 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
             NpgsqlTypes.NpgsqlDbType.Text)
         {
             Value = criteria.DistrictKey is null ? DBNull.Value : criteria.DistrictKey,
+        });
+        command.Parameters.Add(new NpgsqlParameter(
+            "market_zone",
+            NpgsqlTypes.NpgsqlDbType.Text)
+        {
+            Value = criteria.MarketZone is null
+                ? DBNull.Value
+                : ToPersistedGeographyState(criteria.MarketZone.Value),
         });
         command.Parameters.Add(new NpgsqlParameter(
             "listing_kind",
@@ -971,6 +1003,15 @@ public sealed class NpgsqlPublicQueryStore : IPublicQueryStore
         QueryContactKind.BookingReference => "booking_reference",
         QueryContactKind.MapReference => "map_reference",
         _ => throw UnsupportedValue("contact kind", value.ToString()),
+    };
+
+    private static string ToPersistedGeographyState(QueryGeographyState value) => value switch
+    {
+        QueryGeographyState.PrimaryMarket => "primary_market",
+        QueryGeographyState.NearbyMarket => "nearby_market",
+        QueryGeographyState.RemoteOnly => "remote_only",
+        QueryGeographyState.OutsideMarket => "outside_market",
+        _ => throw UnsupportedValue("geography state", value.ToString()),
     };
 
     private static QueryFieldState MapFieldState(string value) => value switch
