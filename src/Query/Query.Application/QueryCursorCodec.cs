@@ -22,7 +22,8 @@ internal static class QueryCursorCodec
             criteria.CategoryKey,
             criteria.DistrictKey,
             criteria.ListingKind,
-            criteria.ContactKind));
+            criteria.ContactKind,
+            criteria.MarketZone));
     }
 
     public static string Encode(Guid publicReadRevisionId, Guid lastListingId, string queryDigest)
@@ -101,5 +102,6 @@ internal static class QueryCursorCodec
         string? CategoryKey,
         string? DistrictKey,
         Aggregator.Query.Domain.QueryListingKind? ListingKind,
-        Aggregator.Query.Domain.QueryContactKind? ContactKind);
+        Aggregator.Query.Domain.QueryContactKind? ContactKind,
+        Aggregator.Query.Domain.QueryGeographyState? MarketZone);
 }

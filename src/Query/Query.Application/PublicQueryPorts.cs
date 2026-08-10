@@ -7,7 +7,8 @@ public sealed record PublicListingSearchCriteria(
     string? CategoryKey,
     string? DistrictKey,
     QueryListingKind? ListingKind,
-    QueryContactKind? ContactKind);
+    QueryContactKind? ContactKind,
+    QueryGeographyState? MarketZone = null);
 
 public sealed record PublicSponsoredListingSnapshot(
     QueryPromotionPlacement Placement,

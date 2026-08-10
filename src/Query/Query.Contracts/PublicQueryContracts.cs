@@ -16,6 +16,14 @@ public enum PublicContactKindContract
     MapReference = 6,
 }
 
+public enum PublicMarketZoneContract
+{
+    PrimaryMarket = 1,
+    NearbyMarket = 2,
+    RemoteOnly = 3,
+    OutsideMarket = 4,
+}
+
 public enum PublicFieldStateContract
 {
     Observed = 1,
@@ -39,14 +47,16 @@ public sealed record PublicListingSearchRequest(
     PublicListingKindContract? ListingKind,
     PublicContactKindContract? ContactKind,
     int PageSize,
-    string? Cursor);
+    string? Cursor,
+    PublicMarketZoneContract? MarketZone = null);
 
 public sealed record PublicListingSearchQuerySummary(
     string RequestedLocale,
     string? CategoryKey,
     string? DistrictKey,
     PublicListingKindContract? ListingKind,
-    PublicContactKindContract? ContactKind);
+    PublicContactKindContract? ContactKind,
+    PublicMarketZoneContract? MarketZone = null);
 
 public sealed record PublicListingSummary(
     Guid ListingId,
