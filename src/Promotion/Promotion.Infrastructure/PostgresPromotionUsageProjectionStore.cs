@@ -73,7 +73,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
                 throw Failure(
                     "PROMOTION_USAGE_REVISION_GAP",
                     $"New Promotion usage window '{change.Projection.UsageWindowId:D}' must start at source revision 1, but received {change.Projection.SourceAggregateRevision}.",
-                    409);
+                    503);
             }
 
             await InsertInboxAsync(
@@ -101,13 +101,14 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
             var expectedRevision = checked(current.SourceAggregateRevision + 1);
             if (change.Projection.SourceAggregateRevision != expectedRevision)
             {
-                var code = change.Projection.SourceAggregateRevision <= current.SourceAggregateRevision
+                var isStale = change.Projection.SourceAggregateRevision <= current.SourceAggregateRevision;
+                var code = isStale
                     ? "PROMOTION_USAGE_REVISION_STALE"
                     : "PROMOTION_USAGE_REVISION_GAP";
                 throw Failure(
                     code,
                     $"Promotion usage window '{current.UsageWindowId:D}' expects source revision {expectedRevision}, but received {change.Projection.SourceAggregateRevision}.",
-                    409);
+                    isStale ? 409 : 503);
             }
 
             await InsertInboxAsync(
