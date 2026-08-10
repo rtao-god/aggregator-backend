@@ -5,7 +5,7 @@ using NpgsqlTypes;
 
 namespace Aggregator.Promotion.Infrastructure;
 
-/// <summary>Promotion-owned atomic inbox and immutable Analytics usage projection.</summary>
+/// <summary>Promotion-owned atomic inbox and revisioned Analytics usage projection.</summary>
 public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataSource)
     : IPromotionUsageProjectionStore
 {
@@ -47,13 +47,13 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         if (inbox is not null)
         {
             EnsureExactInboxReplay(change, inbox);
-            var replay = await ReadBySourceMessageAsync(
+            var replay = await ReadRevisionBySourceMessageAsync(
                 connection,
                 transaction,
                 change.MessageId,
                 cancellationToken) ?? throw Failure(
                     "PROMOTION_USAGE_INBOX_ORPHANED",
-                    "Promotion usage inbox exists without its immutable projection row.",
+                    "Promotion usage inbox exists without its immutable projection revision.",
                     500);
             await transaction.CommitAsync(cancellationToken);
             return new PromotionUsageProjectionResult(
@@ -61,31 +61,76 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
                 PromotionUsageProjectionDisposition.Duplicate);
         }
 
-        var conflictingWindow = await ReadByIdentityOrWindowAsync(
+        var current = await ReadCurrentByIdentityOrWindowAsync(
             connection,
             transaction,
             change.Projection,
             cancellationToken);
-        if (conflictingWindow is not null)
+        if (current is null)
         {
-            throw Failure(
-                "PROMOTION_USAGE_WINDOW_IDENTITY_CONFLICT",
-                "The exact placement usage window was already materialized by another Analytics event.",
-                409);
+            if (change.Projection.SourceAggregateRevision != 1)
+            {
+                throw Failure(
+                    "PROMOTION_USAGE_REVISION_GAP",
+                    $"New Promotion usage window '{change.Projection.UsageWindowId:D}' must start at source revision 1, but received {change.Projection.SourceAggregateRevision}.",
+                    409);
+            }
+
+            await InsertInboxAsync(
+                connection,
+                transaction,
+                change,
+                receivedAtUtc,
+                cancellationToken);
+            await InsertRevisionAsync(
+                connection,
+                transaction,
+                change.Projection,
+                receivedAtUtc,
+                cancellationToken);
+            await InsertCurrentAsync(
+                connection,
+                transaction,
+                change.Projection,
+                receivedAtUtc,
+                cancellationToken);
+        }
+        else
+        {
+            EnsureSameWindowIdentity(current, change.Projection);
+            var expectedRevision = checked(current.SourceAggregateRevision + 1);
+            if (change.Projection.SourceAggregateRevision != expectedRevision)
+            {
+                var code = change.Projection.SourceAggregateRevision <= current.SourceAggregateRevision
+                    ? "PROMOTION_USAGE_REVISION_STALE"
+                    : "PROMOTION_USAGE_REVISION_GAP";
+                throw Failure(
+                    code,
+                    $"Promotion usage window '{current.UsageWindowId:D}' expects source revision {expectedRevision}, but received {change.Projection.SourceAggregateRevision}.",
+                    409);
+            }
+
+            await InsertInboxAsync(
+                connection,
+                transaction,
+                change,
+                receivedAtUtc,
+                cancellationToken);
+            await InsertRevisionAsync(
+                connection,
+                transaction,
+                change.Projection,
+                receivedAtUtc,
+                cancellationToken);
+            await UpdateCurrentAsync(
+                connection,
+                transaction,
+                current.SourceAggregateRevision,
+                change.Projection,
+                receivedAtUtc,
+                cancellationToken);
         }
 
-        await InsertInboxAsync(
-            connection,
-            transaction,
-            change,
-            receivedAtUtc,
-            cancellationToken);
-        await InsertProjectionAsync(
-            connection,
-            transaction,
-            change.Projection,
-            receivedAtUtc,
-            cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new PromotionUsageProjectionResult(
             change.Projection,
@@ -149,7 +194,25 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         }
     }
 
-    private static async Task<PromotionUsageWindowProjection?> ReadBySourceMessageAsync(
+    private static void EnsureSameWindowIdentity(
+        PromotionUsageWindowProjection current,
+        PromotionUsageWindowProjection incoming)
+    {
+        if (current.UsageWindowId != incoming.UsageWindowId ||
+            current.PlacementId != incoming.PlacementId ||
+            current.ListingId != incoming.ListingId ||
+            !string.Equals(current.CatalogKey, incoming.CatalogKey, StringComparison.Ordinal) ||
+            current.WindowStartsAtUtc != incoming.WindowStartsAtUtc ||
+            current.WindowEndsAtUtc != incoming.WindowEndsAtUtc)
+        {
+            throw Failure(
+                "PROMOTION_USAGE_WINDOW_IDENTITY_CONFLICT",
+                "Analytics usage revision changes the immutable placement-window identity.",
+                409);
+        }
+    }
+
+    private static async Task<PromotionUsageWindowProjection?> ReadRevisionBySourceMessageAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid sourceMessageId,
@@ -170,7 +233,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
                    source_message_id,
                    source_payload_digest,
                    source_occurred_at_utc
-            FROM analytics_usage_projection.promotion_usage_window
+            FROM analytics_usage_projection.promotion_usage_window_revision
             WHERE source_message_id = @source_message_id
             FOR UPDATE;
             """;
@@ -180,7 +243,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         return await reader.ReadAsync(cancellationToken) ? ReadProjection(reader) : null;
     }
 
-    private static async Task<PromotionUsageWindowProjection?> ReadByIdentityOrWindowAsync(
+    private static async Task<PromotionUsageWindowProjection?> ReadCurrentByIdentityOrWindowAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         PromotionUsageWindowProjection projection,
@@ -206,6 +269,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
                OR (placement_id = @placement_id
                    AND window_starts_at_utc = @window_starts_at_utc
                    AND window_ends_at_utc = @window_ends_at_utc)
+            ORDER BY usage_window_id
             FOR UPDATE;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -220,7 +284,21 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
             NpgsqlDbType.TimestampTz,
             projection.WindowEndsAtUtc);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? ReadProjection(reader) : null;
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var result = ReadProjection(reader);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw Failure(
+                "PROMOTION_USAGE_WINDOW_PROJECTION_CORRUPT",
+                "Promotion usage identity and placement-window key resolve to different current rows.",
+                500);
+        }
+
+        return result;
     }
 
     private static PromotionUsageWindowProjection ReadProjection(NpgsqlDataReader reader) =>
@@ -280,7 +358,61 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task InsertProjectionAsync(
+    private static async Task InsertRevisionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PromotionUsageWindowProjection projection,
+        DateTimeOffset appliedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO analytics_usage_projection.promotion_usage_window_revision
+            (
+                usage_window_id,
+                source_aggregate_revision,
+                placement_id,
+                listing_id,
+                catalog_key,
+                window_starts_at_utc,
+                window_ends_at_utc,
+                accepted_impressions,
+                accepted_listing_opens,
+                accepted_outbound_clicks,
+                aggregation_run_id,
+                source_message_id,
+                source_payload_digest,
+                source_occurred_at_utc,
+                applied_at_utc
+            )
+            VALUES
+            (
+                @usage_window_id,
+                @source_aggregate_revision,
+                @placement_id,
+                @listing_id,
+                @catalog_key,
+                @window_starts_at_utc,
+                @window_ends_at_utc,
+                @accepted_impressions,
+                @accepted_listing_opens,
+                @accepted_outbound_clicks,
+                @aggregation_run_id,
+                @source_message_id,
+                @source_payload_digest,
+                @source_occurred_at_utc,
+                @applied_at_utc
+            );
+            """;
+        await using var command = CreateProjectionCommand(
+            sql,
+            connection,
+            transaction,
+            projection,
+            appliedAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertCurrentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         PromotionUsageWindowProjection projection,
@@ -325,22 +457,100 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
                 @applied_at_utc
             );
             """;
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = CreateProjectionCommand(
+            sql,
+            connection,
+            transaction,
+            projection,
+            appliedAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task UpdateCurrentAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long expectedCurrentRevision,
+        PromotionUsageWindowProjection projection,
+        DateTimeOffset appliedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE analytics_usage_projection.promotion_usage_window
+            SET accepted_impressions = @accepted_impressions,
+                accepted_listing_opens = @accepted_listing_opens,
+                accepted_outbound_clicks = @accepted_outbound_clicks,
+                aggregation_run_id = @aggregation_run_id,
+                source_aggregate_revision = @source_aggregate_revision,
+                source_message_id = @source_message_id,
+                source_payload_digest = @source_payload_digest,
+                source_occurred_at_utc = @source_occurred_at_utc,
+                applied_at_utc = @applied_at_utc
+            WHERE usage_window_id = @usage_window_id
+              AND source_aggregate_revision = @expected_current_revision;
+            """;
+        await using var command = CreateProjectionCommand(
+            sql,
+            connection,
+            transaction,
+            projection,
+            appliedAtUtc);
+        command.Parameters.AddWithValue(
+            "expected_current_revision",
+            NpgsqlDbType.Bigint,
+            expectedCurrentRevision);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw Failure(
+                "PROMOTION_USAGE_REVISION_CONFLICT",
+                "Promotion usage current revision changed while applying the Analytics event.",
+                409);
+        }
+    }
+
+    private static NpgsqlCommand CreateProjectionCommand(
+        string sql,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PromotionUsageWindowProjection projection,
+        DateTimeOffset appliedAtUtc)
+    {
+        var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("usage_window_id", NpgsqlDbType.Uuid, projection.UsageWindowId);
         command.Parameters.AddWithValue("placement_id", NpgsqlDbType.Uuid, projection.PlacementId);
         command.Parameters.AddWithValue("listing_id", NpgsqlDbType.Uuid, projection.ListingId);
         command.Parameters.AddWithValue("catalog_key", NpgsqlDbType.Varchar, projection.CatalogKey);
-        command.Parameters.AddWithValue("window_starts_at_utc", NpgsqlDbType.TimestampTz, projection.WindowStartsAtUtc);
-        command.Parameters.AddWithValue("window_ends_at_utc", NpgsqlDbType.TimestampTz, projection.WindowEndsAtUtc);
-        command.Parameters.AddWithValue("accepted_impressions", NpgsqlDbType.Bigint, projection.AcceptedImpressions);
-        command.Parameters.AddWithValue("accepted_listing_opens", NpgsqlDbType.Bigint, projection.AcceptedListingOpens);
-        command.Parameters.AddWithValue("accepted_outbound_clicks", NpgsqlDbType.Bigint, projection.AcceptedOutboundClicks);
-        command.Parameters.AddWithValue("aggregation_run_id", NpgsqlDbType.Uuid, projection.AggregationRunId);
+        command.Parameters.AddWithValue(
+            "window_starts_at_utc",
+            NpgsqlDbType.TimestampTz,
+            projection.WindowStartsAtUtc);
+        command.Parameters.AddWithValue(
+            "window_ends_at_utc",
+            NpgsqlDbType.TimestampTz,
+            projection.WindowEndsAtUtc);
+        command.Parameters.AddWithValue(
+            "accepted_impressions",
+            NpgsqlDbType.Bigint,
+            projection.AcceptedImpressions);
+        command.Parameters.AddWithValue(
+            "accepted_listing_opens",
+            NpgsqlDbType.Bigint,
+            projection.AcceptedListingOpens);
+        command.Parameters.AddWithValue(
+            "accepted_outbound_clicks",
+            NpgsqlDbType.Bigint,
+            projection.AcceptedOutboundClicks);
+        command.Parameters.AddWithValue(
+            "aggregation_run_id",
+            NpgsqlDbType.Uuid,
+            projection.AggregationRunId);
         command.Parameters.AddWithValue(
             "source_aggregate_revision",
             NpgsqlDbType.Bigint,
             projection.SourceAggregateRevision);
-        command.Parameters.AddWithValue("source_message_id", NpgsqlDbType.Uuid, projection.SourceMessageId);
+        command.Parameters.AddWithValue(
+            "source_message_id",
+            NpgsqlDbType.Uuid,
+            projection.SourceMessageId);
         command.Parameters.AddWithValue(
             "source_payload_digest",
             NpgsqlDbType.Char,
@@ -349,8 +559,11 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
             "source_occurred_at_utc",
             NpgsqlDbType.TimestampTz,
             projection.SourceOccurredAtUtc);
-        command.Parameters.AddWithValue("applied_at_utc", NpgsqlDbType.TimestampTz, appliedAtUtc);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        command.Parameters.AddWithValue(
+            "applied_at_utc",
+            NpgsqlDbType.TimestampTz,
+            appliedAtUtc);
+        return command;
     }
 
     private static PromotionApplicationException Failure(
