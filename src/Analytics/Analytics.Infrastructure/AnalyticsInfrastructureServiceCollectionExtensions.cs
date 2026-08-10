@@ -38,6 +38,7 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
         services.AddScoped<IListingMetricsAuthorizer, EfListingMetricsAuthorizer>();
         services.AddScoped<IDailyListingMetricsStore>(provider =>
             provider.GetRequiredService<EfAnalyticsRepository>());
+        services.AddScoped<AnalyticsPromotionUsageMaterializer>();
         services.AddScoped<IAnalyticsAggregateWriter, EfAnalyticsAggregateWriter>();
         services.AddScoped<
             IAnalyticsAggregationOperationStore,

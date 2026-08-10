@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Aggregator.Analytics.Infrastructure;
 
 internal sealed class EfAnalyticsAggregateWriter(
-    AnalyticsDbContext dbContext) : IAnalyticsAggregateWriter
+    AnalyticsDbContext dbContext,
+    AnalyticsPromotionUsageMaterializer promotionUsageMaterializer) : IAnalyticsAggregateWriter
 {
     public async Task<AnalyticsAggregateRebuildResult> RebuildAsync(
         AnalyticsAggregationLease lease,
@@ -244,6 +245,13 @@ internal sealed class EfAnalyticsAggregateWriter(
             readinessRow.MetricCount = dayResult.MetricCount;
             readinessRow.CompletedAtUtc = calculatedAtUtc;
         }
+
+        await promotionUsageMaterializer.MaterializeAsync(
+            lease,
+            request,
+            eventRows,
+            calculatedAtUtc,
+            cancellationToken);
 
         var runSourceDigest = ComputeRunSourceDigest(request, dayResults);
         runRow.State = (int)AnalyticsAggregateRunState.Complete;
