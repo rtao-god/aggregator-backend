@@ -175,7 +175,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
             reader.GetString(0),
             reader.GetString(1),
             reader.GetString(2),
-            reader.IsDBNull(3) ? null : reader.GetString(3));
+            reader.IsDBNull(3) ? null : reader.GetGuid(3));
     }
 
     private static void EnsureExactInboxReplay(
@@ -185,7 +185,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         if (!string.Equals(inbox.ContractIdentity, change.ContractIdentity, StringComparison.Ordinal) ||
             !string.Equals(inbox.PayloadDigest, change.PayloadDigest, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(inbox.CorrelationId, change.CorrelationId, StringComparison.Ordinal) ||
-            !string.Equals(inbox.CausationId, change.CausationId, StringComparison.Ordinal))
+            inbox.CausationId != change.CausationId)
         {
             throw Failure(
                 "PROMOTION_USAGE_INBOX_MESSAGE_CORRUPT",
@@ -352,7 +352,7 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         command.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Varchar, change.CorrelationId);
         command.Parameters.AddWithValue(
             "causation_id",
-            NpgsqlDbType.Varchar,
+            NpgsqlDbType.Uuid,
             (object?)change.CausationId ?? DBNull.Value);
         command.Parameters.AddWithValue("received_at_utc", NpgsqlDbType.TimestampTz, receivedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -581,5 +581,5 @@ public sealed class PostgresPromotionUsageProjectionStore(NpgsqlDataSource dataS
         string ContractIdentity,
         string PayloadDigest,
         string CorrelationId,
-        string? CausationId);
+        Guid? CausationId);
 }

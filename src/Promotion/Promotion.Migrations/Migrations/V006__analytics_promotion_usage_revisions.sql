@@ -1,3 +1,21 @@
+ALTER TABLE analytics_usage_projection.inbox_message
+    DROP CONSTRAINT ck_promotion_usage_inbox_causation;
+
+ALTER TABLE analytics_usage_projection.inbox_message
+    ALTER COLUMN causation_id TYPE uuid
+    USING CASE
+        WHEN causation_id IS NULL THEN NULL
+        ELSE causation_id::uuid
+    END;
+
+ALTER TABLE analytics_usage_projection.inbox_message
+    ADD CONSTRAINT ck_promotion_usage_inbox_causation
+    CHECK
+    (
+        causation_id IS NULL
+        OR causation_id <> '00000000-0000-0000-0000-000000000000'::uuid
+    );
+
 ALTER TABLE analytics_usage_projection.promotion_usage_window
     DROP CONSTRAINT ck_promotion_usage_counts;
 

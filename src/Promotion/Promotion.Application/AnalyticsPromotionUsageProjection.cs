@@ -6,7 +6,7 @@ public sealed record AnalyticsPromotionUsageProjectionMessage(
     string ContractIdentity,
     string PayloadDigest,
     string CorrelationId,
-    string? CausationId,
+    Guid? CausationId,
     Guid EventId,
     Guid UsageWindowId,
     Guid PlacementId,
@@ -62,7 +62,7 @@ public sealed record PromotionUsageProjectionChange(
     string ContractIdentity,
     string PayloadDigest,
     string CorrelationId,
-    string? CausationId,
+    Guid? CausationId,
     PromotionUsageWindowProjection Projection);
 
 /// <summary>Applies one Analytics-owned closed usage window without re-evaluating traffic quality.</summary>
@@ -102,9 +102,11 @@ public sealed class ApplyAnalyticsPromotionUsageWindowService(
         RequireText(message.ContractIdentity, nameof(message.ContractIdentity), 300);
         RequireDigest(message.PayloadDigest, nameof(message.PayloadDigest));
         RequireText(message.CorrelationId, nameof(message.CorrelationId), 200);
-        if (message.CausationId is not null)
+        if (message.CausationId == Guid.Empty)
         {
-            RequireText(message.CausationId, nameof(message.CausationId), 200);
+            throw Failure(
+                "PROMOTION_USAGE_CAUSATION_INVALID",
+                "Analytics usage causation identity must be absent or a non-empty UUID.");
         }
     }
 
