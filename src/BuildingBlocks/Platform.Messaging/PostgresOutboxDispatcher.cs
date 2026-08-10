@@ -34,7 +34,11 @@ public sealed class PostgresOutboxDispatcher
                 _ = OutboxMessageIntegrity.GetVerifiedPayloadBytes(message);
                 await _publisher.PublishAsync(message, cancellationToken);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
             {
                 var deadLettered = await MarkFailedAsync(
                     message.MessageId,
