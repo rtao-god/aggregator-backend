@@ -14,6 +14,7 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
             "locale",
             "category",
             "district",
+            "marketZone",
             "listingKind",
             "contactKind",
             "pageSize",
@@ -27,6 +28,7 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
         [FromQuery] string locale = "de-DE",
         [FromQuery] string? category = null,
         [FromQuery] string? district = null,
+        [FromQuery] string? marketZone = null,
         [FromQuery] string? listingKind = null,
         [FromQuery] string? contactKind = null,
         [FromQuery] int pageSize = 20,
@@ -43,7 +45,8 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
                 ParseListingKind(listingKind),
                 ParseContactKind(contactKind),
                 pageSize,
-                cursor),
+                cursor,
+                ParseMarketZone(marketZone)),
             cancellationToken);
         Response.Headers.ETag = QueryHttpCache.BuildETag(response.Metadata.PublicReadRevisionId);
         Response.Headers.CacheControl = "public,max-age=60,stale-while-revalidate=300";
@@ -90,6 +93,19 @@ public sealed class CatalogQueryController(PublicQueryService service) : Control
                 ["unknownParameters"] = unknown,
             });
     }
+
+    private static PublicMarketZoneContract? ParseMarketZone(string? value) => value switch
+    {
+        null => null,
+        "primary_market" => PublicMarketZoneContract.PrimaryMarket,
+        "nearby_market" => PublicMarketZoneContract.NearbyMarket,
+        "remote_only" => PublicMarketZoneContract.RemoteOnly,
+        "outside_market" => PublicMarketZoneContract.OutsideMarket,
+        _ => throw InvalidFilter(
+            "marketZone",
+            value,
+            "Supported marketZone values are 'primary_market', 'nearby_market', 'remote_only', and 'outside_market'."),
+    };
 
     private static PublicListingKindContract? ParseListingKind(string? value) => value switch
     {

@@ -113,7 +113,10 @@ public sealed class PublicQueryService
                     : MapListingKind(criteria.ListingKind.Value),
                 criteria.ContactKind is null
                     ? null
-                    : MapContactKindContract(criteria.ContactKind.Value)),
+                    : MapContactKindContract(criteria.ContactKind.Value),
+                criteria.MarketZone is null
+                    ? null
+                    : MapMarketZoneContract(criteria.MarketZone.Value)),
             sponsored,
             organic,
             snapshot.CategoryFacetCounts
@@ -355,6 +358,13 @@ public sealed class PublicQueryService
             throw StoreContractFailure(
                 $"Listing '{document.ListingId}' does not match requested contact kind '{criteria.ContactKind}'.");
         }
+
+        if (criteria.MarketZone is not null &&
+            document.Geography.State != criteria.MarketZone.Value)
+        {
+            throw StoreContractFailure(
+                $"Listing '{document.ListingId}' does not match requested market zone '{criteria.MarketZone}'.");
+        }
     }
 
     private static void EnsureStringFacets(
@@ -533,12 +543,25 @@ public sealed class PublicQueryService
                 request.ContactKind,
                 "Use one of the declared public contact-kind values."),
         };
+        var marketZone = request.MarketZone switch
+        {
+            null => null,
+            PublicMarketZoneContract.PrimaryMarket => QueryGeographyState.PrimaryMarket,
+            PublicMarketZoneContract.NearbyMarket => QueryGeographyState.NearbyMarket,
+            PublicMarketZoneContract.RemoteOnly => QueryGeographyState.RemoteOnly,
+            PublicMarketZoneContract.OutsideMarket => QueryGeographyState.OutsideMarket,
+            _ => throw InvalidFilter(
+                nameof(request.MarketZone),
+                request.MarketZone,
+                "Use one of the declared public market-zone values."),
+        };
         return new PublicListingSearchCriteria(
             RequireLocale(request.Locale, nameof(request.Locale)),
             NormalizeOptionalKey(request.CategoryKey, nameof(request.CategoryKey)),
             NormalizeOptionalKey(request.DistrictKey, nameof(request.DistrictKey)),
             listingKind,
-            contactKind);
+            contactKind,
+            marketZone);
     }
 
     private static string? NormalizeOptionalKey(string? value, string parameterName) =>
@@ -572,6 +595,16 @@ public sealed class PublicQueryService
         QueryContactKind.BookingReference => PublicContactKindContract.BookingReference,
         QueryContactKind.MapReference => PublicContactKindContract.MapReference,
         _ => throw StoreContractFailure($"Unsupported contact kind '{value}'."),
+    };
+
+    private static PublicMarketZoneContract MapMarketZoneContract(
+        QueryGeographyState value) => value switch
+    {
+        QueryGeographyState.PrimaryMarket => PublicMarketZoneContract.PrimaryMarket,
+        QueryGeographyState.NearbyMarket => PublicMarketZoneContract.NearbyMarket,
+        QueryGeographyState.RemoteOnly => PublicMarketZoneContract.RemoteOnly,
+        QueryGeographyState.OutsideMarket => PublicMarketZoneContract.OutsideMarket,
+        _ => throw StoreContractFailure($"Unsupported market zone '{value}'."),
     };
 
     private static PublicFieldStateContract MapFieldState(QueryFieldState state) => state switch
