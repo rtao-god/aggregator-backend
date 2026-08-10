@@ -11,6 +11,7 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)Repository.runsettings</RunSettingsFilePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
     <IsPackable>false</IsPackable>
