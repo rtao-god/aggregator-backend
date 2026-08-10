@@ -10,8 +10,20 @@ internal static class QueryCursorCodec
     private const byte ContractRevision = 1;
     private const int PayloadLength = 65;
 
-    public static string ComputeQueryDigest(string catalogKey, string locale, string? categoryKey) =>
-        QueryCanonicalJson.ComputeDigest(new CursorQueryIdentity(catalogKey, locale, categoryKey));
+    public static string ComputeQueryDigest(
+        string catalogKey,
+        PublicListingSearchCriteria criteria)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogKey);
+        ArgumentNullException.ThrowIfNull(criteria);
+        return QueryCanonicalJson.ComputeDigest(new CursorQueryIdentity(
+            catalogKey,
+            criteria.RequestedLocale,
+            criteria.CategoryKey,
+            criteria.DistrictKey,
+            criteria.ListingKind,
+            criteria.ContactKind));
+    }
 
     public static string Encode(Guid publicReadRevisionId, Guid lastListingId, string queryDigest)
     {
@@ -83,5 +95,11 @@ internal static class QueryCursorCodec
             "Restart the search without the cursor.",
             innerException: innerException);
 
-    private sealed record CursorQueryIdentity(string CatalogKey, string Locale, string? CategoryKey);
+    private sealed record CursorQueryIdentity(
+        string CatalogKey,
+        string Locale,
+        string? CategoryKey,
+        string? DistrictKey,
+        Aggregator.Query.Domain.QueryListingKind? ListingKind,
+        Aggregator.Query.Domain.QueryContactKind? ContactKind);
 }
