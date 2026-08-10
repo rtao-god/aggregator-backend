@@ -30,6 +30,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $solution = Join-Path $root 'AggregatorBackend.slnx'
 $runtimeSolution = Join-Path $root 'AggregatorBackend.Runtime.slnx'
 $architectureProject = Join-Path $root 'tests/Architecture.Tests/Architecture.Tests.csproj'
+$testDiscoveryGuard = Join-Path $root 'tools/run-tests-with-discovery-guard.py'
 $composeFile = Join-Path $root 'compose.yaml'
 $composeEnvironment = Join-Path $root '.env'
 $composeEnvironmentExample = Join-Path $root '.env.example'
@@ -121,6 +122,25 @@ function Invoke-ContractCheck {
     Invoke-Native $python @('tools/verify-contracts.py')
 }
 
+function Invoke-TestDiscoveryGuardSelfTest {
+    $python = Resolve-Python
+    Invoke-Native $python @($testDiscoveryGuard, '--self-test')
+}
+
+function Invoke-TestDiscoveryGuard {
+    $python = Resolve-Python
+    $resultsDirectory = Join-Path $root 'artifacts/test-results'
+    $diagnosticsFile = Join-Path $resultsDirectory 'console.log'
+    Invoke-Native $python @(
+        $testDiscoveryGuard,
+        '--solution',
+        'AggregatorBackend.slnx',
+        '--results-directory',
+        $resultsDirectory,
+        '--diagnostics-file',
+        $diagnosticsFile)
+}
+
 function Invoke-Compose {
     param(
         [Parameter(Mandatory = $true)]
@@ -160,6 +180,7 @@ function Invoke-ArchitectureGate {
 function Invoke-Preflight {
     Invoke-InventoryCheck
     Invoke-ContractCheck
+    Invoke-TestDiscoveryGuardSelfTest
     Invoke-ComposeConfig
     Invoke-ArchitectureGate
 }
@@ -224,16 +245,7 @@ try {
                 '-warnaserror',
                 '/m:2',
                 '/nr:false')
-            Invoke-Native dotnet @(
-                'test',
-                $solution,
-                '--no-build',
-                '--no-restore',
-                '-warnaserror',
-                '--logger',
-                'console;verbosity=normal',
-                '/m:1',
-                '/nr:false')
+            Invoke-TestDiscoveryGuard
         }
         'format-check' {
             Invoke-Native dotnet @(
