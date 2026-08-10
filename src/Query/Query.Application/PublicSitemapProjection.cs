@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Aggregator.Query.Domain;
 
@@ -126,7 +125,7 @@ public sealed class BuildPublicSitemapProjectionService(IPublicSitemapProjection
                 {
                     throw Failure(
                         "QUERY_SITEMAP_HREFLANG_TARGET_MISSING",
-                        $"Hreflang target '{targetIdentity.Value}:{targetIdentity.Value}' is absent from the exact revision.");
+                        $"Hreflang target '{targetIdentity.Item1}:{targetIdentity.Item2}' is absent from the exact revision.");
                 }
 
                 var hasReverse = target.Hreflang.Any(candidate =>
