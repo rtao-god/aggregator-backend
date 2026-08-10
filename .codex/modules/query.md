@@ -77,6 +77,25 @@ Stable media and contact identities are present in Catalog publication artifact 
 
 Sponsored rows preserve campaign/placement identities, slot position, disclosure label, exact overlay/public-read identities, and hard expiry. They reference existing base documents; they never copy or mutate organic ranking/content. A placement is never returned at or after `HardExpiryAtUtc`, even when expiry-event delivery is delayed.
 
+## Sitemap projection invariant
+
+Sitemap records are an immutable Query-owned revision bound to one exact `PublicReadRevision`. The active sitemap pointer is switched only after the complete record set, record count, canonical/self links, reciprocal hreflang groups, and digest have been validated. Public sitemap reads use revision-bound keyset cursors; they never rebuild from live search and never continue silently across another active revision.
+
+## Projection status contract
+
+```text
+GET /api/catalog-query/catalogs/{catalogKey}/projection-status
+→ current PublicReadRevision pointer and activation revision
+→ exact Catalog-source checkpoint base/publication identity
+→ active Query read-block count and oldest block timestamp
+→ active sitemap pointer and immutable revision evidence
+→ ready | degraded | blocked
+```
+
+The endpoint is read-only and public-safe. It exposes no private Catalog suppression evidence, no dead-letter payloads, and no infrastructure credentials. `ready` requires a current public-read pointer, no active Query read block, and a sitemap pointer for the exact current public-read revision. `degraded` means public reads are available while the sitemap component is missing or stale. `blocked` means Query has durable pending/failure isolation evidence and public content must not be served.
+
+The Catalog activation checkpoint is not required to equal the current composite public-read revision after Promotion or safety overlay changes. It must instead prove the same immutable base projection and source publication. Any mismatched pointer/checkpoint/sitemap shape is owner corruption and returns a typed failure; the GET endpoint never repairs it.
+
 ## Activation ordering invariant
 
 Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its publication pointer and outbox. Query accepts the first Catalog activation only at revision `1`, then requires every subsequent checkpoint transition to be exactly `last + 1`. Stale lower revisions may be recorded as ignored only after a later contiguous checkpoint is already proven. A forward gap cannot switch the public pointer or advance the checkpoint.
@@ -103,4 +122,5 @@ Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its
 - Migration/schema tests prove exact immutable overlay reinsertion is idempotent while same-ID changed state fails with a typed PostgreSQL owner error.
 - Recomposition integration proof verifies a new Catalog base preserves the exact active Promotion and safety overlays, performs one activation revision transition, updates inbox/checkpoint/pointer consistently, and removes only its own recomposition block.
 - Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while any relevant block remains.
+- Projection-status application/API tests cover ready, degraded, blocked, absent, and corrupt checkpoint states; PostgreSQL proof reads exact pointer, checkpoint, block, and sitemap evidence without mutation.
 - Architecture tests require every public-read pointer writer to create the producer outbox message, require a real dispatcher in `Query.Worker`, and prohibit a hidden direct Query-to-Analytics persistence path.
