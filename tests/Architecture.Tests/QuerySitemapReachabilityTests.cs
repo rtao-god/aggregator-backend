@@ -5,11 +5,10 @@ public sealed class QuerySitemapReachabilityTests
     [Fact]
     public void QueryOwnsTypedSitemapContractDomainAndApplicationBoundaries()
     {
-        var repository = RepositoryModel.Load();
-        var contracts = Read(repository, "src/Query/Query.Contracts/PublicSeoContracts.cs");
-        var domain = Read(repository, "src/Query/Query.Domain/QuerySeoDocuments.cs");
-        var application = Read(repository, "src/Query/Query.Application/PublicSitemapReadModel.cs");
-        var projection = Read(repository, "src/Query/Query.Application/PublicSitemapProjection.cs");
+        var contracts = Read("src/Query/Query.Contracts/PublicSeoContracts.cs");
+        var domain = Read("src/Query/Query.Domain/QuerySeoDocuments.cs");
+        var application = Read("src/Query/Query.Application/PublicSitemapReadModel.cs");
+        var projection = Read("src/Query/Query.Application/PublicSitemapProjection.cs");
 
         Assert.Contains("PublicSitemapPageDto", contracts, StringComparison.Ordinal);
         Assert.Contains("QuerySitemapDocument", domain, StringComparison.Ordinal);
@@ -22,9 +21,8 @@ public sealed class QuerySitemapReachabilityTests
     [Fact]
     public void PublicEndpointUsesReadOwnerAndNeverProjectionWriter()
     {
-        var repository = RepositoryModel.Load();
-        var controller = Read(repository, "src/Query/Query.Api/CatalogSitemapController.cs");
-        var composition = Read(repository, "src/Query/Query.Api/QuerySitemapApiComposition.cs");
+        var controller = Read("src/Query/Query.Api/CatalogSitemapController.cs");
+        var composition = Read("src/Query/Query.Api/QuerySitemapApiComposition.cs");
 
         Assert.Contains(
             "api/catalog-query/catalogs/{catalogKey}/sitemap-records",
@@ -43,12 +41,9 @@ public sealed class QuerySitemapReachabilityTests
     [Fact]
     public void QuerySitemapPersistenceStaysInsideQueryInfrastructure()
     {
-        var repository = RepositoryModel.Load();
         var readStore = Read(
-            repository,
             "src/Query/Query.Infrastructure/PostgresPublicSitemapStore.cs");
         var projectionStore = Read(
-            repository,
             "src/Query/Query.Infrastructure/PostgresPublicSitemapProjectionStore.cs");
 
         Assert.Contains("namespace Aggregator.Query.Infrastructure", readStore, StringComparison.Ordinal);
@@ -66,12 +61,9 @@ public sealed class QuerySitemapReachabilityTests
     [Fact]
     public void SitemapProjectionIsRevisionBoundAndCannotUseLatestDiscovery()
     {
-        var repository = RepositoryModel.Load();
         var migration = Read(
-            repository,
             "src/Query/Query.Migrations/Migrations/V015__query_sitemap_revision_pointer.sql");
         var cursor = Read(
-            repository,
             "src/Query/Query.Application/PublicSitemapCursorCodec.cs");
 
         Assert.Contains("public_read_revision_id", migration, StringComparison.Ordinal);
@@ -82,10 +74,18 @@ public sealed class QuerySitemapReachabilityTests
         Assert.DoesNotContain("latest", cursor, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Read(RepositoryModel repository, string relativePath)
+    private static string Read(string relativePath)
     {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "AggregatorBackend.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
         var path = Path.Combine(
-            repository.RootPath,
+            directory!.FullName,
             relativePath.Replace('/', Path.DirectorySeparatorChar));
         Assert.True(File.Exists(path), $"Repository file '{relativePath}' was not found.");
         return File.ReadAllText(path);
