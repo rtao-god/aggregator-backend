@@ -12,7 +12,10 @@ public sealed record PublicSeoRouteSource(
     DateTimeOffset LastModifiedAtUtc,
     bool IsDraft,
     string? RedirectTargetPath,
-    bool IsSuppressed);
+    bool IsSuppressed,
+    Guid? RedirectSourcePublicationId = null,
+    string? RedirectReason = null,
+    DateTimeOffset? RedirectCreatedAtUtc = null);
 
 /// <summary>Single mapper from Query route sources to indexable sitemap documents.</summary>
 public static class PublicSitemapDocumentBuilder
