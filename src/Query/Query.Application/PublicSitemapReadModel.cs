@@ -8,13 +8,13 @@ public sealed record PublicSitemapPageRequest(
     QuerySeoCatalogKey CatalogKey,
     QuerySeoLocale? Locale,
     int PageSize,
-    string? Cursor);
+    PublicSitemapCursor? Cursor);
 
 /// <summary>Infrastructure result bound to one exact active public-read revision.</summary>
 public sealed record PublicSitemapSlice(
     Guid PublicReadRevisionId,
     IReadOnlyList<QuerySitemapDocument> Items,
-    string? NextCursor);
+    PublicSitemapCursor? NextCursor);
 
 /// <summary>Read-only sitemap persistence boundary owned by Query.</summary>
 public interface IPublicSitemapStore
@@ -53,12 +53,22 @@ public sealed class ReadPublicSitemapService(IPublicSitemapStore store)
                 "Sitemap page size must be between 1 and 1000.");
         }
 
-        var normalizedCursor = NormalizeCursor(cursor);
+        var normalizedCatalogKey = QuerySeoCatalogKey.Create(catalogKey);
+        var normalizedLocale = locale is null ? null : QuerySeoLocale.Create(locale);
+        var decodedCursor = cursor is null ? null : PublicSitemapCursorCodec.Decode(cursor);
+        if (decodedCursor is not null)
+        {
+            PublicSitemapCursorCodec.EnsureScope(
+                decodedCursor,
+                normalizedCatalogKey,
+                normalizedLocale);
+        }
+
         var request = new PublicSitemapPageRequest(
-            QuerySeoCatalogKey.Create(catalogKey),
-            locale is null ? null : QuerySeoLocale.Create(locale),
+            normalizedCatalogKey,
+            normalizedLocale,
             pageSize,
-            normalizedCursor);
+            decodedCursor);
         var slice = await store.ReadPageAsync(request, cancellationToken);
         if (slice is null)
         {
@@ -73,6 +83,14 @@ public sealed class ReadPublicSitemapService(IPublicSitemapStore store)
                 "Query sitemap store returned an empty public-read revision identity.");
         }
 
+        if (decodedCursor is not null &&
+            decodedCursor.PublicReadRevisionId != slice.PublicReadRevisionId)
+        {
+            throw new ArgumentException(
+                "Sitemap cursor belongs to a public-read revision that is no longer active.",
+                nameof(cursor));
+        }
+
         ArgumentNullException.ThrowIfNull(slice.Items);
         var mappedItems = slice.Items
             .Select(Map)
@@ -83,12 +101,28 @@ public sealed class ReadPublicSitemapService(IPublicSitemapStore store)
                 "Query sitemap store returned more records than the requested page size.");
         }
 
+        string? nextCursor = null;
+        if (slice.NextCursor is not null)
+        {
+            PublicSitemapCursorCodec.EnsureScope(
+                slice.NextCursor,
+                normalizedCatalogKey,
+                normalizedLocale);
+            if (slice.NextCursor.PublicReadRevisionId != slice.PublicReadRevisionId)
+            {
+                throw new InvalidOperationException(
+                    "Query sitemap store returned a continuation cursor for another revision.");
+            }
+
+            nextCursor = PublicSitemapCursorCodec.Encode(slice.NextCursor);
+        }
+
         return new PublicSitemapReadResult(
             PublicSitemapReadStatus.Ready,
             new PublicSitemapPageDto(
                 slice.PublicReadRevisionId,
                 mappedItems,
-                NormalizeCursor(slice.NextCursor)));
+                nextCursor));
     }
 
     private static PublicSitemapRecordDto Map(QuerySitemapDocument document)
@@ -113,25 +147,5 @@ public sealed class ReadPublicSitemapService(IPublicSitemapStore store)
                     item.Path.Value))
                 .ToArray(),
             document.LastModifiedAtUtc);
-    }
-
-    private static string? NormalizeCursor(string? cursor)
-    {
-        if (cursor is null)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(cursor) ||
-            cursor.Length > 4096 ||
-            cursor.Any(char.IsControl) ||
-            !string.Equals(cursor, cursor.Trim(), StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "Sitemap cursor is invalid.",
-                nameof(cursor));
-        }
-
-        return cursor;
     }
 }
