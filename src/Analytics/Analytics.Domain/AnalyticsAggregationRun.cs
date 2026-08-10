@@ -137,11 +137,12 @@ public sealed record AnalyticsAggregateRun
     {
         AnalyticsDomainRules.RequireIdentifier(runId, nameof(runId));
         AnalyticsDomainRules.RequireUtc(startedAtUtc, nameof(startedAtUtc));
-        if (toExclusive <= fromInclusive)
+        var dayCount = toExclusive.DayNumber - fromInclusive.DayNumber;
+        if (dayCount is < 1 or > 31)
         {
             throw new AnalyticsDomainException(
                 "ANALYTICS_AGGREGATE_RUN_RANGE_INVALID",
-                "Aggregate run range must be non-empty and use [from, to) semantics.");
+                "Aggregate run range must contain between 1 and 31 UTC days using [from, to) semantics.");
         }
 
         if (!Enum.IsDefined(state))
@@ -164,6 +165,7 @@ public sealed record AnalyticsAggregateRun
 
         ValidateStateShape(
             state,
+            dayCount,
             completedAtUtc,
             sourceDigest,
             materializedMetricCount,
@@ -190,6 +192,7 @@ public sealed record AnalyticsAggregateRun
 
     private static void ValidateStateShape(
         AnalyticsAggregateRunState state,
+        int expectedDayCount,
         DateTimeOffset? completedAtUtc,
         string? sourceDigest,
         int? materializedMetricCount,
@@ -228,12 +231,12 @@ public sealed record AnalyticsAggregateRun
                 nameof(sourceDigest));
             if (materializedMetricCount is null or < 0 ||
                 removedStaleMetricCount is null or < 0 ||
-                materializedDayCount is null or < 1 || failureCode is not null ||
+                materializedDayCount != expectedDayCount || failureCode is not null ||
                 failureDetail is not null || requiredAction is not null)
             {
                 throw new AnalyticsDomainException(
                     "ANALYTICS_AGGREGATE_RUN_COMPLETE_SHAPE_INVALID",
-                    "Complete aggregate run requires non-negative result counts and no failure fields.");
+                    "Complete aggregate run requires exact day coverage, non-negative result counts, and no failure fields.");
             }
 
             return;
