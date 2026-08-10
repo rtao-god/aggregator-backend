@@ -38,7 +38,7 @@ public sealed class OutboxWorkerResilienceTests
     {
         var repository = RepositoryModel.Load();
         var source = File.ReadAllText(Path.Combine(
-            repository.Root.FullName,
+            repository.Root,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
 
         var dispatchOffset = source.IndexOf(
@@ -67,7 +67,7 @@ public sealed class OutboxWorkerResilienceTests
     {
         var repository = RepositoryModel.Load();
         var source = File.ReadAllText(Path.Combine(
-            repository.Root.FullName,
+            repository.Root,
             "src/BuildingBlocks/Platform.Messaging/PostgresOutboxDispatcher.cs"
                 .Replace('/', Path.DirectorySeparatorChar)));
 
