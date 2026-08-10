@@ -1,10 +1,13 @@
 using Aggregator.Query.Application;
+using Aggregator.Query.Contracts;
 using Aggregator.Query.Domain;
 
 namespace Query.Application.Tests;
 
 public sealed class PublicQueryServiceTests
 {
+    private const string CatalogKey = "berlin-recording-services";
+
     private static readonly DateTimeOffset Now =
         new(2026, 8, 4, 12, 0, 0, TimeSpan.Zero);
 
@@ -22,12 +25,10 @@ public sealed class PublicQueryServiceTests
             "Studio Zwei");
         var store = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
+            Page = CreatePage(
                 revision,
-                LocalePolicy(),
                 [first, second],
-                [],
-                new Dictionary<string, int>(StringComparer.Ordinal)
+                categoryFacets: new Dictionary<string, int>(StringComparer.Ordinal)
                 {
                     ["recording-studio"] = 2,
                 }),
@@ -35,11 +36,11 @@ public sealed class PublicQueryServiceTests
         var service = new PublicQueryService(store, new FixedClock(Now));
 
         var result = await service.SearchAsync(
-            "berlin-recording-services",
-            "en-GB",
-            "recording-studio",
-            1,
-            null,
+            CatalogKey,
+            SearchRequest(
+                locale: "en-GB",
+                categoryKey: "recording-studio",
+                pageSize: 1),
             CancellationToken.None);
 
         var listing = Assert.Single(result.Organic);
@@ -49,24 +50,86 @@ public sealed class PublicQueryServiceTests
         Assert.NotNull(result.NextCursor);
         Assert.Equal(revision.Id, result.Metadata.PublicReadRevisionId);
         Assert.Equal(2, store.LastMaximumDocuments);
-        Assert.Equal("en-GB", store.LastRequestedLocale);
+        Assert.Equal("en-GB", store.LastCriteria?.RequestedLocale);
+        Assert.Equal("recording-studio", store.LastCriteria?.CategoryKey);
         Assert.Equal(Now, store.LastReadAtUtc);
+    }
+
+    [Fact]
+    public async Task TypedCriteriaAndCompleteProjectionFacetsAreReturnedExactly()
+    {
+        var listing = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000012"),
+            "de-DE",
+            "Typed Studio",
+            districtKey: "mitte",
+            listingKind: QueryListingKind.Place,
+            contactKinds: [QueryContactKind.WhatsApp]);
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(
+                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000002")),
+                [listing],
+                categoryFacets: new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    ["recording-studio"] = 7,
+                    ["rehearsal-room"] = 3,
+                },
+                districtFacets: new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    ["mitte"] = 5,
+                },
+                listingKindFacets: new Dictionary<QueryListingKind, int>
+                {
+                    [QueryListingKind.Place] = 8,
+                    [QueryListingKind.Provider] = 2,
+                },
+                contactKindFacets: new Dictionary<QueryContactKind, int>
+                {
+                    [QueryContactKind.WhatsApp] = 4,
+                    [QueryContactKind.Website] = 9,
+                }),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+
+        var result = await service.SearchAsync(
+            CatalogKey,
+            SearchRequest(
+                categoryKey: "recording-studio",
+                districtKey: "mitte",
+                listingKind: PublicListingKindContract.Place,
+                contactKind: PublicContactKindContract.WhatsApp),
+            CancellationToken.None);
+
+        Assert.Equal("recording-studio", store.LastCriteria?.CategoryKey);
+        Assert.Equal("mitte", store.LastCriteria?.DistrictKey);
+        Assert.Equal(QueryListingKind.Place, store.LastCriteria?.ListingKind);
+        Assert.Equal(QueryContactKind.WhatsApp, store.LastCriteria?.ContactKind);
+        Assert.Equal("mitte", result.Query.DistrictKey);
+        Assert.Equal(PublicListingKindContract.Place, result.Query.ListingKind);
+        Assert.Equal(PublicContactKindContract.WhatsApp, result.Query.ContactKind);
+        Assert.Equal(2, result.CategoryFacets.Count);
+        Assert.Equal(7, result.CategoryFacets.Single(item => item.Key == "recording-studio").Count);
+        Assert.Equal(5, Assert.Single(result.DistrictFacets).Count);
+        Assert.Equal(8, result.ListingKindFacets.Single(item =>
+            item.Value == PublicListingKindContract.Place).Count);
+        Assert.Equal(4, result.ContactKindFacets.Single(item =>
+            item.Value == PublicContactKindContract.WhatsApp).Count);
     }
 
     [Fact]
     public async Task SearchReturnsSponsoredAndOrganicFromSamePublicReadRevision()
     {
-        var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000002"));
+        var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000003"));
         var listing = CreateDocument(
-            Guid.Parse("0198a300-0000-7000-8000-000000000012"),
+            Guid.Parse("0198a300-0000-7000-8000-000000000013"),
             "de-DE",
             "Sponsored Studio");
         var placement = CreatePlacement(listing.ListingId);
         var store = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
+            Page = CreatePage(
                 revision,
-                LocalePolicy(),
                 [listing],
                 [new PublicSponsoredListingSnapshot(placement, listing)],
                 new Dictionary<string, int>(StringComparer.Ordinal)
@@ -77,11 +140,8 @@ public sealed class PublicQueryServiceTests
         var service = new PublicQueryService(store, new FixedClock(Now));
 
         var result = await service.SearchAsync(
-            "berlin-recording-services",
-            "de-DE",
-            null,
-            20,
-            null,
+            CatalogKey,
+            SearchRequest(),
             CancellationToken.None);
 
         var sponsored = Assert.Single(result.Sponsored);
@@ -96,10 +156,64 @@ public sealed class PublicQueryServiceTests
     }
 
     [Fact]
+    public async Task DistrictSponsoredPlacementRequiresMatchingDistrictCriteria()
+    {
+        var listing = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000014"),
+            "de-DE",
+            "Mitte Studio",
+            districtKey: "mitte");
+        var placement = CreatePlacement(
+            listing.ListingId,
+            scope: QueryPromotionPlacementScope.District,
+            scopeKey: "mitte");
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(
+                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000004")),
+                [listing],
+                [new PublicSponsoredListingSnapshot(placement, listing)]),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+
+        var result = await service.SearchAsync(
+            CatalogKey,
+            SearchRequest(districtKey: "mitte"),
+            CancellationToken.None);
+
+        Assert.Equal("district", Assert.Single(result.Sponsored).ScopeType);
+        Assert.Equal("mitte", Assert.Single(result.Sponsored).ScopeKey);
+    }
+
+    [Fact]
+    public async Task DocumentOutsideRequestedContactFilterIsStoreContractFailure()
+    {
+        var listing = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000015"),
+            "de-DE",
+            "Website Only",
+            contactKinds: [QueryContactKind.Website]);
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(
+                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000005")),
+                [listing]),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+
+        var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
+            CatalogKey,
+            SearchRequest(contactKind: PublicContactKindContract.WhatsApp),
+            CancellationToken.None));
+
+        Assert.Equal("QUERY_STORE_CONTRACT_INVALID", exception.Code);
+    }
+
+    [Fact]
     public async Task ExpiredSponsoredPlacementIsRejectedAsStoreContractFailure()
     {
         var listing = CreateDocument(
-            Guid.Parse("0198a300-0000-7000-8000-000000000013"),
+            Guid.Parse("0198a300-0000-7000-8000-000000000016"),
             "de-DE",
             "Expired Studio");
         var expired = CreatePlacement(
@@ -107,21 +221,16 @@ public sealed class PublicQueryServiceTests
             hardExpiryAtUtc: Now.AddMinutes(-1));
         var store = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
-                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000003")),
-                LocalePolicy(),
+            Page = CreatePage(
+                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000006")),
                 [],
-                [new PublicSponsoredListingSnapshot(expired, listing)],
-                new Dictionary<string, int>(StringComparer.Ordinal)),
+                [new PublicSponsoredListingSnapshot(expired, listing)]),
         };
         var service = new PublicQueryService(store, new FixedClock(Now));
 
         var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
-            "berlin-recording-services",
-            "de-DE",
-            null,
-            20,
-            null,
+            CatalogKey,
+            SearchRequest(),
             CancellationToken.None));
 
         Assert.Equal("QUERY_STORE_CONTRACT_INVALID", exception.Code);
@@ -137,49 +246,78 @@ public sealed class PublicQueryServiceTests
             "Studio");
         var firstStore = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
+            Page = CreatePage(
                 firstRevision,
-                LocalePolicy(),
                 [
                     document,
                     CreateDocument(
                         Guid.Parse("0198a300-0000-7000-8000-000000000022"),
                         "de-DE",
                         "Studio Zwei"),
-                ],
-                [],
-                new Dictionary<string, int>()),
+                ]),
         };
         var firstService = new PublicQueryService(firstStore, new FixedClock(Now));
         var firstPage = await firstService.SearchAsync(
-            "berlin-recording-services",
-            "de-DE",
-            null,
-            1,
-            null,
+            CatalogKey,
+            SearchRequest(pageSize: 1),
             CancellationToken.None);
         Assert.NotNull(firstPage.NextCursor);
 
         var secondStore = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
+            Page = CreatePage(
                 CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000023")),
-                LocalePolicy(),
-                [],
-                [],
-                new Dictionary<string, int>()),
+                []),
         };
         var secondService = new PublicQueryService(secondStore, new FixedClock(Now));
 
         var exception = await Assert.ThrowsAsync<QueryReadException>(() => secondService.SearchAsync(
-            "berlin-recording-services",
-            "de-DE",
-            null,
-            1,
-            firstPage.NextCursor,
+            CatalogKey,
+            SearchRequest(pageSize: 1, cursor: firstPage.NextCursor),
             CancellationToken.None));
 
         Assert.Equal("QUERY_CURSOR_REVISION_MISMATCH", exception.Code);
+    }
+
+    [Fact]
+    public async Task CursorCannotBeReusedAfterAnyFilterChanges()
+    {
+        var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000024"));
+        var first = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000025"),
+            "de-DE",
+            "Mitte One",
+            districtKey: "mitte",
+            contactKinds: [QueryContactKind.Website]);
+        var second = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000026"),
+            "de-DE",
+            "Mitte Two",
+            districtKey: "mitte",
+            contactKinds: [QueryContactKind.Website]);
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(revision, [first, second]),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+        var firstPage = await service.SearchAsync(
+            CatalogKey,
+            SearchRequest(
+                districtKey: "mitte",
+                contactKind: PublicContactKindContract.Website,
+                pageSize: 1),
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
+            CatalogKey,
+            SearchRequest(
+                districtKey: "mitte",
+                contactKind: PublicContactKindContract.Phone,
+                pageSize: 1,
+                cursor: firstPage.NextCursor),
+            CancellationToken.None));
+
+        Assert.Equal("QUERY_CURSOR_SCOPE_MISMATCH", exception.Code);
     }
 
     [Fact]
@@ -217,7 +355,7 @@ public sealed class PublicQueryServiceTests
         var service = new PublicQueryService(store, new FixedClock(Now));
 
         var result = await service.GetByRouteAsync(
-            "berlin-recording-services",
+            CatalogKey,
             "/en-GB/listings/studio",
             "en-GB",
             CancellationToken.None);
@@ -233,25 +371,54 @@ public sealed class PublicQueryServiceTests
     {
         var store = new StubPublicQueryStore
         {
-            Page = new PublicReadPageSnapshot(
+            Page = CreatePage(
                 CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000040")),
-                LocalePolicy(),
-                [],
-                [],
-                new Dictionary<string, int>()),
+                []),
         };
         var service = new PublicQueryService(store, new FixedClock(Now));
 
         var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
-            "berlin-recording-services",
-            "fr-FR",
-            null,
-            20,
-            null,
+            CatalogKey,
+            SearchRequest(locale: "fr-FR"),
             CancellationToken.None));
 
         Assert.Equal("QUERY_LOCALE_UNSUPPORTED", exception.Code);
     }
+
+    private static PublicListingSearchRequest SearchRequest(
+        string locale = "de-DE",
+        string? categoryKey = null,
+        string? districtKey = null,
+        PublicListingKindContract? listingKind = null,
+        PublicContactKindContract? contactKind = null,
+        int pageSize = 20,
+        string? cursor = null) =>
+        new(
+            locale,
+            categoryKey,
+            districtKey,
+            listingKind,
+            contactKind,
+            pageSize,
+            cursor);
+
+    private static PublicReadPageSnapshot CreatePage(
+        PublicReadRevision revision,
+        IReadOnlyList<QueryListingDocument> documents,
+        IReadOnlyList<PublicSponsoredListingSnapshot>? sponsored = null,
+        IReadOnlyDictionary<string, int>? categoryFacets = null,
+        IReadOnlyDictionary<string, int>? districtFacets = null,
+        IReadOnlyDictionary<QueryListingKind, int>? listingKindFacets = null,
+        IReadOnlyDictionary<QueryContactKind, int>? contactKindFacets = null) =>
+        new(
+            revision,
+            LocalePolicy(),
+            documents,
+            sponsored ?? [],
+            categoryFacets ?? new Dictionary<string, int>(StringComparer.Ordinal),
+            districtFacets ?? new Dictionary<string, int>(StringComparer.Ordinal),
+            listingKindFacets ?? new Dictionary<QueryListingKind, int>(),
+            contactKindFacets ?? new Dictionary<QueryContactKind, int>());
 
     private static QueryLocalePolicy LocalePolicy() =>
         QueryLocalePolicy.Create("de-DE", ["de-DE", "en-GB"]);
@@ -259,7 +426,7 @@ public sealed class PublicQueryServiceTests
     private static PublicReadRevision CreateRevision(Guid id) =>
         PublicReadRevision.Restore(
             id,
-            "berlin-recording-services",
+            CatalogKey,
             Guid.CreateVersion7(),
             Guid.CreateVersion7(),
             Guid.CreateVersion7(),
@@ -267,33 +434,56 @@ public sealed class PublicQueryServiceTests
             new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero),
             new string('f', 64));
 
-    private static QueryListingDocument CreateDocument(Guid listingId, string locale, string title) =>
+    private static QueryListingDocument CreateDocument(
+        Guid listingId,
+        string locale,
+        string title,
+        string districtKey = "mitte",
+        QueryListingKind listingKind = QueryListingKind.Place,
+        IReadOnlyList<QueryContactKind>? contactKinds = null) =>
         QueryListingDocument.Create(
             listingId,
             Guid.CreateVersion7(),
             Guid.CreateVersion7(),
             Guid.CreateVersion7(),
-            QueryListingKind.Place,
+            listingKind,
             [new QueryLocalizedDocument(locale, $"/{locale}/listings/{listingId:N}", title, QueryFieldState.Missing, null)],
             ["recording-studio"],
             [],
-            new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.5m, 13.4m, "mitte"),
-            [],
+            new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.5m, 13.4m, districtKey),
+            (contactKinds ?? [])
+                .Select((kind, index) => new QueryContactDocument(
+                    Guid.CreateVersion7(),
+                    kind,
+                    kind switch
+                    {
+                        QueryContactKind.Website => $"https://example-{index}.test",
+                        QueryContactKind.Email => $"studio-{index}@example.test",
+                        QueryContactKind.Phone => $"+493000000{index}",
+                        QueryContactKind.WhatsApp => $"https://wa.me/493000000{index}",
+                        QueryContactKind.BookingReference => $"booking:{index}",
+                        QueryContactKind.MapReference => $"map:{index}",
+                        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                    },
+                    null))
+                .ToArray(),
             [],
             new string('a', 64),
             new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero));
 
     private static QueryPromotionPlacement CreatePlacement(
         Guid listingId,
-        DateTimeOffset? hardExpiryAtUtc = null) =>
+        DateTimeOffset? hardExpiryAtUtc = null,
+        QueryPromotionPlacementScope scope = QueryPromotionPlacementScope.Catalog,
+        string? scopeKey = null) =>
         QueryPromotionPlacement.Create(
             Guid.CreateVersion7(),
             Guid.CreateVersion7(),
             listingId,
-            "berlin-recording-services",
+            CatalogKey,
             "featured-listing",
-            QueryPromotionPlacementScope.Catalog,
-            "berlin-recording-services",
+            scope,
+            scopeKey ?? CatalogKey,
             ["de-DE", "en-GB"],
             Now.AddHours(-1),
             Now.AddDays(1),
@@ -318,7 +508,7 @@ public sealed class PublicQueryServiceTests
 
         public int LastMaximumDocuments { get; private set; }
 
-        public string? LastRequestedLocale { get; private set; }
+        public PublicListingSearchCriteria? LastCriteria { get; private set; }
 
         public DateTimeOffset? LastReadAtUtc { get; private set; }
 
@@ -326,14 +516,13 @@ public sealed class PublicQueryServiceTests
             string catalogKey,
             Guid? afterListingId,
             int maximumDocuments,
-            string? categoryKey,
-            string requestedLocale,
+            PublicListingSearchCriteria criteria,
             DateTimeOffset readAtUtc,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             LastMaximumDocuments = maximumDocuments;
-            LastRequestedLocale = requestedLocale;
+            LastCriteria = criteria;
             LastReadAtUtc = readAtUtc;
             return Task.FromResult(Page);
         }
