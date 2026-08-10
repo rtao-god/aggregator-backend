@@ -11,6 +11,8 @@ public sealed record PublicProjectionStatusSnapshot(
     DateTimeOffset? PublicReadActivatedAtUtc,
     long? CatalogSourceActivationRevision,
     Guid? CatalogCheckpointPublicReadRevisionId,
+    Guid? CatalogCheckpointBaseProjectionId,
+    Guid? CatalogCheckpointSourcePublicationId,
     DateTimeOffset? CatalogCheckpointUpdatedAtUtc,
     int ActiveReadBlockCount,
     DateTimeOffset? OldestReadBlockAtUtc,
@@ -211,6 +213,8 @@ public sealed class ReadPublicProjectionStatusService(
                 snapshot.PublicReadActivatedAtUtc is not null ||
                 snapshot.CatalogSourceActivationRevision is not null ||
                 snapshot.CatalogCheckpointPublicReadRevisionId is not null ||
+                snapshot.CatalogCheckpointBaseProjectionId is not null ||
+                snapshot.CatalogCheckpointSourcePublicationId is not null ||
                 snapshot.CatalogCheckpointUpdatedAtUtc is not null)
             {
                 throw StoreFailure(
@@ -234,6 +238,11 @@ public sealed class ReadPublicProjectionStatusService(
             snapshot.CatalogSourceActivationRevision is not { } sourceActivationRevision ||
             sourceActivationRevision < 1 ||
             snapshot.CatalogCheckpointPublicReadRevisionId is not { } checkpointRevisionId ||
+            checkpointRevisionId == Guid.Empty ||
+            snapshot.CatalogCheckpointBaseProjectionId is not { } checkpointBaseProjectionId ||
+            checkpointBaseProjectionId == Guid.Empty ||
+            snapshot.CatalogCheckpointSourcePublicationId is not { } checkpointSourcePublicationId ||
+            checkpointSourcePublicationId == Guid.Empty ||
             snapshot.CatalogCheckpointUpdatedAtUtc is not { } checkpointUpdatedAtUtc)
         {
             throw StoreFailure(
@@ -250,11 +259,12 @@ public sealed class ReadPublicProjectionStatusService(
                 "Public-read pointer predates its immutable revision.");
         }
 
-        if (checkpointRevisionId != revision.Id)
+        if (checkpointBaseProjectionId != revision.BaseProjectionId ||
+            checkpointSourcePublicationId != revision.SourcePublicationId)
         {
             throw StoreFailure(
                 "QUERY_PROJECTION_STATUS_CHECKPOINT_MISMATCH",
-                "Catalog source checkpoint does not reference the current public-read revision.");
+                "Catalog source checkpoint does not belong to the current public-read base publication.");
         }
     }
 
