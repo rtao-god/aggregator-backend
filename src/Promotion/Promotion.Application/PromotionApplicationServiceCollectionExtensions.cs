@@ -11,7 +11,6 @@ public static class PromotionApplicationServiceCollectionExtensions
         services.AddScoped<PromotionEntitlementService>();
         services.AddScoped<PromotionPlacementService>();
         services.AddScoped<ApplyCatalogListingPromotionEligibilityService>();
-        services.AddScoped<ApplyAnalyticsPromotionUsageWindowService>();
         return services;
     }
 }

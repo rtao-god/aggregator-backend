@@ -16,6 +16,7 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(eligibilityOptions);
 builder.Services.AddSingleton(usageOptions);
 builder.Services.AddPromotionApplication();
+builder.Services.AddPromotionUsageProjectionApplication();
 builder.Services.AddPromotionInfrastructure(builder.Configuration);
 builder.Services.AddPromotionUsageProjectionInfrastructure();
 builder.Services.AddSingleton(options.CreatePublisherOptions());
