@@ -12,17 +12,31 @@ internal sealed class EfAnalyticsAggregateWriter(
     AnalyticsDbContext dbContext) : IAnalyticsAggregateWriter
 {
     public async Task<AnalyticsAggregateRebuildResult> RebuildAsync(
+        AnalyticsAggregationLease lease,
         RebuildDailyAnalyticsMetricsRequest request,
         DateTimeOffset calculatedAtUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(lease);
         ArgumentNullException.ThrowIfNull(request);
-        if (calculatedAtUtc.Offset != TimeSpan.Zero)
+        AnalyticsDomainRules.RequireUtc(calculatedAtUtc, nameof(calculatedAtUtc));
+        if (request.FromInclusive != lease.FromInclusive ||
+            request.ToExclusive != lease.ToExclusive)
         {
             throw PersistenceFailure(
-                "ANALYTICS_AGGREGATION_TIME_NOT_UTC",
-                "Analytics aggregate completion time must use UTC.",
-                "Correct the Analytics worker clock configuration.");
+                "ANALYTICS_AGGREGATION_LEASE_RANGE_MISMATCH",
+                "Analytics aggregate request does not match its exact persisted lease range.",
+                "Discard the mismatched work and start a new exact aggregation operation.");
+        }
+
+        if (calculatedAtUtc < lease.StartedAtUtc || calculatedAtUtc > lease.LeaseExpiresAtUtc)
+        {
+            throw new AnalyticsCommandException(
+                "Analytics.Aggregation",
+                "ANALYTICS_AGGREGATION_LEASE_EXPIRED",
+                409,
+                "Analytics aggregate execution reached persistence outside its lease interval.",
+                "Discard the stale result and start a new aggregation operation.");
         }
 
         var rangeStartUtc = ToUtcStart(request.FromInclusive);
@@ -30,6 +44,19 @@ internal sealed class EfAnalyticsAggregateWriter(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
+        var runRow = await dbContext.AggregateRuns
+            .FromSqlInterpolated($"""
+                SELECT *
+                FROM aggregates.aggregate_run
+                WHERE id = {lease.RunId}
+                FOR UPDATE
+                """)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw PersistenceFailure(
+                "ANALYTICS_AGGREGATE_RUN_MISSING",
+                $"Analytics aggregate run '{lease.RunId:D}' cannot be found during materialization.",
+                "Stop aggregation and restore the exact operation ledger before retrying.");
+        PostgresAnalyticsAggregationOperationStore.EnsureActiveLease(runRow, lease);
 
         var referenceRows = await dbContext.PublicReadReferences
             .AsNoTracking()
@@ -64,6 +91,11 @@ internal sealed class EfAnalyticsAggregateWriter(
                 row.MetricDate >= request.FromInclusive &&
                 row.MetricDate < request.ToExclusive)
             .ToArrayAsync(cancellationToken);
+        var existingReadinessRows = await dbContext.AggregateReadiness
+            .Where(row =>
+                row.MetricDate >= request.FromInclusive &&
+                row.MetricDate < request.ToExclusive)
+            .ToArrayAsync(cancellationToken);
 
         var memberships = membershipRows
             .GroupBy(row => row.PublicReadRevisionId)
@@ -76,12 +108,15 @@ internal sealed class EfAnalyticsAggregateWriter(
         var existingByIdentity = existingRows.ToDictionary(row =>
             new MetricIdentity(row.MetricDate, row.CatalogKey, row.ListingId));
         var expectedIdentities = new HashSet<MetricIdentity>();
+        var metricDigestsByDate = new Dictionary<DateOnly, List<MetricDigest>>();
         var materializedMetricCount = 0;
 
         for (var date = request.FromInclusive; date < request.ToExclusive; date = date.AddDays(1))
         {
             var dayStartUtc = ToUtcStart(date);
             var dayEndUtc = ToUtcStart(date.AddDays(1));
+            var dayMetricDigests = new List<MetricDigest>();
+            metricDigestsByDate.Add(date, dayMetricDigests);
             foreach (var catalogIntervals in intervals
                          .Where(interval =>
                              interval.StartsAtUtc < dayEndUtc &&
@@ -119,6 +154,10 @@ internal sealed class EfAnalyticsAggregateWriter(
                         listingEvents);
                     var identity = new MetricIdentity(date, catalogIntervals.Key, listingId);
                     expectedIdentities.Add(identity);
+                    dayMetricDigests.Add(new MetricDigest(
+                        catalogIntervals.Key,
+                        listingId,
+                        digest));
                     if (!existingByIdentity.TryGetValue(identity, out var metricRow))
                     {
                         metricRow = new AnalyticsDailyListingMetricRow
@@ -154,11 +193,69 @@ internal sealed class EfAnalyticsAggregateWriter(
                 new MetricIdentity(row.MetricDate, row.CatalogKey, row.ListingId)))
             .ToArray();
         dbContext.DailyListingMetrics.RemoveRange(staleRows);
+
+        var readinessByDate = existingReadinessRows.ToDictionary(row => row.MetricDate);
+        var dayResults = new List<AggregateDayResult>(metricDigestsByDate.Count);
+        foreach (var item in metricDigestsByDate.OrderBy(item => item.Key))
+        {
+            var dayStartUtc = ToUtcStart(item.Key);
+            var dayEndUtc = ToUtcStart(item.Key.AddDays(1));
+            var activeIntervals = intervals
+                .Where(interval =>
+                    interval.StartsAtUtc < dayEndUtc &&
+                    interval.EndsAtUtc > dayStartUtc)
+                .OrderBy(interval => interval.Reference.CatalogKey, StringComparer.Ordinal)
+                .ThenBy(interval => interval.StartsAtUtc)
+                .ThenBy(interval => interval.Reference.PublicReadRevisionId)
+                .ToArray();
+            var dayDigest = ComputeDaySourceDigest(
+                item.Key,
+                activeIntervals,
+                item.Value);
+            var dayResult = new AggregateDayResult(item.Key, dayDigest, item.Value.Count);
+            dayResults.Add(dayResult);
+            dbContext.AggregateRunItems.Add(new AnalyticsAggregateRunItemRow
+            {
+                RunId = lease.RunId,
+                MetricDate = dayResult.Date,
+                SourceDigest = dayResult.SourceDigest,
+                MetricCount = dayResult.MetricCount,
+                CompletedAtUtc = calculatedAtUtc,
+            });
+            if (!readinessByDate.TryGetValue(dayResult.Date, out var readinessRow))
+            {
+                readinessRow = new AnalyticsAggregateReadinessRow
+                {
+                    MetricDate = dayResult.Date,
+                    RunId = lease.RunId,
+                    SourceDigest = dayResult.SourceDigest,
+                };
+                dbContext.AggregateReadiness.Add(readinessRow);
+            }
+
+            readinessRow.RunId = lease.RunId;
+            readinessRow.SourceDigest = dayResult.SourceDigest;
+            readinessRow.MetricCount = dayResult.MetricCount;
+            readinessRow.CompletedAtUtc = calculatedAtUtc;
+        }
+
+        var runSourceDigest = ComputeRunSourceDigest(request, dayResults);
+        runRow.State = (int)AnalyticsAggregateRunState.Complete;
+        runRow.CompletedAtUtc = calculatedAtUtc;
+        runRow.LeaseToken = null;
+        runRow.LeaseExpiresAtUtc = null;
+        runRow.SourceDigest = runSourceDigest;
+        runRow.MaterializedDayCount = dayResults.Count;
+        runRow.MaterializedMetricCount = materializedMetricCount;
+        runRow.RemovedStaleMetricCount = staleRows.Length;
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new AnalyticsAggregateRebuildResult(
+            lease.RunId,
             request.FromInclusive,
             request.ToExclusive,
+            runSourceDigest,
+            dayResults.Count,
             materializedMetricCount,
             staleRows.Length,
             calculatedAtUtc);
@@ -337,9 +434,69 @@ internal sealed class EfAnalyticsAggregateWriter(
                 .Append('\n');
         }
 
-        return Convert.ToHexStringLower(
-            SHA256.HashData(Encoding.UTF8.GetBytes(source.ToString())));
+        return Hash(source);
     }
+
+    private static string ComputeDaySourceDigest(
+        DateOnly date,
+        IReadOnlyList<PublicReadInterval> activeIntervals,
+        IReadOnlyList<MetricDigest> metricDigests)
+    {
+        var source = new StringBuilder();
+        source.Append(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .Append('\n');
+        foreach (var interval in activeIntervals)
+        {
+            source.Append(interval.Reference.CatalogKey)
+                .Append('|')
+                .Append(interval.Reference.PublicReadRevisionId.ToString("D"))
+                .Append('|')
+                .Append(interval.Reference.PublicReadContentDigest)
+                .Append('|')
+                .Append(interval.Reference.MembershipDigest)
+                .Append('\n');
+        }
+
+        foreach (var metric in metricDigests
+                     .OrderBy(item => item.CatalogKey, StringComparer.Ordinal)
+                     .ThenBy(item => item.ListingId))
+        {
+            source.Append(metric.CatalogKey)
+                .Append('|')
+                .Append(metric.ListingId.ToString("D"))
+                .Append('|')
+                .Append(metric.SourceDigest)
+                .Append('\n');
+        }
+
+        return Hash(source);
+    }
+
+    private static string ComputeRunSourceDigest(
+        RebuildDailyAnalyticsMetricsRequest request,
+        IReadOnlyList<AggregateDayResult> days)
+    {
+        var source = new StringBuilder();
+        source.Append(request.FromInclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .Append('|')
+            .Append(request.ToExclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .Append('\n');
+        foreach (var day in days.OrderBy(item => item.Date))
+        {
+            source.Append(day.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+                .Append('|')
+                .Append(day.SourceDigest)
+                .Append('|')
+                .Append(day.MetricCount.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+
+        return Hash(source);
+    }
+
+    private static string Hash(StringBuilder source) =>
+        Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(source.ToString())));
 
     private static DateTimeOffset ToUtcStart(DateOnly date) =>
         new(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
@@ -364,4 +521,14 @@ internal sealed class EfAnalyticsAggregateWriter(
         DateOnly Date,
         string CatalogKey,
         Guid ListingId);
+
+    private sealed record MetricDigest(
+        string CatalogKey,
+        Guid ListingId,
+        string SourceDigest);
+
+    private sealed record AggregateDayResult(
+        DateOnly Date,
+        string SourceDigest,
+        int MetricCount);
 }

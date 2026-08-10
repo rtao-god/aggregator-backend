@@ -221,7 +221,9 @@ internal sealed class PostgresAnalyticsAggregationOperationStore(
         if (row.State != (int)AnalyticsAggregateRunState.Rebuilding ||
             row.LeaseToken != lease.LeaseToken ||
             row.FromInclusive != lease.FromInclusive ||
-            row.ToExclusive != lease.ToExclusive)
+            row.ToExclusive != lease.ToExclusive ||
+            row.StartedAtUtc != lease.StartedAtUtc ||
+            row.LeaseExpiresAtUtc != lease.LeaseExpiresAtUtc)
         {
             throw new AnalyticsCommandException(
                 "Analytics.Aggregation",
