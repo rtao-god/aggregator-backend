@@ -78,9 +78,17 @@ public sealed class OutboxWorkerResilienceTests
         var publishOffset = source.IndexOf(
             "await _publisher.PublishAsync(message, cancellationToken);",
             StringComparison.Ordinal);
+        var shutdownCancellationOffset = source.IndexOf(
+            "catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)",
+            publishOffset,
+            StringComparison.Ordinal);
+        var failureCatchOffset = source.IndexOf(
+            "catch (Exception exception)",
+            shutdownCancellationOffset,
+            StringComparison.Ordinal);
         var failureOffset = source.IndexOf(
             "var deadLettered = await MarkFailedAsync(",
-            publishOffset,
+            failureCatchOffset,
             StringComparison.Ordinal);
         var typedFailureOffset = source.IndexOf(
             "throw new OutboxDispatchAttemptException(",
@@ -88,8 +96,9 @@ public sealed class OutboxWorkerResilienceTests
             StringComparison.Ordinal);
 
         Assert.True(
-            publishOffset >= 0 && failureOffset > publishOffset &&
+            publishOffset >= 0 && shutdownCancellationOffset > publishOffset &&
+            failureCatchOffset > shutdownCancellationOffset && failureOffset > failureCatchOffset &&
             typedFailureOffset > failureOffset,
-            "The dispatcher must persist the failed attempt before returning a typed recoverable failure to the execution host.");
+            "Only actual host shutdown may bypass failure recording; independent publisher cancellation must become a typed durable attempt failure.");
     }
 }
