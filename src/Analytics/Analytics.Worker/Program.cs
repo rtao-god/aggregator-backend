@@ -48,17 +48,11 @@ public static class Program
         var analyticsConnectionString = builder.Configuration.GetConnectionString("Analytics")
             ?? throw new InvalidOperationException(
                 "Configuration value 'ConnectionStrings:Analytics' is required.");
-        var outboxBrokerUriValue = builder.Configuration[
-            $"{AnalyticsOutboxWorkerOptions.SectionName}:BrokerUri"];
         var outboxOptions = new AnalyticsOutboxWorkerOptions
         {
             ConnectionString = analyticsConnectionString,
-            BrokerUri = string.IsNullOrWhiteSpace(outboxBrokerUriValue)
-                ? publicReadOptions.BrokerUri
-                : new Uri(outboxBrokerUriValue, UriKind.Absolute),
-            Exchange = builder.Configuration[
-                $"{AnalyticsOutboxWorkerOptions.SectionName}:Exchange"]
-                ?? publicReadOptions.Exchange,
+            BrokerUri = publicReadOptions.BrokerUri,
+            Exchange = publicReadOptions.Exchange,
             DispatcherIdentity = builder.Configuration[
                 $"{AnalyticsOutboxWorkerOptions.SectionName}:DispatcherIdentity"]
                 ?? "analytics-promotion-usage-outbox",
