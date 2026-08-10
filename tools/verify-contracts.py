@@ -8,6 +8,10 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "contracts" / "runtime-contract-manifest.json"
+STRICT_JSON_REQUIRED = (
+    "UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow",
+    "allowIntegerValues: false",
+)
 
 
 def read_text(relative_path: str) -> str:
@@ -39,14 +43,43 @@ def verify_required(entry: dict[str, Any]) -> list[str]:
     return failures
 
 
+def normalize_entry(section: str, raw_entry: Any) -> dict[str, Any]:
+    if isinstance(raw_entry, dict):
+        if "file" not in raw_entry:
+            raise AssertionError(f"{section} entry does not declare a file: {raw_entry!r}")
+        return raw_entry
+
+    if section == "strictJsonPrograms" and isinstance(raw_entry, str):
+        return {
+            "name": raw_entry,
+            "file": raw_entry,
+            "required": list(STRICT_JSON_REQUIRED),
+        }
+
+    raise AssertionError(
+        f"{section} entry must be an object with file/required fields: {raw_entry!r}"
+    )
+
+
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     failures: list[str] = []
     identities: dict[str, str] = {}
 
-    for section in ("contracts", "http", "workers"):
-        for entry in manifest.get(section, []):
-            failures.extend(verify_required(entry))
+    for section in ("contracts", "http", "workers", "strictJsonPrograms"):
+        seen_names: set[str] = set()
+        for raw_entry in manifest.get(section, []):
+            try:
+                entry = normalize_entry(section, raw_entry)
+                name = str(entry.get("name", entry["file"]))
+                if name in seen_names:
+                    failures.append(f"{section}: duplicate entry name {name!r}")
+                seen_names.add(name)
+                failures.extend(verify_required(entry))
+            except (AssertionError, KeyError, TypeError, ValueError) as exception:
+                failures.append(f"{section}: {exception}")
+                continue
+
             if section == "contracts":
                 content = read_text(str(entry["file"]))
                 for line in content.splitlines():
@@ -63,17 +96,6 @@ def main() -> int:
                             f"{previous} and {entry['file']}"
                         )
 
-    for relative_path in manifest.get("strictJsonPrograms", []):
-        content = read_text(str(relative_path))
-        for token in (
-            "UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow",
-            "allowIntegerValues: false",
-        ):
-            if token not in content:
-                failures.append(
-                    f"Strict JSON token {token!r} is missing from {relative_path}"
-                )
-
     if failures:
         print("Runtime contract verification failed:", file=sys.stderr)
         for failure in failures:
@@ -83,8 +105,9 @@ def main() -> int:
     print(
         f"Runtime contract verification succeeded for "
         f"{len(manifest.get('contracts', []))} contracts, "
-        f"{len(manifest.get('http', []))} HTTP boundaries, and "
-        f"{len(manifest.get('workers', []))} worker boundaries."
+        f"{len(manifest.get('http', []))} HTTP boundaries, "
+        f"{len(manifest.get('workers', []))} worker boundaries, and "
+        f"{len(manifest.get('strictJsonPrograms', []))} strict JSON programs."
     )
     return 0
 
