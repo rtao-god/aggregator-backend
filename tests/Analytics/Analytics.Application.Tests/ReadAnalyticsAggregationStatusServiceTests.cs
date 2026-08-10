@@ -135,9 +135,7 @@ public sealed class ReadAnalyticsAggregationStatusServiceTests
 
     private static AnalyticsAggregateDayReadiness CreateDay(DateOnly date, int suffix) =>
         AnalyticsAggregateDayReadiness.Create(
-            Guid.Parse($"01990200-0000-7000-8000-{suffix:000000000000}") == Guid.Empty
-                ? date
-                : date,
+            date,
             Guid.Parse($"01990200-0000-7000-8000-{suffix:000000000000}"),
             new string((char)('a' + suffix - 1), 64),
             metricCount: suffix,
