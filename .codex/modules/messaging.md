@@ -2,7 +2,7 @@
 
 ## Owner
 
-`Platform.Messaging` owns only the technical at-least-once transport envelope, PostgreSQL outbox leasing, RabbitMQ publication, and delivery-attempt lifecycle. Business event names, payloads, schema identities, correlation, and causation remain producer-owned.
+`Platform.Messaging` owns only the technical at-least-once transport envelope, PostgreSQL outbox leasing, RabbitMQ publication, delivery-attempt lifecycle, and the shared classification of recoverable dispatch failures. Business event names, payloads, schema identities, correlation, and causation remain producer-owned.
 
 ## Outbox table contract
 
@@ -12,25 +12,36 @@ The dispatcher uses `FOR UPDATE SKIP LOCKED` only for queue claiming. Before any
 
 ## Execution-host retry contract
 
-`PostgresOutboxDispatcher` owns one exact dispatch attempt. When publication or integrity validation fails, it first records the failed attempt, releases the lease or moves the message to dead letter when its budget is exhausted, then returns the exception to the execution host. The execution host owns only the retry cadence and diagnostics.
+`PostgresOutboxDispatcher` owns one exact dispatch attempt. When publication or integrity validation fails, it records the failed attempt, releases the lease or moves the message to dead letter when its budget is exhausted, then raises `OutboxDispatchAttemptException` with the exact message identity and terminal-state flag. The execution host owns only retry cadence and diagnostics.
+
+`OutboxDispatchFailurePolicy` permits a host-loop retry only for:
+
+- a typed dispatch attempt whose failure transition was persisted;
+- exact lease loss, because another dispatcher now owns that transition;
+- an explicitly transient Npgsql failure;
+- timeout or I/O failure, including a recoverable nested/aggregate form.
+
+An unknown mapping, schema, configuration, or programming exception is not recoverable and leaves the `BackgroundService` fail-fast. The worker cannot turn every exception into an infinite retry loop.
 
 Catalog, Query, Analytics, and Promotion outbox hosts must:
 
 - treat shutdown cancellation as normal termination;
-- log the exact dispatch exception with the owner worker identity;
+- apply `OutboxDispatchFailurePolicy` before catching a dispatch exception;
+- log the exact recoverable exception with the owner worker identity;
 - wait the validated owner poll delay before the next claim;
-- keep the process alive so transient PostgreSQL or RabbitMQ outages can recover;
+- keep the process alive through transient PostgreSQL or RabbitMQ outages;
 - never reset delivery attempts, lease state, or dead-letter evidence in the host loop.
 
-A permanent payload-integrity failure is already dead-lettered by the dispatcher before the host continues. A transient broker failure remains eligible until the bounded delivery-attempt budget is exhausted. The host does not distinguish those states by reconstructing message meaning; it only applies the same bounded delay after the durable owner transition.
+A permanent payload-integrity failure is already dead-lettered by the dispatcher before the host continues. A transient broker failure remains eligible until the bounded delivery-attempt budget is exhausted. The host does not reconstruct message meaning; it applies the bounded delay only after the shared policy proves that continuing is safe.
 
 ## Proof
 
 - options validation rejects unsafe SQL identifiers and invalid delivery-attempt budgets;
 - payload-integrity tests reject non-canonical digests and changed payloads before publisher or broker access;
+- retry-policy tests prove recorded attempts, lost leases, timeout/I/O, nested and aggregate failures, and unknown fail-fast behavior;
 - Catalog, Catalog Media, and Promotion migrations run in their real prerequisite order and prove exact `text` payload storage plus complete lease/dead-letter tuples on PostgreSQL;
 - Catalog suppression persistence proves aggregate history and outbox atomicity, including rollback on outbox conflict;
 - PostgreSQL leasing proves that a stale dispatcher cannot mutate a replacement lease;
-- dispatcher integration tests prove failure state is recorded before the exception returns to the execution host;
-- architecture tests require every durable outbox host to catch, log, delay, and retry without a local `throw` path;
+- dispatcher integration tests prove failure state is recorded before a typed exception returns to the execution host;
+- architecture tests require every durable outbox host to classify, log, delay, and retry recoverable failures without a local `throw` path;
 - RabbitMQ delivery executes in CI rather than returning early when infrastructure is absent.
