@@ -1,0 +1,42 @@
+{
+  "contract": "analytics-promotion-closed-usage",
+  "producer": {
+    "owner": "Analytics",
+    "routingKey": "analytics.promotion-usage-window.closed",
+    "contractIdentity": "analytics.promotion-usage-window-closed@1",
+    "contractPath": "src/Analytics/Analytics.Contracts/PromotionUsageIntegrationContracts.cs",
+    "derivationPath": "src/Analytics/Analytics.Application/PromotionUsageWindowDerivation.cs",
+    "materializerPath": "src/Analytics/Analytics.Infrastructure/AnalyticsPromotionUsageMaterializer.cs",
+    "migrationPath": "src/Analytics/Analytics.Migrations/Migrations/V007__promotion_usage_outbox.sql",
+    "workerProgramPath": "src/Analytics/Analytics.Worker/Program.cs"
+  },
+  "consumer": {
+    "owner": "Promotion",
+    "applicationPath": "src/Promotion/Promotion.Application/AnalyticsPromotionUsageProjection.cs",
+    "storePath": "src/Promotion/Promotion.Infrastructure/PostgresPromotionUsageProjectionStore.cs",
+    "migrationPath": "src/Promotion/Promotion.Migrations/Migrations/V006__analytics_promotion_usage_revisions.sql",
+    "workerPath": "src/Promotion/Promotion.Worker/PromotionUsageProjectionWorker.cs",
+    "workerOptionsPath": "src/Promotion/Promotion.Worker/PromotionUsageProjectionWorkerOptions.cs",
+    "workerProgramPath": "src/Promotion/Promotion.Worker/Program.cs"
+  },
+  "requiredSemantics": [
+    "accepted-interactions-only",
+    "closed-window-only",
+    "explicit-observed-zero-correction",
+    "stable-usage-window-identity",
+    "contiguous-aggregate-revisions",
+    "analytics-transactional-outbox",
+    "publisher-confirmed-delivery",
+    "promotion-transactional-inbox",
+    "ack-after-persistence-commit",
+    "duplicate-safe",
+    "stale-and-gap-fail-closed",
+    "no-cross-database-access",
+    "no-synchronous-cross-context-call"
+  ],
+  "operationalProof": {
+    "decision": "docs/decisions/analytics-promotion-usage-integration.md",
+    "runbook": "docs/runbooks/analytics-promotion-usage-replay.md",
+    "module": ".codex/modules/analytics-promotion-usage.md"
+  }
+}
