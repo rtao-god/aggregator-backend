@@ -34,9 +34,11 @@ public sealed class AnalyticsSummaryApiContractTests
         Assert.NotNull(summary);
         Assert.Equal(AggregateReadinessStateContract.Complete, summary.Readiness);
         Assert.Equal(2, summary.SourceDayCount);
-        Assert.NotNull(summary.Counts);
-        Assert.Equal(3, summary.Counts.OrganicImpressions);
-        Assert.Matches("^[0-9a-f]{64}$", summary.AggregationSourceDigest);
+        var counts = Assert.IsType<InteractionCountsContract>(summary.Counts);
+        Assert.Equal(3L, counts.OrganicImpressions);
+        Assert.Matches(
+            "^[0-9a-f]{64}$",
+            Assert.IsType<string>(summary.AggregationSourceDigest));
         Assert.Empty(summary.UnavailableDays);
     }
 

@@ -44,14 +44,15 @@ public sealed class ReadListingMetricsSummaryServiceTests
 
         Assert.Equal(AggregateReadinessStateContract.Complete, first.Readiness);
         Assert.Equal(2, first.SourceDayCount);
-        Assert.Matches("^[0-9a-f]{64}$", first.AggregationSourceDigest);
-        Assert.Equal(first.AggregationSourceDigest, replay.AggregationSourceDigest);
+        var sourceDigest = Assert.IsType<string>(first.AggregationSourceDigest);
+        Assert.Matches("^[0-9a-f]{64}$", sourceDigest);
+        Assert.Equal(sourceDigest, replay.AggregationSourceDigest);
         Assert.Empty(first.UnavailableDays);
-        Assert.NotNull(first.Counts);
-        Assert.Equal(11, first.Counts.OrganicImpressions);
-        Assert.Equal(22, first.Counts.SponsoredImpressions);
-        Assert.Equal(33, first.Counts.ListingOpens);
-        Assert.Equal(99, first.Counts.ExternalProfileClicks);
+        var counts = Assert.IsType<InteractionCountsContract>(first.Counts);
+        Assert.Equal(11L, counts.OrganicImpressions);
+        Assert.Equal(22L, counts.SponsoredImpressions);
+        Assert.Equal(33L, counts.ListingOpens);
+        Assert.Equal(99L, counts.ExternalProfileClicks);
     }
 
     [Fact]
