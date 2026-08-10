@@ -71,9 +71,9 @@ public static class PublicSitemapCursorCodec
                 QuerySeoLocale.Create(payload.LastLocale, nameof(payload.LastLocale)),
                 QuerySeoPath.CreateIndexable(payload.LastPath, nameof(payload.LastPath)));
         }
-        catch (ArgumentException exception) when (exception.ParamName != nameof(encoded))
+        catch (QueryDomainException exception)
         {
-            throw InvalidCursor("Sitemap cursor contains invalid owner values.", exception);
+            throw InvalidCursor("Sitemap cursor contains invalid Query-owned values.", exception);
         }
         catch (FormatException exception)
         {
@@ -82,6 +82,11 @@ public static class PublicSitemapCursorCodec
         catch (JsonException exception)
         {
             throw InvalidCursor("Sitemap cursor JSON does not match the exact contract.", exception);
+        }
+        catch (ArgumentException exception) when (
+            string.Equals(exception.ParamName, "cursor", StringComparison.Ordinal))
+        {
+            throw;
         }
     }
 
