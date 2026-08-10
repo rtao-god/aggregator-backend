@@ -65,17 +65,23 @@ internal sealed class EfAnalyticsAggregateWriter(
             .ThenBy(row => row.ActivatedAtUtc)
             .ThenBy(row => row.PublicReadRevisionId)
             .ToArrayAsync(cancellationToken);
+        if (referenceRows.Length == 0)
+        {
+            throw PersistenceFailure(
+                "ANALYTICS_PUBLIC_READ_REFERENCE_UNAVAILABLE",
+                "Analytics cannot prove aggregate completeness because no public-read reference is available before the requested range end.",
+                "Consume or replay the exact Query public-read activation stream before rebuilding Analytics aggregates.");
+        }
+
         var referenceIds = referenceRows
             .Select(row => row.PublicReadRevisionId)
             .ToArray();
-        var membershipRows = referenceIds.Length == 0
-            ? []
-            : await dbContext.PublicListingReferences
-                .AsNoTracking()
-                .Where(row => referenceIds.Contains(row.PublicReadRevisionId))
-                .OrderBy(row => row.PublicReadRevisionId)
-                .ThenBy(row => row.ListingId)
-                .ToArrayAsync(cancellationToken);
+        var membershipRows = await dbContext.PublicListingReferences
+            .AsNoTracking()
+            .Where(row => referenceIds.Contains(row.PublicReadRevisionId))
+            .OrderBy(row => row.PublicReadRevisionId)
+            .ThenBy(row => row.ListingId)
+            .ToArrayAsync(cancellationToken);
         var eventRows = await dbContext.InteractionEvents
             .AsNoTracking()
             .Where(row =>

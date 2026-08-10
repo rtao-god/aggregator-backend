@@ -32,6 +32,7 @@ public sealed class ReadAnalyticsAggregationStatusService(
             cancellationToken);
         ArgumentNullException.ThrowIfNull(evidence);
         ArgumentNullException.ThrowIfNull(evidence.CompletedDays);
+        ValidateLatestRunScope(evidence.LatestRun, request);
 
         var completedByDate = new Dictionary<DateOnly, AnalyticsAggregateDayReadiness>();
         foreach (var day in evidence.CompletedDays)
@@ -68,26 +69,28 @@ public sealed class ReadAnalyticsAggregationStatusService(
         IReadOnlyList<DateOnly> missingDates,
         AnalyticsAggregateRun? latestRun)
     {
-        if (missingDates.Count == 0)
+        if (latestRun?.State == AnalyticsAggregateRunState.Rebuilding)
         {
-            return AggregateReadinessState.Complete;
+            return AggregateReadinessState.Rebuilding;
         }
 
-        if (latestRun is null ||
-            latestRun.FromInclusive > missingDates[0] ||
-            latestRun.ToExclusive <= missingDates[^1])
+        if (latestRun?.State == AnalyticsAggregateRunState.Blocked)
         {
-            return AggregateReadinessState.Partial;
+            return AggregateReadinessState.Blocked;
         }
 
-        return latestRun.State switch
+        if (latestRun?.State == AnalyticsAggregateRunState.Complete &&
+            missingDates.Any(date =>
+                date >= latestRun.FromInclusive &&
+                date < latestRun.ToExclusive))
         {
-            AnalyticsAggregateRunState.Rebuilding => AggregateReadinessState.Rebuilding,
-            AnalyticsAggregateRunState.Blocked => AggregateReadinessState.Blocked,
-            AnalyticsAggregateRunState.Complete => AggregateReadinessState.Partial,
-            _ => throw CorruptEvidence(
-                $"Aggregation status contains unsupported run state '{latestRun.State}'."),
-        };
+            throw CorruptEvidence(
+                "Complete aggregation run is missing readiness evidence inside its exact date range.");
+        }
+
+        return missingDates.Count == 0
+            ? AggregateReadinessState.Complete
+            : AggregateReadinessState.Partial;
     }
 
     private static string? ResolveUnavailableReason(
@@ -102,6 +105,23 @@ public sealed class ReadAnalyticsAggregationStatusService(
         _ => throw CorruptEvidence(
             $"Aggregation status contains unsupported readiness '{readiness}'."),
     };
+
+    private static void ValidateLatestRunScope(
+        AnalyticsAggregateRun? latestRun,
+        DailyMetricsRangeRequest request)
+    {
+        if (latestRun is null)
+        {
+            return;
+        }
+
+        if (latestRun.FromInclusive >= request.ToExclusive ||
+            latestRun.ToExclusive <= request.FromInclusive)
+        {
+            throw CorruptEvidence(
+                "Aggregation status store returned a latest run outside the requested range.");
+        }
+    }
 
     private static IEnumerable<DateOnly> EnumerateDates(
         DateOnly fromInclusive,
