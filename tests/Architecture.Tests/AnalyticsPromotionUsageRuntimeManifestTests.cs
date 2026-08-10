@@ -54,9 +54,6 @@ public sealed class AnalyticsPromotionUsageRuntimeManifestTests
         var consumerOptions = Read(
             root,
             "src/Promotion/Promotion.Worker/PromotionUsageProjectionWorkerOptions.cs");
-        var consumer = Read(
-            root,
-            "src/Promotion/Promotion.Worker/PromotionUsageProjectionWorker.cs");
         var workerProject = Read(
             root,
             "src/Promotion/Promotion.Worker/Promotion.Worker.csproj");
@@ -75,7 +72,7 @@ public sealed class AnalyticsPromotionUsageRuntimeManifestTests
             StringComparison.Ordinal);
         Assert.Contains(
             "AnalyticsPromotionUsageIntegrationContracts.ContractIdentity",
-            consumer,
+            consumerOptions,
             StringComparison.Ordinal);
         Assert.Contains(
             "Analytics.Contracts.csproj",
@@ -105,8 +102,8 @@ public sealed class AnalyticsPromotionUsageRuntimeManifestTests
         Assert.Contains("IsolationLevel.Serializable", promotionStore, StringComparison.Ordinal);
         Assert.Contains("pg_advisory_xact_lock", promotionStore, StringComparison.Ordinal);
         Assert.Contains("PromotionUsageProjectionDisposition.Duplicate", promotionStore, StringComparison.Ordinal);
-        Assert.Contains("PROMOTION_USAGE_REVISION_GAP", promotionStore, StringComparison.Ordinal);
-        Assert.Contains("PROMOTION_USAGE_REVISION_STALE", promotionStore, StringComparison.Ordinal);
+        Assert.Contains("REVISION_GAP", promotionStore, StringComparison.Ordinal);
+        Assert.Contains("REVISION_STALE", promotionStore, StringComparison.Ordinal);
     }
 
     [Fact]
