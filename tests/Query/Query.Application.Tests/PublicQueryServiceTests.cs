@@ -98,16 +98,19 @@ public sealed class PublicQueryServiceTests
                 categoryKey: "recording-studio",
                 districtKey: "mitte",
                 listingKind: PublicListingKindContract.Place,
-                contactKind: PublicContactKindContract.WhatsApp),
+                contactKind: PublicContactKindContract.WhatsApp,
+                marketZone: PublicMarketZoneContract.PrimaryMarket),
             CancellationToken.None);
 
         Assert.Equal("recording-studio", store.LastCriteria?.CategoryKey);
         Assert.Equal("mitte", store.LastCriteria?.DistrictKey);
         Assert.Equal(QueryListingKind.Place, store.LastCriteria?.ListingKind);
         Assert.Equal(QueryContactKind.WhatsApp, store.LastCriteria?.ContactKind);
+        Assert.Equal(QueryGeographyState.PrimaryMarket, store.LastCriteria?.MarketZone);
         Assert.Equal("mitte", result.Query.DistrictKey);
         Assert.Equal(PublicListingKindContract.Place, result.Query.ListingKind);
         Assert.Equal(PublicContactKindContract.WhatsApp, result.Query.ContactKind);
+        Assert.Equal(PublicMarketZoneContract.PrimaryMarket, result.Query.MarketZone);
         Assert.Equal(2, result.CategoryFacets.Count);
         Assert.Equal(7, result.CategoryFacets.Single(item => item.Key == "recording-studio").Count);
         Assert.Equal(5, Assert.Single(result.DistrictFacets).Count);
@@ -204,6 +207,30 @@ public sealed class PublicQueryServiceTests
         var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
             CatalogKey,
             SearchRequest(contactKind: PublicContactKindContract.WhatsApp),
+            CancellationToken.None));
+
+        Assert.Equal("QUERY_STORE_CONTRACT_INVALID", exception.Code);
+    }
+
+    [Fact]
+    public async Task DocumentOutsideRequestedMarketZoneIsStoreContractFailure()
+    {
+        var listing = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000016"),
+            "de-DE",
+            "Nearby Studio",
+            geographyState: QueryGeographyState.NearbyMarket);
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(
+                CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000006")),
+                [listing]),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+
+        var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
+            CatalogKey,
+            SearchRequest(marketZone: PublicMarketZoneContract.PrimaryMarket),
             CancellationToken.None));
 
         Assert.Equal("QUERY_STORE_CONTRACT_INVALID", exception.Code);
@@ -321,6 +348,42 @@ public sealed class PublicQueryServiceTests
     }
 
     [Fact]
+    public async Task CursorCannotBeReusedAfterMarketZoneChanges()
+    {
+        var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000027"));
+        var first = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000028"),
+            "de-DE",
+            "Primary One");
+        var second = CreateDocument(
+            Guid.Parse("0198a300-0000-7000-8000-000000000029"),
+            "de-DE",
+            "Primary Two");
+        var store = new StubPublicQueryStore
+        {
+            Page = CreatePage(revision, [first, second]),
+        };
+        var service = new PublicQueryService(store, new FixedClock(Now));
+        var firstPage = await service.SearchAsync(
+            CatalogKey,
+            SearchRequest(
+                pageSize: 1,
+                marketZone: PublicMarketZoneContract.PrimaryMarket),
+            CancellationToken.None);
+        Assert.NotNull(firstPage.NextCursor);
+
+        var exception = await Assert.ThrowsAsync<QueryReadException>(() => service.SearchAsync(
+            CatalogKey,
+            SearchRequest(
+                pageSize: 1,
+                cursor: firstPage.NextCursor,
+                marketZone: PublicMarketZoneContract.NearbyMarket),
+            CancellationToken.None));
+
+        Assert.Equal("QUERY_CURSOR_SCOPE_MISMATCH", exception.Code);
+    }
+
+    [Fact]
     public async Task CardUsesExactRequestedLocalizationWhenAvailable()
     {
         var revision = CreateRevision(Guid.Parse("0198a300-0000-7000-8000-000000000030"));
@@ -392,7 +455,8 @@ public sealed class PublicQueryServiceTests
         PublicListingKindContract? listingKind = null,
         PublicContactKindContract? contactKind = null,
         int pageSize = 20,
-        string? cursor = null) =>
+        string? cursor = null,
+        PublicMarketZoneContract? marketZone = null) =>
         new(
             locale,
             categoryKey,
@@ -400,7 +464,8 @@ public sealed class PublicQueryServiceTests
             listingKind,
             contactKind,
             pageSize,
-            cursor);
+            cursor,
+            marketZone);
 
     private static PublicReadPageSnapshot CreatePage(
         PublicReadRevision revision,
@@ -440,7 +505,8 @@ public sealed class PublicQueryServiceTests
         string title,
         string districtKey = "mitte",
         QueryListingKind listingKind = QueryListingKind.Place,
-        IReadOnlyList<QueryContactKind>? contactKinds = null) =>
+        IReadOnlyList<QueryContactKind>? contactKinds = null,
+        QueryGeographyState geographyState = QueryGeographyState.PrimaryMarket) =>
         QueryListingDocument.Create(
             listingId,
             Guid.CreateVersion7(),
@@ -450,7 +516,7 @@ public sealed class PublicQueryServiceTests
             [new QueryLocalizedDocument(locale, $"/{locale}/listings/{listingId:N}", title, QueryFieldState.Missing, null)],
             ["recording-studio"],
             [],
-            new QueryGeographyDocument(QueryGeographyState.PrimaryMarket, 52.5m, 13.4m, districtKey),
+            new QueryGeographyDocument(geographyState, 52.5m, 13.4m, districtKey),
             (contactKinds ?? [])
                 .Select((kind, index) => new QueryContactDocument(
                     Guid.CreateVersion7(),
