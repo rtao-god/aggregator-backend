@@ -45,6 +45,35 @@ public static class Program
             DeadLetterExchange = publicReadOptions.DeadLetterExchange,
         };
         listingAccessOptions.Validate();
+        var analyticsConnectionString = builder.Configuration.GetConnectionString("Analytics")
+            ?? throw new InvalidOperationException(
+                "Configuration value 'ConnectionStrings:Analytics' is required.");
+        var outboxBrokerUriValue = builder.Configuration[
+            $"{AnalyticsOutboxWorkerOptions.SectionName}:BrokerUri"];
+        var outboxOptions = new AnalyticsOutboxWorkerOptions
+        {
+            ConnectionString = analyticsConnectionString,
+            BrokerUri = string.IsNullOrWhiteSpace(outboxBrokerUriValue)
+                ? publicReadOptions.BrokerUri
+                : new Uri(outboxBrokerUriValue, UriKind.Absolute),
+            Exchange = builder.Configuration[
+                $"{AnalyticsOutboxWorkerOptions.SectionName}:Exchange"]
+                ?? publicReadOptions.Exchange,
+            DispatcherIdentity = builder.Configuration[
+                $"{AnalyticsOutboxWorkerOptions.SectionName}:DispatcherIdentity"]
+                ?? "analytics-promotion-usage-outbox",
+            BatchSize = builder.Configuration.GetValue<int?>(
+                $"{AnalyticsOutboxWorkerOptions.SectionName}:BatchSize") ?? 50,
+            MaximumDeliveryAttempts = builder.Configuration.GetValue<int?>(
+                $"{AnalyticsOutboxWorkerOptions.SectionName}:MaximumDeliveryAttempts") ?? 8,
+            LeaseDuration = TimeSpan.FromSeconds(
+                builder.Configuration.GetValue<int?>(
+                    $"{AnalyticsOutboxWorkerOptions.SectionName}:LeaseDurationSeconds") ?? 120),
+            EmptyDelay = TimeSpan.FromMilliseconds(
+                builder.Configuration.GetValue<int?>(
+                    $"{AnalyticsOutboxWorkerOptions.SectionName}:EmptyDelayMilliseconds") ?? 2000),
+        };
+        outboxOptions.Validate();
 
         builder.Services.AddSingleton(aggregationOptions);
         builder.Services.AddSingleton(publicReadOptions);
@@ -54,6 +83,7 @@ public static class Program
         builder.Services.AddPlatformObservability(
             builder.Configuration,
             "analytics-worker");
+        builder.Services.AddAnalyticsOutboxWorker(outboxOptions);
         builder.Services.AddHostedService<AnalyticsAggregationWorker>();
         builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();
         builder.Services.AddHostedService<AnalyticsListingAccessProjectionWorker>();
