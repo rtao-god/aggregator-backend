@@ -93,8 +93,12 @@ public sealed class VisibilityBlockIsolationTests
             CatalogKey,
             afterListingId: null,
             maximumDocuments: 20,
-            categoryKey: null,
-            requestedLocale: "de-DE",
+            criteria: new PublicListingSearchCriteria(
+                "de-DE",
+                CategoryKey: null,
+                DistrictKey: null,
+                ListingKind: null,
+                ContactKind: null),
             readAtUtc: Timestamp.AddMinutes(2),
             CancellationToken.None));
 

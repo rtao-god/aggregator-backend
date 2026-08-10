@@ -52,6 +52,27 @@ public sealed class NpgsqlPublicSearchStoreContractTests
     }
 
     [Fact]
+    public void SafetyAwareStoreUsesTypedCriteriaAndRecomputesEveryFacetAfterSuppression()
+    {
+        var pageSource = ReadRepositoryFile(
+            "src/Query/Query.Infrastructure/SafetyAwarePublicQueryStore.Page.cs");
+
+        Assert.Contains("PublicListingSearchCriteria criteria", pageSource, StringComparison.Ordinal);
+        Assert.Contains("InnerPageSize,\n                criteria,", pageSource, StringComparison.Ordinal);
+        Assert.Contains("FROM documents.listing_category category", pageSource, StringComparison.Ordinal);
+        Assert.Contains("FROM documents.listing_geography geography", pageSource, StringComparison.Ordinal);
+        Assert.Contains("FROM documents.listing_document document", pageSource, StringComparison.Ordinal);
+        Assert.Contains("FROM documents.listing_contact contact", pageSource, StringComparison.Ordinal);
+        Assert.Contains("item.target_kind = 'contact'", pageSource, StringComparison.Ordinal);
+        Assert.Contains("facets.CategoryCounts", pageSource, StringComparison.Ordinal);
+        Assert.Contains("facets.DistrictCounts", pageSource, StringComparison.Ordinal);
+        Assert.Contains("facets.ListingKindCounts", pageSource, StringComparison.Ordinal);
+        Assert.Contains("facets.ContactKindCounts", pageSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("string? categoryKey", pageSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("string requestedLocale", pageSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TypedSearchMigrationOwnsCategoryDistrictKindContactAndSponsoredScopeIndexes()
     {
         var migration = ReadRepositoryFile(
@@ -84,7 +105,7 @@ public sealed class NpgsqlPublicSearchStoreContractTests
     public void MarketZoneSearchIndexIsOwnedByQueryMigration()
     {
         var migration = ReadRepositoryFile(
-            "src/Query/Query.Migrations/Migrations/V013__market_zone_search_index.sql");
+            "src/Query/Query.Migrations/Migrations/V016__market_zone_search_index.sql");
 
         Assert.Contains(
             "ON documents.listing_geography\n    (base_projection_id, state, listing_id)",
