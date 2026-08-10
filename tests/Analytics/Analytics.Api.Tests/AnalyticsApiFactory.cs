@@ -62,12 +62,14 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IPublicReadReferenceStore>();
             services.RemoveAll<IDailyListingMetricsStore>();
             services.RemoveAll<IListingMetricsAuthorizer>();
+            services.RemoveAll<IAnalyticsAggregationOperationStore>();
             services.RemoveAll<IAnalyticsIdSource>();
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<IAnalyticsEventStore>(Backend);
             services.AddSingleton<IPublicReadReferenceStore>(Backend);
             services.AddSingleton<IDailyListingMetricsStore>(Backend);
             services.AddSingleton<IListingMetricsAuthorizer>(Backend);
+            services.AddSingleton<IAnalyticsAggregationOperationStore>(Backend);
             services.AddSingleton<IAnalyticsIdSource>(Backend);
             services.AddSingleton<TimeProvider>(Clock);
             services
@@ -106,6 +108,7 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
         IPublicReadReferenceStore,
         IDailyListingMetricsStore,
         IListingMetricsAuthorizer,
+        IAnalyticsAggregationOperationStore,
         IAnalyticsIdSource
     {
         private readonly object _gate = new();
@@ -123,6 +126,9 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             Guid.Parse("0198fc00-0000-7000-8000-000000000004");
 
         public IReadOnlyList<DailyListingMetrics> Metrics { get; set; } = [];
+
+        public AnalyticsAggregationStatusEvidence AggregationStatusEvidence { get; set; } =
+            new([], LatestRun: null);
 
         public InteractionEvent? LastEvent { get; private set; }
 
@@ -257,6 +263,34 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             }
 
             return Task.CompletedTask;
+        }
+
+        public Task<AnalyticsAggregationLease> BeginAsync(
+            Guid runId,
+            Guid leaseToken,
+            RebuildDailyAnalyticsMetricsRequest request,
+            DateTimeOffset startedAtUtc,
+            DateTimeOffset leaseExpiresAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException(
+                "Analytics API fixture does not execute aggregate rebuild commands.");
+
+        public Task MarkBlockedAsync(
+            AnalyticsAggregationLease lease,
+            AnalyticsAggregationFailure failure,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException(
+                "Analytics API fixture does not mutate aggregate rebuild commands.");
+
+        public Task<AnalyticsAggregationStatusEvidence> ReadStatusEvidenceAsync(
+            DateOnly fromInclusive,
+            DateOnly toExclusive,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ = fromInclusive;
+            _ = toExclusive;
+            return Task.FromResult(AggregationStatusEvidence);
         }
 
         public Guid CreateId() => Guid.CreateVersion7();

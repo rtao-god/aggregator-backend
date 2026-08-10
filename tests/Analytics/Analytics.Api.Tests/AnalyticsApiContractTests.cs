@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aggregator.Analytics.Api;
+using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Contracts;
 using Aggregator.Analytics.Domain;
 
@@ -286,6 +287,117 @@ public sealed class AnalyticsApiContractTests
             document.RootElement.GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task AggregationStatusRequiresDedicatedScope()
+    {
+        using var factory = new AnalyticsApiFactory();
+        using var client = factory.CreateClient();
+        var path = AggregationStatusPath(
+            new DateOnly(2026, 8, 1),
+            new DateOnly(2026, 8, 3));
+
+        using var anonymousResponse = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+
+        using var wrongScopeRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        Authenticate(
+            wrongScopeRequest,
+            AnalyticsAuthorizationPolicies.ViewListing,
+            actorId: null);
+        using var wrongScopeResponse = await client.SendAsync(wrongScopeRequest);
+        Assert.Equal(HttpStatusCode.Forbidden, wrongScopeResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task AggregationStatusReturnsExactCompleteDayEvidence()
+    {
+        using var factory = new AnalyticsApiFactory();
+        var fromInclusive = new DateOnly(2026, 8, 1);
+        var toExclusive = new DateOnly(2026, 8, 3);
+        factory.Backend.AggregationStatusEvidence = new AnalyticsAggregationStatusEvidence(
+        [
+            AnalyticsAggregateDayReadiness.Create(
+                fromInclusive,
+                Guid.Parse("0198fc00-0000-7000-8000-000000000301"),
+                new string('a', 64),
+                metricCount: 2,
+                factory.Clock.GetUtcNow().AddMinutes(-2)),
+            AnalyticsAggregateDayReadiness.Create(
+                fromInclusive.AddDays(1),
+                Guid.Parse("0198fc00-0000-7000-8000-000000000302"),
+                new string('b', 64),
+                metricCount: 3,
+                factory.Clock.GetUtcNow().AddMinutes(-1)),
+        ],
+        LatestRun: null);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            AggregationStatusPath(fromInclusive, toExclusive));
+        Authenticate(
+            request,
+            AnalyticsAuthorizationPolicies.ViewAggregationStatus,
+            actorId: null);
+
+        using var response = await client.SendAsync(request);
+        var status = await response.Content.ReadFromJsonAsync<AnalyticsAggregationStatusResponse>(
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(status);
+        Assert.Equal(AggregateReadinessStateContract.Complete, status.Readiness);
+        Assert.Empty(status.MissingDates);
+        Assert.Null(status.LatestRun);
+        Assert.Null(status.UnavailableReason);
+    }
+
+    [Fact]
+    public async Task AggregationStatusPreservesBlockedOwnerFailure()
+    {
+        using var factory = new AnalyticsApiFactory();
+        var fromInclusive = new DateOnly(2026, 8, 1);
+        var toExclusive = new DateOnly(2026, 8, 3);
+        var blockedRun = AnalyticsAggregateRun.Restore(
+            Guid.Parse("0198fc00-0000-7000-8000-000000000310"),
+            fromInclusive,
+            toExclusive,
+            AnalyticsAggregateRunState.Blocked,
+            factory.Clock.GetUtcNow().AddMinutes(-2),
+            factory.Clock.GetUtcNow().AddMinutes(-1),
+            sourceDigest: null,
+            materializedMetricCount: null,
+            removedStaleMetricCount: null,
+            materializedDayCount: null,
+            failureCode: "ANALYTICS_SOURCE_PROJECTION_BLOCKED",
+            failureDetail: "Exact public-read projection is not available.",
+            requiredAction: "Replay the exact Query activation stream.");
+        factory.Backend.AggregationStatusEvidence = new AnalyticsAggregationStatusEvidence(
+            CompletedDays: [],
+            LatestRun: blockedRun);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            AggregationStatusPath(fromInclusive, toExclusive));
+        Authenticate(
+            request,
+            AnalyticsAuthorizationPolicies.ViewAggregationStatus,
+            actorId: null);
+
+        using var response = await client.SendAsync(request);
+        var status = await response.Content.ReadFromJsonAsync<AnalyticsAggregationStatusResponse>(
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(status);
+        Assert.Equal(AggregateReadinessStateContract.Blocked, status.Readiness);
+        Assert.Equal(
+            "ANALYTICS_SOURCE_PROJECTION_BLOCKED",
+            status.UnavailableReason);
+        Assert.Equal(
+            "Replay the exact Query activation stream.",
+            status.LatestRun?.RequiredAction);
+    }
+
     private static SubmitInteractionEventRequest CreateRequest(
         AnalyticsApiFactory factory,
         Guid clientEventId,
@@ -321,6 +433,13 @@ public sealed class AnalyticsApiContractTests
         return await response.Content.ReadFromJsonAsync<AnalyticsAntiAbuseTokenResponse>(JsonOptions)
             ?? throw new InvalidOperationException("Analytics anti-abuse token response is missing.");
     }
+
+    private static string AggregationStatusPath(
+        DateOnly fromInclusive,
+        DateOnly toExclusive) =>
+        "/api/analytics/aggregation-status" +
+        $"?fromInclusive={fromInclusive:yyyy-MM-dd}" +
+        $"&toExclusive={toExclusive:yyyy-MM-dd}";
 
     private static string MetricsPath(
         AnalyticsApiFactory factory,
