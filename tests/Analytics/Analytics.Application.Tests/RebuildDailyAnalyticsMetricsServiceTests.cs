@@ -96,9 +96,14 @@ public sealed class RebuildDailyAnalyticsMetricsServiceTests
         public override DateTimeOffset GetUtcNow() => timestamp;
     }
 
-    private sealed class SequenceIdSource(params Guid[] values) : IAnalyticsIdSource
+    private sealed class SequenceIdSource : IAnalyticsIdSource
     {
-        private readonly Queue<Guid> _values = new(values);
+        private readonly Queue<Guid> _values;
+
+        public SequenceIdSource(params Guid[] values)
+        {
+            _values = new Queue<Guid>(values);
+        }
 
         public Guid CreateId() => _values.Dequeue();
     }
@@ -120,14 +125,15 @@ public sealed class RebuildDailyAnalyticsMetricsServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            BegunLease = new AnalyticsAggregationLease(
+            var lease = new AnalyticsAggregationLease(
                 runId,
                 leaseToken,
                 request.FromInclusive,
                 request.ToExclusive,
                 startedAtUtc,
                 leaseExpiresAtUtc);
-            return Task.FromResult(BegunLease);
+            BegunLease = lease;
+            return Task.FromResult(lease);
         }
 
         public Task MarkBlockedAsync(
@@ -162,9 +168,9 @@ public sealed class RebuildDailyAnalyticsMetricsServiceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Lease = lease;
-            if (Failure is not null)
+            if (Failure is { } failure)
             {
-                throw Failure;
+                throw failure;
             }
 
             return Task.FromResult(new AnalyticsAggregateRebuildResult(
