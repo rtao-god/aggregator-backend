@@ -4,19 +4,19 @@ Status: in development
 
 ## Owner
 
-Promotion is the canonical owner of promotion products, manual entitlement, sponsored-placement schedules, capacity conflicts, activation windows, audit reasons, and paid-placement lifecycle.
+Promotion is the canonical owner of promotion products, manual entitlement, sponsored-placement schedules, capacity conflicts, activation windows, audit reasons, paid-placement lifecycle, and the local immutable projection of Analytics-approved placement usage.
 
-It does not own Catalog facts, verification badges, organic ranking, payment processing, tax, or Query presentation.
+It does not own Catalog facts, verification badges, organic ranking, Analytics traffic-quality classification, payment processing, tax, or Query presentation.
 
 ## Projects
 
 - `Promotion.Domain`: products, immutable product revisions, entitlements, placement windows/revisions, scope eligibility, and capacity invariants.
 - `Promotion.Contracts`: admin API and producer-owned `PromotionPlacementChanged` event contract.
-- `Promotion.Application`: commands, idempotency, optimistic concurrency, explicit mapping, event creation, deterministic canonical JSON, scheduled activation policy, and typed owner failures.
-- `Promotion.Infrastructure`: Promotion-only EF/PostgreSQL persistence, listing-eligibility projection, capacity rows, command results, durable outbox, eligibility reconciliation, and atomic schedule transition units.
+- `Promotion.Application`: commands, idempotency, optimistic concurrency, explicit mapping, event creation, deterministic canonical JSON, scheduled activation policy, strict application of Analytics-owned usage revisions without reclassification, and typed owner failures.
+- `Promotion.Infrastructure`: Promotion-only EF/PostgreSQL persistence, listing-eligibility projection, capacity rows, command results, durable outbox, eligibility reconciliation, atomic schedule transition units, and a serializable Analytics usage inbox/current/revision store.
 - `Promotion.Api`: authenticated product/entitlement/placement commands and reads; thin controllers only.
-- `Promotion.Worker`: scheduled lifecycle transitions, Catalog eligibility consumption, automatic fail-closed placement pause, and outbox dispatch; no HTTP surface and no migrations.
-- `Promotion.Migrations`: the only owner of Promotion database schemas.
+- `Promotion.Worker`: scheduled lifecycle transitions, Catalog eligibility consumption, Analytics usage consumption, automatic fail-closed placement pause, and outbox dispatch; no HTTP surface and no migrations.
+- `Promotion.Migrations`: the only owner of Promotion database schemas, including Catalog eligibility and Analytics usage projections.
 
 ## Active flow
 
@@ -53,6 +53,13 @@ scheduled transition scan
 → re-read current local eligibility
 → activate, end, or fail-closed pause exactly one placement
 → capacity rows + placement outbox in the same transaction
+
+Analytics complete sponsored-usage revision
+→ publisher-confirmed analytics.promotion-usage-window.closed
+→ strict Promotion envelope/message/digest validation
+→ serializable inbox + immutable usage revision
+→ contiguous current usage projection
+→ RabbitMQ acknowledgement after commit
 ```
 
 Eligibility recovery never resumes a placement. Resume remains an explicit Promotion command that rechecks the current local eligibility projection.
@@ -105,6 +112,27 @@ Capacity exclusion is represented by transactionally maintained `sponsored_place
 
 The scheduler does not wrap an arbitrary batch in one transaction. Each entitlement or placement is an independent atomic unit, so a later invalid row cannot roll back already committed transitions. Placement activation uses the same per-listing advisory lock as Catalog eligibility projection/reconciliation and acquires it before opening the serializable transaction, preventing an older transaction snapshot from activating against a newly committed ineligible revision.
 
+## Analytics usage boundary
+
+Analytics publishes one producer-owned closed usage revision for an exact placement and UTC day. Promotion validates the RabbitMQ routing key, contract identity, UTF-8 JSON bytes, payload SHA-256, message/event identity, correlation/causation, closed window, non-negative counts, and positive aggregate revision before entering the Application boundary. It does not inspect raw interactions or recalculate Analytics quality meaning.
+
+```text
+Analytics usage event
+→ worker wire validation
+→ ApplyAnalyticsPromotionUsageWindowService
+→ message and placement-window advisory locks
+→ exact inbox replay/corruption check
+→ contiguous aggregate revision check
+→ immutable revision insert
+→ current projection insert/update
+→ transaction commit
+→ ACK
+```
+
+The first stream revision must be `1`; the next must be exactly `current + 1`. Stale revisions and forward gaps are explicit failures. Same message ID with a different envelope is corruption. Placement, listing, Catalog, and UTC-window identity cannot change across revisions. A complete zero-valued correction is valid owner output; an absent Analytics revision remains missing and is not materialized as zero.
+
+The consumer uses its own quorum queue and dead-letter queue while sharing the Promotion worker's canonical RabbitMQ URI and event exchange. The Promotion API does not register the usage application/store path and cannot consume or repair usage. Promotion stores only Analytics-owned aggregate results in `promotion_db`; it has no `analytics_db` credential or synchronous Analytics client.
+
 ## Query boundary
 
 Promotion publishes minimal placement projection events containing only:
@@ -140,22 +168,25 @@ Promotion persists only in `promotion_db`:
 - listing promotion eligibility projection with exact published listing revision and source-event lineage;
 - automatic eligibility reconciliation state changes and placement outbox effects;
 - idempotent command results;
-- exact-text correlated outbox rows.
+- exact-text correlated outbox rows;
+- Analytics usage inbox rows, immutable usage revisions, and one current revision pointer per stable placement/day stream.
 
-Business state and event envelope are committed in one serializable Promotion transaction. Outbox rows retain routing key, contract identity, exact payload text and digest, correlation/causation, lease, delivery attempts, dispatch completion, and indivisible dead-letter state. Scheduled state changes and outbox dispatch use the same owner repository; no API or worker applies migrations.
+Business state and event envelope are committed in one serializable Promotion transaction. Outbox rows retain routing key, contract identity, exact payload text and digest, correlation/causation, lease, delivery attempts, dispatch completion, and indivisible dead-letter state. Analytics usage inbox, immutable revision, and current projection are likewise one serializable transaction; acknowledgement occurs only after commit. Scheduled state changes, usage consumption, and outbox dispatch use Promotion-owned stores; no API or worker applies migrations.
 
 ## Proof
 
 - Promotion domain tests cover invalid product revision input, entitlement overlap, scope mismatch, window rules, lifecycle transitions, and capacity overlap semantics;
 - Promotion eligibility tests prove archived/disputed/unpublished listings fail closed, product contact requirements remain enforced, and recovery does not auto-resume placements;
-- Promotion consumer tests prove inbox replay still invokes reconciliation after a crash boundary and preserves Catalog message causation;
+- Promotion consumer tests prove Catalog eligibility replay still invokes reconciliation after a crash boundary and preserves Catalog message causation;
 - Promotion scheduling tests prove missing eligibility, ineligible Catalog state, ineffective entitlement, and paused state cannot produce automatic activation;
-- architecture tests prove the consumer writes/replays the projection before reconciliation, acknowledges only after reconciliation, removes capacity rows, emits placement events, and depends only on `Catalog.Contracts`;
+- Catalog eligibility architecture tests prove the consumer writes/replays the projection before reconciliation, acknowledges only after reconciliation, removes capacity rows, emits placement events, and depends only on `Catalog.Contracts`;
 - scheduling architecture tests require independent transaction units, pre-snapshot listing-stream locking, row locks, local eligibility reads, and no automatic resume;
-- Promotion application tests cover product/entitlement/placement command orchestration, idempotent replay, stale revision rejection, and exact correlated events;
-- Promotion infrastructure tests cover EF uniqueness, exclusion constraints, immutable-history guards, exact-text outbox, command-result shape, and DI ownership;
+- Promotion application tests cover product/entitlement/placement command orchestration, idempotent replay, stale revision rejection, exact correlated events, strict Analytics usage mapping, and observed-zero correction acceptance;
+- Promotion infrastructure tests cover EF uniqueness, exclusion constraints, immutable-history guards, exact-text outbox, command-result shape, shared PostgreSQL data-source ownership, Analytics usage inbox/revision/current constraints, and stale/gap/corruption semantics;
 - Promotion API tests cover authentication, authorization, strict enum wire behavior, route/body mismatch, duplicate replay, and typed failures;
-- Promotion worker tests cover fail-fast transport configuration;
+- Promotion worker tests cover fail-fast transport configuration, producer-owned Analytics routing-key pinning, strict message/digest identity, retry classification, quorum/dead-letter topology, and ACK-after-commit ordering;
 - Query application tests cover duplicate/stale/gap Promotion event handling and deterministic overlay rebuild;
 - Query infrastructure tests cover immutable event/projection enforcement and overlay-pointer switching;
-- architecture tests block Promotion state in Catalog/Query/Analytics, cross-database references, missing Promotion contract dependency, and legacy payment/billing concepts.
+- architecture tests block Promotion state in Catalog/Query/Analytics, cross-database references, missing producer-owned Contract dependencies, synchronous Analytics calls, foreign database credentials, and legacy payment/billing concepts.
+
+Real PostgreSQL migration/concurrency proof, publisher-confirmed RabbitMQ delivery, redelivery/dead-letter replay, and Compose E2E remain repository-level acceptance work; the module is not yet marked complete.
