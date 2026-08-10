@@ -12,6 +12,7 @@ public static class AnalyticsApplicationServiceCollectionExtensions
         services.AddScoped<SubmitInteractionEventBatchService>();
         services.AddScoped<ApplyPublicReadRevisionActivationService>();
         services.AddScoped<ApplyCatalogListingAccessGrantChangedService>();
+        services.AddScoped<ReadListingMetricsRangeService>();
         services.AddScoped<ReadDailyListingMetricsService>();
         services.AddScoped<RebuildDailyAnalyticsMetricsService>();
         services.AddScoped<ReadAnalyticsAggregationStatusService>();
