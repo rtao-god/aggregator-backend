@@ -77,6 +77,20 @@ Stable media and contact identities are present in Catalog publication artifact 
 
 Sponsored rows preserve campaign/placement identities, slot position, disclosure label, exact overlay/public-read identities, and hard expiry. They reference existing base documents; they never copy or mutate organic ranking/content. A placement is never returned at or after `HardExpiryAtUtc`, even when expiry-event delivery is delayed.
 
+## Facet catalog invariant
+
+```text
+GET /api/catalog-query/catalogs/{catalogKey}/facets
+→ resolve one exact active PublicReadRevision
+→ refuse the catalog while a visibility block is active
+→ count the complete base projection
+→ remove active listing and route suppressions from every facet
+→ remove suppressed contact identities from contact-capability counts
+→ return typed category, district, listing-kind, contact-kind, and market-zone counts
+```
+
+Facet counts are never derived from one paged search response. The endpoint accepts no ad hoc filter parameters, does not load listing pages, and does not mutate, rebuild, or repair Query state. A missing active projection is a typed unavailable error rather than an empty successful catalog. `SafetyAwarePublicQueryStore` is the single public-read adapter for both listing reads and the facet catalog, so the same active public-read revision and safety overlay govern both contracts.
+
 ## Sitemap projection invariant
 
 Sitemap records are an immutable Query-owned revision bound to one exact `PublicReadRevision`. The active sitemap pointer is switched only after the complete record set, record count, canonical/self links, reciprocal hreflang groups, and digest have been validated. Public sitemap reads use revision-bound keyset cursors; they never rebuild from live search and never continue silently across another active revision.
@@ -123,4 +137,6 @@ Catalog allocates `ActivationRevision` in the same PostgreSQL transaction as its
 - Recomposition integration proof verifies a new Catalog base preserves the exact active Promotion and safety overlays, performs one activation revision transition, updates inbox/checkpoint/pointer consistently, and removes only its own recomposition block.
 - Public reads are safety-filtered for organic, sponsored, facets, routes, media, and contacts and fail with typed unavailable state while any relevant block remains.
 - Projection-status application/API tests cover ready, degraded, blocked, absent, and corrupt checkpoint states; PostgreSQL proof reads exact pointer, checkpoint, block, and sitemap evidence without mutation.
+- Facet application/API tests cover deterministic typed counts, missing projection, invalid persisted counts, arbitrary parameter rejection, revision metadata, ETag, and read-only execution.
+- Facet infrastructure and architecture tests require complete projection-wide counts, active listing/route/contact suppression, one safety-aware store, one application owner, and no page-scoped or cross-context repair path.
 - Architecture tests require every public-read pointer writer to create the producer outbox message, require a real dispatcher in `Query.Worker`, and prohibit a hidden direct Query-to-Analytics persistence path.
