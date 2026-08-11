@@ -17,6 +17,7 @@ public static class AnalyticsApplicationServiceCollectionExtensions
         services.AddScoped<ReadListingMetricsSummaryService>();
         services.AddScoped<RebuildDailyAnalyticsMetricsService>();
         services.AddScoped<ReadAnalyticsAggregationStatusService>();
+        services.AddScoped<RunAnalyticsRetentionService>();
         return services;
     }
 }
