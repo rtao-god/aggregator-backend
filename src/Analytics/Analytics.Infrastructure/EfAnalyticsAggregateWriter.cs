@@ -90,6 +90,17 @@ internal sealed class EfAnalyticsAggregateWriter(
                 row.OccurredAtUtc < rangeEndUtc &&
                 row.ListingId != null &&
                 row.QualityState == (int)TrafficQualityState.Accepted)
+            .Select(row => new AnalyticsAggregateInteractionProjection(
+                row.Id,
+                row.EventKind,
+                row.CatalogKey,
+                row.ListingId,
+                row.PublicReadRevisionId,
+                row.OccurredAtUtc,
+                row.PlacementExposureKind,
+                row.PlacementId,
+                row.QualityState,
+                row.PayloadDigest))
             .OrderBy(row => row.OccurredAtUtc)
             .ThenBy(row => row.Id)
             .ToArrayAsync(cancellationToken);
@@ -246,33 +257,37 @@ internal sealed class EfAnalyticsAggregateWriter(
             readinessRow.CompletedAtUtc = calculatedAtUtc;
         }
 
-        await promotionUsageMaterializer.MaterializeAsync(
+        var promotionUsageEventCount = await promotionUsageMaterializer.MaterializeAsync(
             lease,
             request,
             eventRows,
             calculatedAtUtc,
             cancellationToken);
-
-        var runSourceDigest = ComputeRunSourceDigest(request, dayResults);
         runRow.State = (int)AnalyticsAggregateRunState.Complete;
-        runRow.CompletedAtUtc = calculatedAtUtc;
-        runRow.LeaseToken = null;
-        runRow.LeaseExpiresAtUtc = null;
-        runRow.SourceDigest = runSourceDigest;
-        runRow.MaterializedDayCount = dayResults.Count;
-        runRow.MaterializedMetricCount = materializedMetricCount;
-        runRow.RemovedStaleMetricCount = staleRows.Length;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return new AnalyticsAggregateRebuildResult(
+        runRow.SourceDigest = ComputeRunSourceDigest(
             lease.RunId,
-            request.FromInclusive,
-            request.ToExclusive,
-            runSourceDigest,
-            dayResults.Count,
+            dayResults,
             materializedMetricCount,
             staleRows.Length,
-            calculatedAtUtc);
+            promotionUsageEventCount);
+        runRow.MaterializedMetricCount = materializedMetricCount;
+        runRow.RemovedStaleMetricCount = staleRows.Length;
+        runRow.MaterializedDayCount = dayResults.Count;
+        runRow.CompletedAtUtc = calculatedAtUtc;
+        runRow.LeaseToken = null;
+        runRow.LeaseOwner = null;
+        runRow.LeaseExpiresAtUtc = null;
+        runRow.FailureCode = null;
+        runRow.FailureDetail = null;
+        runRow.RequiredAction = null;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AnalyticsAggregateRebuildResult(
+            runRow.SourceDigest,
+            materializedMetricCount,
+            staleRows.Length,
+            dayResults.Count);
     }
 
     private static List<PublicReadInterval> BuildReferenceIntervals(
@@ -302,7 +317,7 @@ internal sealed class EfAnalyticsAggregateWriter(
     }
 
     private static void ValidateEvents(
-        AnalyticsInteractionEventRow[] events,
+        AnalyticsAggregateInteractionProjection[] events,
         List<PublicReadInterval> intervals,
         Dictionary<Guid, HashSet<Guid>> memberships)
     {
@@ -334,7 +349,7 @@ internal sealed class EfAnalyticsAggregateWriter(
         }
     }
 
-    private static InteractionCounts Count(AnalyticsInteractionEventRow[] events)
+    private static InteractionCounts Count(AnalyticsAggregateInteractionProjection[] events)
     {
         long organicImpressions = 0;
         long sponsoredImpressions = 0;
@@ -415,7 +430,7 @@ internal sealed class EfAnalyticsAggregateWriter(
         string catalogKey,
         Guid listingId,
         PublicReadInterval[] activeIntervals,
-        AnalyticsInteractionEventRow[] events)
+        AnalyticsAggregateInteractionProjection[] events)
     {
         var source = new StringBuilder();
         source.Append(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
@@ -487,43 +502,50 @@ internal sealed class EfAnalyticsAggregateWriter(
     }
 
     private static string ComputeRunSourceDigest(
-        RebuildDailyAnalyticsMetricsRequest request,
-        IReadOnlyList<AggregateDayResult> days)
+        Guid runId,
+        IReadOnlyList<AggregateDayResult> dayResults,
+        int materializedMetricCount,
+        int removedStaleMetricCount,
+        int promotionUsageEventCount)
     {
         var source = new StringBuilder();
-        source.Append(request.FromInclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+        source.Append(runId.ToString("D"))
+            .Append('\n')
+            .Append(materializedMetricCount.ToString(CultureInfo.InvariantCulture))
             .Append('|')
-            .Append(request.ToExclusive.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            .Append(removedStaleMetricCount.ToString(CultureInfo.InvariantCulture))
+            .Append('|')
+            .Append(promotionUsageEventCount.ToString(CultureInfo.InvariantCulture))
             .Append('\n');
-        foreach (var day in days.OrderBy(item => item.Date))
+        foreach (var dayResult in dayResults.OrderBy(item => item.Date))
         {
-            source.Append(day.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+            source.Append(dayResult.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
                 .Append('|')
-                .Append(day.SourceDigest)
+                .Append(dayResult.SourceDigest)
                 .Append('|')
-                .Append(day.MetricCount.ToString(CultureInfo.InvariantCulture))
+                .Append(dayResult.MetricCount.ToString(CultureInfo.InvariantCulture))
                 .Append('\n');
         }
 
         return Hash(source);
     }
 
-    private static string Hash(StringBuilder source) =>
-        Convert.ToHexStringLower(
-            SHA256.HashData(Encoding.UTF8.GetBytes(source.ToString())));
-
     private static DateTimeOffset ToUtcStart(DateOnly date) =>
-        new(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        new(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+
+    private static string Hash(StringBuilder source) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToString())))
+            .ToLowerInvariant();
 
     private static AnalyticsCommandException PersistenceFailure(
         string code,
-        string message,
+        string detail,
         string requiredAction) =>
         new(
-            "Analytics.Persistence",
+            "Analytics.Aggregation",
             code,
             500,
-            message,
+            detail,
             requiredAction);
 
     private sealed record PublicReadInterval(

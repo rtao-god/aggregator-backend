@@ -15,7 +15,7 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
     public async Task<int> MaterializeAsync(
         AnalyticsAggregationLease lease,
         RebuildDailyAnalyticsMetricsRequest request,
-        IReadOnlyList<AnalyticsInteractionEventRow> eventRows,
+        IReadOnlyList<AnalyticsAggregateInteractionProjection> eventRows,
         DateTimeOffset materializedAtUtc,
         CancellationToken cancellationToken)
     {
@@ -230,8 +230,8 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
             "range_ends_at_utc",
             NpgsqlDbType.TimestampTz,
             rangeEndsAtUtc);
-        var result = new List<CurrentUsageWindow>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<CurrentUsageWindow>();
         while (await reader.ReadAsync(cancellationToken))
         {
             result.Add(new CurrentUsageWindow(
@@ -283,31 +283,23 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("message_id", NpgsqlDbType.Uuid, message.MessageId);
-        command.Parameters.AddWithValue("routing_key", NpgsqlDbType.Text, message.RoutingKey);
-        command.Parameters.AddWithValue(
-            "contract_identity",
-            NpgsqlDbType.Text,
-            message.ContractIdentity);
+        command.Parameters.AddWithValue("routing_key", NpgsqlDbType.Varchar, message.RoutingKey);
+        command.Parameters.AddWithValue("contract_identity", NpgsqlDbType.Varchar, message.ContractIdentity);
         command.Parameters.AddWithValue("payload_json", NpgsqlDbType.Text, message.PayloadJson);
         command.Parameters.AddWithValue("payload_digest", NpgsqlDbType.Char, message.PayloadDigest);
-        command.Parameters.AddWithValue(
-            "occurred_at_utc",
-            NpgsqlDbType.TimestampTz,
-            message.OccurredAtUtc);
+        command.Parameters.AddWithValue("occurred_at_utc", NpgsqlDbType.TimestampTz, message.OccurredAtUtc);
         command.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Varchar, message.CorrelationId);
-        command.Parameters.AddWithValue("causation_id", NpgsqlDbType.Uuid, message.CausationId);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-        {
-            throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_OUTBOX_INSERT_FAILED",
-                $"Promotion usage event '{message.MessageId:D}' was not persisted.");
-        }
+        command.Parameters.AddWithValue(
+            "causation_id",
+            NpgsqlDbType.Varchar,
+            (object?)message.CausationId ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertRevisionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        DerivedPromotionUsageWindow window,
+        DerivedPromotionUsageWindow candidate,
         Guid usageWindowId,
         long aggregateRevision,
         Guid aggregationRunId,
@@ -330,9 +322,7 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
                 accepted_outbound_clicks,
                 source_digest,
                 aggregation_run_id,
-                source_event_id,
-                source_payload_digest,
-                source_occurred_at_utc,
+                source_message_id,
                 materialized_at_utc
             )
             VALUES
@@ -349,34 +339,32 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
                 @accepted_outbound_clicks,
                 @source_digest,
                 @aggregation_run_id,
-                @source_event_id,
-                @source_payload_digest,
-                @source_occurred_at_utc,
+                @source_message_id,
                 @materialized_at_utc
             );
             """;
-        await using var command = CreateUsageCommand(
-            sql,
-            connection,
-            transaction,
-            window,
-            usageWindowId,
-            aggregateRevision,
-            aggregationRunId,
-            message,
-            materializedAtUtc);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-        {
-            throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_REVISION_INSERT_FAILED",
-                $"Promotion usage revision '{usageWindowId:D}/{aggregateRevision}' was not persisted.");
-        }
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("usage_window_id", NpgsqlDbType.Uuid, usageWindowId);
+        command.Parameters.AddWithValue("aggregate_revision", NpgsqlDbType.Bigint, aggregateRevision);
+        command.Parameters.AddWithValue("placement_id", NpgsqlDbType.Uuid, candidate.PlacementId);
+        command.Parameters.AddWithValue("listing_id", NpgsqlDbType.Uuid, candidate.ListingId);
+        command.Parameters.AddWithValue("catalog_key", NpgsqlDbType.Varchar, candidate.CatalogKey);
+        command.Parameters.AddWithValue("window_starts_at_utc", NpgsqlDbType.TimestampTz, candidate.WindowStartsAtUtc);
+        command.Parameters.AddWithValue("window_ends_at_utc", NpgsqlDbType.TimestampTz, candidate.WindowEndsAtUtc);
+        command.Parameters.AddWithValue("accepted_impressions", NpgsqlDbType.Bigint, candidate.AcceptedImpressions);
+        command.Parameters.AddWithValue("accepted_listing_opens", NpgsqlDbType.Bigint, candidate.AcceptedListingOpens);
+        command.Parameters.AddWithValue("accepted_outbound_clicks", NpgsqlDbType.Bigint, candidate.AcceptedOutboundClicks);
+        command.Parameters.AddWithValue("source_digest", NpgsqlDbType.Char, candidate.SourceDigest);
+        command.Parameters.AddWithValue("aggregation_run_id", NpgsqlDbType.Uuid, aggregationRunId);
+        command.Parameters.AddWithValue("source_message_id", NpgsqlDbType.Uuid, message.MessageId);
+        command.Parameters.AddWithValue("materialized_at_utc", NpgsqlDbType.TimestampTz, materializedAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertCurrentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        DerivedPromotionUsageWindow window,
+        DerivedPromotionUsageWindow candidate,
         Guid usageWindowId,
         long aggregateRevision,
         Guid aggregationRunId,
@@ -397,11 +385,9 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
                 accepted_listing_opens,
                 accepted_outbound_clicks,
                 source_digest,
-                aggregate_revision,
                 aggregation_run_id,
-                source_event_id,
-                source_payload_digest,
-                source_occurred_at_utc,
+                aggregate_revision,
+                source_message_id,
                 materialized_at_utc
             )
             VALUES
@@ -416,38 +402,30 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
                 @accepted_listing_opens,
                 @accepted_outbound_clicks,
                 @source_digest,
-                @aggregate_revision,
                 @aggregation_run_id,
-                @source_event_id,
-                @source_payload_digest,
-                @source_occurred_at_utc,
+                @aggregate_revision,
+                @source_message_id,
                 @materialized_at_utc
             );
             """;
-        await using var command = CreateUsageCommand(
-            sql,
-            connection,
-            transaction,
-            window,
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        AddCurrentParameters(
+            command,
+            candidate,
             usageWindowId,
             aggregateRevision,
             aggregationRunId,
             message,
             materializedAtUtc);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-        {
-            throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_CURRENT_INSERT_FAILED",
-                $"Promotion usage current stream '{usageWindowId:D}' was not persisted.");
-        }
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task UpdateCurrentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        DerivedPromotionUsageWindow window,
+        DerivedPromotionUsageWindow candidate,
         Guid usageWindowId,
-        long expectedRevision,
+        long expectedAggregateRevision,
         long aggregateRevision,
         Guid aggregationRunId,
         AnalyticsPromotionUsageOutboxMessage message,
@@ -460,88 +438,65 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
                 accepted_listing_opens = @accepted_listing_opens,
                 accepted_outbound_clicks = @accepted_outbound_clicks,
                 source_digest = @source_digest,
-                aggregate_revision = @aggregate_revision,
                 aggregation_run_id = @aggregation_run_id,
-                source_event_id = @source_event_id,
-                source_payload_digest = @source_payload_digest,
-                source_occurred_at_utc = @source_occurred_at_utc,
+                aggregate_revision = @aggregate_revision,
+                source_message_id = @source_message_id,
                 materialized_at_utc = @materialized_at_utc
             WHERE usage_window_id = @usage_window_id
-              AND aggregate_revision = @expected_revision;
+              AND aggregate_revision = @expected_aggregate_revision;
             """;
-        await using var command = CreateUsageCommand(
-            sql,
-            connection,
-            transaction,
-            window,
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        AddCurrentParameters(
+            command,
+            candidate,
             usageWindowId,
             aggregateRevision,
             aggregationRunId,
             message,
             materializedAtUtc);
-        command.Parameters.AddWithValue("expected_revision", NpgsqlDbType.Bigint, expectedRevision);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        command.Parameters.AddWithValue(
+            "expected_aggregate_revision",
+            NpgsqlDbType.Bigint,
+            expectedAggregateRevision);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected != 1)
         {
             throw Failure(
                 "ANALYTICS_PROMOTION_USAGE_REVISION_CONFLICT",
-                $"Promotion usage stream '{usageWindowId:D}' changed while the aggregation run was materializing it.");
+                "Promotion usage current row changed during aggregate materialization.");
         }
     }
 
-    private static NpgsqlCommand CreateUsageCommand(
-        string sql,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        DerivedPromotionUsageWindow window,
+    private static void AddCurrentParameters(
+        NpgsqlCommand command,
+        DerivedPromotionUsageWindow candidate,
         Guid usageWindowId,
         long aggregateRevision,
         Guid aggregationRunId,
         AnalyticsPromotionUsageOutboxMessage message,
         DateTimeOffset materializedAtUtc)
     {
-        var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("usage_window_id", NpgsqlDbType.Uuid, usageWindowId);
-        command.Parameters.AddWithValue("aggregate_revision", NpgsqlDbType.Bigint, aggregateRevision);
-        command.Parameters.AddWithValue("placement_id", NpgsqlDbType.Uuid, window.PlacementId);
-        command.Parameters.AddWithValue("listing_id", NpgsqlDbType.Uuid, window.ListingId);
-        command.Parameters.AddWithValue("catalog_key", NpgsqlDbType.Varchar, window.CatalogKey);
-        command.Parameters.AddWithValue(
-            "window_starts_at_utc",
-            NpgsqlDbType.TimestampTz,
-            window.WindowStartsAtUtc);
-        command.Parameters.AddWithValue(
-            "window_ends_at_utc",
-            NpgsqlDbType.TimestampTz,
-            window.WindowEndsAtUtc);
-        command.Parameters.AddWithValue(
-            "accepted_impressions",
-            NpgsqlDbType.Bigint,
-            window.AcceptedImpressions);
-        command.Parameters.AddWithValue(
-            "accepted_listing_opens",
-            NpgsqlDbType.Bigint,
-            window.AcceptedListingOpens);
-        command.Parameters.AddWithValue(
-            "accepted_outbound_clicks",
-            NpgsqlDbType.Bigint,
-            window.AcceptedOutboundClicks);
-        command.Parameters.AddWithValue("source_digest", NpgsqlDbType.Char, window.SourceDigest);
+        command.Parameters.AddWithValue("placement_id", NpgsqlDbType.Uuid, candidate.PlacementId);
+        command.Parameters.AddWithValue("listing_id", NpgsqlDbType.Uuid, candidate.ListingId);
+        command.Parameters.AddWithValue("catalog_key", NpgsqlDbType.Varchar, candidate.CatalogKey);
+        command.Parameters.AddWithValue("window_starts_at_utc", NpgsqlDbType.TimestampTz, candidate.WindowStartsAtUtc);
+        command.Parameters.AddWithValue("window_ends_at_utc", NpgsqlDbType.TimestampTz, candidate.WindowEndsAtUtc);
+        command.Parameters.AddWithValue("accepted_impressions", NpgsqlDbType.Bigint, candidate.AcceptedImpressions);
+        command.Parameters.AddWithValue("accepted_listing_opens", NpgsqlDbType.Bigint, candidate.AcceptedListingOpens);
+        command.Parameters.AddWithValue("accepted_outbound_clicks", NpgsqlDbType.Bigint, candidate.AcceptedOutboundClicks);
+        command.Parameters.AddWithValue("source_digest", NpgsqlDbType.Char, candidate.SourceDigest);
         command.Parameters.AddWithValue("aggregation_run_id", NpgsqlDbType.Uuid, aggregationRunId);
-        command.Parameters.AddWithValue("source_event_id", NpgsqlDbType.Uuid, message.MessageId);
-        command.Parameters.AddWithValue(
-            "source_payload_digest",
-            NpgsqlDbType.Char,
-            message.PayloadDigest);
-        command.Parameters.AddWithValue(
-            "source_occurred_at_utc",
-            NpgsqlDbType.TimestampTz,
-            message.OccurredAtUtc);
-        command.Parameters.AddWithValue(
-            "materialized_at_utc",
-            NpgsqlDbType.TimestampTz,
-            materializedAtUtc);
-        return command;
+        command.Parameters.AddWithValue("aggregate_revision", NpgsqlDbType.Bigint, aggregateRevision);
+        command.Parameters.AddWithValue("source_message_id", NpgsqlDbType.Uuid, message.MessageId);
+        command.Parameters.AddWithValue("materialized_at_utc", NpgsqlDbType.TimestampTz, materializedAtUtc);
     }
+
+    private static UsageWindowKey ToKey(DerivedPromotionUsageWindow window) =>
+        new(window.PlacementId, window.WindowStartsAtUtc, window.WindowEndsAtUtc);
+
+    private static UsageWindowKey ToKey(CurrentUsageWindow window) =>
+        new(window.PlacementId, window.WindowStartsAtUtc, window.WindowEndsAtUtc);
 
     private static void EnsureSameIdentity(
         CurrentUsageWindow current,
@@ -554,8 +509,8 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
             current.WindowEndsAtUtc != candidate.WindowEndsAtUtc)
         {
             throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_STREAM_IDENTITY_CORRUPT",
-                $"Promotion usage stream '{current.UsageWindowId:D}' changed its immutable identity.");
+                "ANALYTICS_PROMOTION_USAGE_IDENTITY_CONFLICT",
+                "Promotion usage stream identity changed while rebuilding its exact window.");
         }
     }
 
@@ -568,27 +523,26 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
             current.AcceptedOutboundClicks != candidate.AcceptedOutboundClicks)
         {
             throw Failure(
-                "ANALYTICS_PROMOTION_USAGE_SOURCE_DIGEST_CORRUPT",
-                $"Promotion usage stream '{current.UsageWindowId:D}' has the same source digest but different counts.");
+                "ANALYTICS_PROMOTION_USAGE_DIGEST_CONFLICT",
+                "Promotion usage source digest was reused for different accepted counts.");
         }
     }
 
-    private static UsageWindowKey ToKey(CurrentUsageWindow window) =>
-        new(window.PlacementId, window.WindowStartsAtUtc, window.WindowEndsAtUtc);
-
-    private static UsageWindowKey ToKey(DerivedPromotionUsageWindow window) =>
-        new(window.PlacementId, window.WindowStartsAtUtc, window.WindowEndsAtUtc);
-
     private static DateTimeOffset ToUtcStart(DateOnly date) =>
-        new(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        new(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
 
     private static AnalyticsCommandException Failure(string code, string detail) =>
         new(
-            "Analytics.PromotionUsagePersistence",
+            "Analytics.PromotionUsage",
             code,
             500,
             detail,
-            "Rollback the aggregation transaction and rebuild or replay the exact Analytics usage stream before retrying.");
+            "Stop aggregation and repair the exact Analytics usage stream before retrying.");
+
+    private sealed record UsageWindowKey(
+        Guid PlacementId,
+        DateTimeOffset WindowStartsAtUtc,
+        DateTimeOffset WindowEndsAtUtc);
 
     private sealed record CurrentUsageWindow(
         Guid UsageWindowId,
@@ -602,9 +556,4 @@ internal sealed class AnalyticsPromotionUsageMaterializer(
         long AcceptedOutboundClicks,
         string SourceDigest,
         long AggregateRevision);
-
-    private readonly record struct UsageWindowKey(
-        Guid PlacementId,
-        DateTimeOffset WindowStartsAtUtc,
-        DateTimeOffset WindowEndsAtUtc);
 }
