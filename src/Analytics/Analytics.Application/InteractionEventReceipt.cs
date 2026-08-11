@@ -12,18 +12,52 @@ public enum InteractionEventRetentionState
 /// <summary>
 /// Immutable persisted receipt used for semantic idempotency after raw interaction context may have been minimized.
 /// </summary>
-public sealed record InteractionEventReceipt(
-    Guid EventId,
-    InteractionEventSemanticKey SemanticKey,
-    string PayloadDigest,
-    TrafficQualityState QualityState,
-    DateTimeOffset ReceivedAtUtc,
-    Guid PublicReadRevisionId,
-    Guid? ListingId,
-    InteractionEventRetentionState RetentionState,
-    DateTimeOffset? RetainedAtUtc,
-    Guid? RetentionOperationId)
+public sealed class InteractionEventReceipt
 {
+    private InteractionEventReceipt(
+        Guid eventId,
+        InteractionEventSemanticKey semanticKey,
+        string payloadDigest,
+        TrafficQualityState qualityState,
+        DateTimeOffset receivedAtUtc,
+        Guid publicReadRevisionId,
+        Guid? listingId,
+        InteractionEventRetentionState retentionState,
+        DateTimeOffset? retainedAtUtc,
+        Guid? retentionOperationId)
+    {
+        EventId = eventId;
+        SemanticKey = semanticKey;
+        PayloadDigest = payloadDigest;
+        QualityState = qualityState;
+        ReceivedAtUtc = receivedAtUtc;
+        PublicReadRevisionId = publicReadRevisionId;
+        ListingId = listingId;
+        RetentionState = retentionState;
+        RetainedAtUtc = retainedAtUtc;
+        RetentionOperationId = retentionOperationId;
+    }
+
+    public Guid EventId { get; }
+
+    public InteractionEventSemanticKey SemanticKey { get; }
+
+    public string PayloadDigest { get; }
+
+    public TrafficQualityState QualityState { get; }
+
+    public DateTimeOffset ReceivedAtUtc { get; }
+
+    public Guid PublicReadRevisionId { get; }
+
+    public Guid? ListingId { get; }
+
+    public InteractionEventRetentionState RetentionState { get; }
+
+    public DateTimeOffset? RetainedAtUtc { get; }
+
+    public Guid? RetentionOperationId { get; }
+
     /// <summary>Creates the initial raw receipt for a newly accepted event.</summary>
     public static InteractionEventReceipt FromEvent(InteractionEvent interactionEvent)
     {
@@ -56,6 +90,9 @@ public sealed record InteractionEventReceipt(
     {
         AnalyticsDomainRules.RequireIdentifier(eventId, nameof(eventId));
         ArgumentNullException.ThrowIfNull(semanticKey);
+        var validatedSemanticKey = InteractionEventSemanticKey.Create(
+            semanticKey.ClientEventId,
+            semanticKey.Kind);
         var normalizedDigest = AnalyticsDomainRules.RequireDigest(payloadDigest, nameof(payloadDigest));
         AnalyticsDomainRules.RequireUtc(receivedAtUtc, nameof(receivedAtUtc));
         AnalyticsDomainRules.RequireIdentifier(publicReadRevisionId, nameof(publicReadRevisionId));
@@ -68,12 +105,12 @@ public sealed record InteractionEventReceipt(
                 $"Persisted interaction quality state '{qualityState}' is not valid for an accepted event receipt.");
         }
 
-        var listingRequired = semanticKey.Kind != InteractionEventKind.SearchResultsViewed;
+        var listingRequired = validatedSemanticKey.Kind != InteractionEventKind.SearchResultsViewed;
         if (listingRequired && (listingId is null || listingId == Guid.Empty))
         {
             throw new AnalyticsDomainException(
                 "ANALYTICS_PERSISTED_LISTING_REQUIRED",
-                $"Persisted interaction kind '{semanticKey.Kind}' requires a non-empty listing identity.");
+                $"Persisted interaction kind '{validatedSemanticKey.Kind}' requires a non-empty listing identity.");
         }
 
         if (!listingRequired && listingId is not null)
@@ -118,7 +155,7 @@ public sealed record InteractionEventReceipt(
 
         return new InteractionEventReceipt(
             eventId,
-            semanticKey,
+            validatedSemanticKey,
             normalizedDigest,
             qualityState,
             receivedAtUtc,
