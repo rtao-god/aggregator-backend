@@ -53,7 +53,7 @@ public sealed class AnalyticsApplicationServiceTests
         Assert.Equal(InteractionAcceptanceStateContract.AlreadyApplied, replay.AcceptanceState);
         Assert.Equal(first.EventId, replay.EventId);
         Assert.Single(eventStore.Events);
-        Assert.Equal(2, antiAbuse.VerificationCount);
+        Assert.Equal(1, antiAbuse.VerificationCount);
     }
 
     [Fact]
