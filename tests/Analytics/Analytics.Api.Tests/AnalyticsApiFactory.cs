@@ -1,6 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Security.Claims;
-using System.Text.Encodings.Web;
+using System.Globalization;
 using Aggregator.Analytics.Api;
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Domain;
@@ -10,15 +8,18 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 
 namespace Analytics.Api.Tests;
 
 public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
 {
-    public const string AuthenticationHeader = "X-Test-Authentication";
-    public const string ActorHeader = "X-Test-Actor";
+    public const string AuthenticationScheme = "Analytics.Test";
+
+    public const string ActorHeader = "X-Test-Actor-Id";
+
     public const string ScopesHeader = "X-Test-Scopes";
 
     private const string AntiAbuseSigningKey =
@@ -132,7 +133,7 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
 
         public InteractionEvent? LastEvent { get; private set; }
 
-        public Task<InteractionEvent?> GetAsync(
+        public Task<PersistedInteractionEventReceipt?> GetAsync(
             InteractionEventSemanticKey semanticKey,
             CancellationToken cancellationToken)
         {
@@ -141,7 +142,10 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             lock (_gate)
             {
                 _events.TryGetValue(semanticKey, out var interactionEvent);
-                return Task.FromResult(interactionEvent);
+                return Task.FromResult(
+                    interactionEvent is null
+                        ? null
+                        : PersistedInteractionEventReceipt.FromDomain(interactionEvent));
             }
         }
 
@@ -161,14 +165,16 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
                         StringComparison.Ordinal)
                         ? InteractionEventRegistrationState.AlreadyApplied
                         : InteractionEventRegistrationState.DigestConflict;
-                    return Task.FromResult(new InteractionEventRegistrationResult(state, existing));
+                    return Task.FromResult(new InteractionEventRegistrationResult(
+                        state,
+                        PersistedInteractionEventReceipt.FromDomain(existing)));
                 }
 
                 _events.Add(interactionEvent.SemanticKey, interactionEvent);
                 LastEvent = interactionEvent;
                 return Task.FromResult(new InteractionEventRegistrationResult(
                     InteractionEventRegistrationState.Stored,
-                    interactionEvent));
+                    PersistedInteractionEventReceipt.FromDomain(interactionEvent)));
             }
         }
 
@@ -256,31 +262,54 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             {
                 throw new AnalyticsCommandException(
                     "Analytics.AccessProjection",
-                    "ANALYTICS_LISTING_METRICS_FORBIDDEN",
+                    "ANALYTICS_LISTING_ACCESS_DENIED",
                     403,
-                    "The actor has no local Analytics permission for this listing.",
-                    "Consume the exact Catalog access-grant projection before retrying.");
+                    "The Analytics-local access projection does not grant this actor listing analytics access.",
+                    "Verify the exact Catalog access-grant event was consumed before retrying.");
             }
 
             return Task.CompletedTask;
         }
 
         public Task<AnalyticsAggregationLease> BeginAsync(
-            Guid runId,
-            Guid leaseToken,
             RebuildDailyAnalyticsMetricsRequest request,
             DateTimeOffset startedAtUtc,
-            DateTimeOffset leaseExpiresAtUtc,
-            CancellationToken cancellationToken) =>
-            throw new InvalidOperationException(
-                "Analytics API fixture does not execute aggregate rebuild commands.");
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new AnalyticsAggregationLease(
+                Guid.Parse("0198fc00-0000-7000-8000-000000000005"),
+                request.FromInclusive,
+                request.ToExclusive,
+                startedAtUtc,
+                startedAtUtc.AddMinutes(5),
+                "test-lease-token"));
+        }
 
-        public Task MarkBlockedAsync(
+        public Task CompleteAsync(
+            AnalyticsAggregationLease lease,
+            AnalyticsAggregateRebuildResult result,
+            DateTimeOffset completedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
+            ArgumentNullException.ThrowIfNull(result);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task FailAsync(
             AnalyticsAggregationLease lease,
             AnalyticsAggregationFailure failure,
-            CancellationToken cancellationToken) =>
-            throw new InvalidOperationException(
-                "Analytics API fixture does not mutate aggregate rebuild commands.");
+            DateTimeOffset failedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(lease);
+            ArgumentNullException.ThrowIfNull(failure);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
 
         public Task<AnalyticsAggregationStatusEvidence> ReadStatusEvidenceAsync(
             DateOnly fromInclusive,
@@ -288,12 +317,10 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _ = fromInclusive;
-            _ = toExclusive;
             return Task.FromResult(AggregationStatusEvidence);
         }
 
-        public Guid CreateId() => Guid.CreateVersion7();
+        public Guid CreateId() => Guid.Parse("0198fc00-0000-7000-8000-000000000001");
     }
 
     private sealed class TestAuthenticationHandler(
@@ -301,32 +328,36 @@ public sealed class AnalyticsApiFactory : WebApplicationFactory<Program>
         ILoggerFactory logger,
         UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        public const string AuthenticationSchemeName = "AnalyticsApiTest";
+        public const string AuthenticationSchemeName = "Analytics.Test";
 
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
-            if (!Request.Headers.ContainsKey(AuthenticationHeader))
+            var actorValue = Request.Headers[ActorHeader].SingleOrDefault();
+            if (string.IsNullOrWhiteSpace(actorValue))
             {
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            var claims = new List<Claim>
+            if (!Guid.TryParse(actorValue, out var actorId))
             {
-                new(ClaimTypes.NameIdentifier, "analytics-test-subject"),
-            };
-            if (Request.Headers.TryGetValue(ActorHeader, out var actorId))
-            {
-                claims.Add(new Claim("actor_id", actorId.ToString()));
+                return Task.FromResult(AuthenticateResult.Fail("Test actor header is not a UUID."));
             }
 
-            if (Request.Headers.TryGetValue(ScopesHeader, out var scopes))
+            var claims = new List<Claim>
             {
-                claims.Add(new Claim("scope", scopes.ToString()));
+                new(ClaimTypes.NameIdentifier, actorId.ToString("D", CultureInfo.InvariantCulture)),
+                new("sub", actorId.ToString("D", CultureInfo.InvariantCulture)),
+            };
+            var scopes = Request.Headers[ScopesHeader].SingleOrDefault();
+            if (!string.IsNullOrWhiteSpace(scopes))
+            {
+                claims.Add(new Claim("scope", scopes));
             }
 
             var identity = new ClaimsIdentity(claims, AuthenticationSchemeName);
+            var principal = new ClaimsPrincipal(identity);
             return Task.FromResult(AuthenticateResult.Success(
-                new AuthenticationTicket(new ClaimsPrincipal(identity), AuthenticationSchemeName)));
+                new AuthenticationTicket(principal, AuthenticationSchemeName)));
         }
     }
 }

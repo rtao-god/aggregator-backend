@@ -216,25 +216,61 @@ public sealed class AnalyticsApplicationServiceTests
             "berlin-recording-services",
             Guid.Parse("0198a200-0000-7000-8000-000000000011"),
             Guid.Parse("0198a200-0000-7000-8000-000000000012"),
-            Timestamp,
-            "catalog_results",
+            Timestamp.AddMinutes(-1),
+            "search_results",
             new PlacementContextContract(
                 PlacementExposureKindContract.Organic,
                 PlacementId: null,
-                ScopeKey: "recording-studio"),
-            ReferrerClassContract.Internal,
-            new Dictionary<string, string>(StringComparer.Ordinal),
+                ScopeKey: null),
+            ReferrerClassContract.Search,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["utm_source"] = "newsletter",
+            },
             ConsentModeContract.AnalyticsAllowed,
-            "valid-transport-proof");
+            "proof");
 
-    private sealed class FixedTimeProvider(DateTimeOffset timestamp) : TimeProvider
+    private sealed class InMemoryEventStore : IAnalyticsEventStore
     {
-        public override DateTimeOffset GetUtcNow() => timestamp;
-    }
+        private readonly Dictionary<InteractionEventSemanticKey, InteractionEvent> _events = [];
 
-    private sealed class FixedIdSource(Guid eventId) : IAnalyticsIdSource
-    {
-        public Guid CreateId() => eventId;
+        public IReadOnlyCollection<InteractionEvent> Events => _events.Values;
+
+        public Task<PersistedInteractionEventReceipt?> GetAsync(
+            InteractionEventSemanticKey semanticKey,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _events.TryGetValue(semanticKey, out var interactionEvent);
+            return Task.FromResult(
+                interactionEvent is null
+                    ? null
+                    : PersistedInteractionEventReceipt.FromDomain(interactionEvent));
+        }
+
+        public Task<InteractionEventRegistrationResult> RegisterAsync(
+            InteractionEvent interactionEvent,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_events.TryGetValue(interactionEvent.SemanticKey, out var existing))
+            {
+                var state = string.Equals(
+                    existing.PayloadDigest,
+                    interactionEvent.PayloadDigest,
+                    StringComparison.Ordinal)
+                    ? InteractionEventRegistrationState.AlreadyApplied
+                    : InteractionEventRegistrationState.DigestConflict;
+                return Task.FromResult(new InteractionEventRegistrationResult(
+                    state,
+                    PersistedInteractionEventReceipt.FromDomain(existing)));
+            }
+
+            _events.Add(interactionEvent.SemanticKey, interactionEvent);
+            return Task.FromResult(new InteractionEventRegistrationResult(
+                InteractionEventRegistrationState.Stored,
+                PersistedInteractionEventReceipt.FromDomain(interactionEvent)));
+        }
     }
 
     private sealed class FixedPublicReadReferenceStore(PublicReadMembershipState state) :
@@ -282,42 +318,14 @@ public sealed class AnalyticsApplicationServiceTests
         }
     }
 
-    private sealed class InMemoryEventStore : IAnalyticsEventStore
+    private sealed class FixedIdSource(Guid value) : IAnalyticsIdSource
     {
-        private readonly Dictionary<InteractionEventSemanticKey, InteractionEvent> _events = [];
+        public Guid CreateId() => value;
+    }
 
-        public IReadOnlyCollection<InteractionEvent> Events => _events.Values;
-
-        public Task<InteractionEvent?> GetAsync(
-            InteractionEventSemanticKey semanticKey,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            _events.TryGetValue(semanticKey, out var interactionEvent);
-            return Task.FromResult(interactionEvent);
-        }
-
-        public Task<InteractionEventRegistrationResult> RegisterAsync(
-            InteractionEvent interactionEvent,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_events.TryGetValue(interactionEvent.SemanticKey, out var existing))
-            {
-                var state = string.Equals(
-                    existing.PayloadDigest,
-                    interactionEvent.PayloadDigest,
-                    StringComparison.Ordinal)
-                    ? InteractionEventRegistrationState.AlreadyApplied
-                    : InteractionEventRegistrationState.DigestConflict;
-                return Task.FromResult(new InteractionEventRegistrationResult(state, existing));
-            }
-
-            _events.Add(interactionEvent.SemanticKey, interactionEvent);
-            return Task.FromResult(new InteractionEventRegistrationResult(
-                InteractionEventRegistrationState.Stored,
-                interactionEvent));
-        }
+    private sealed class FixedTimeProvider(DateTimeOffset value) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => value;
     }
 
     private sealed class FixedMetricsStore(IReadOnlyList<DailyListingMetrics> metrics) :
