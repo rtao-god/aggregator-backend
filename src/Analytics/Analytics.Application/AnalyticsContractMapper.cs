@@ -54,19 +54,19 @@ internal static class AnalyticsContractMapper
     }
 
     public static InteractionEventResponse ToResponse(
-        InteractionEvent interactionEvent,
+        PersistedInteractionEventReceipt receipt,
         InteractionAcceptanceStateContract acceptanceState)
     {
-        ArgumentNullException.ThrowIfNull(interactionEvent);
+        ArgumentNullException.ThrowIfNull(receipt);
         return new InteractionEventResponse(
-            interactionEvent.Id,
-            interactionEvent.SemanticKey.ClientEventId,
-            ToContract(interactionEvent.SemanticKey.Kind),
+            receipt.EventId,
+            receipt.SemanticKey.ClientEventId,
+            ToContract(receipt.SemanticKey.Kind),
             acceptanceState,
-            ToContract(interactionEvent.QualityState),
-            interactionEvent.ReceivedAtUtc,
-            interactionEvent.PublicReadRevisionId,
-            interactionEvent.ListingId);
+            ToContract(receipt.QualityState),
+            receipt.ReceivedAtUtc,
+            receipt.PublicReadRevisionId,
+            receipt.ListingId);
     }
 
 
@@ -120,7 +120,18 @@ internal static class AnalyticsContractMapper
             metrics.UnavailableReason);
     }
 
-    private static InteractionEventKindContract ToContract(InteractionEventKind value) => value switch
+    public static TrafficQualityStateContract ToContract(TrafficQualityState value) => value switch
+    {
+        TrafficQualityState.Accepted => TrafficQualityStateContract.Accepted,
+        TrafficQualityState.SuspectedBot => TrafficQualityStateContract.SuspectedBot,
+        TrafficQualityState.KnownBot => TrafficQualityStateContract.KnownBot,
+        TrafficQualityState.RateLimited => TrafficQualityStateContract.RateLimited,
+        TrafficQualityState.Invalid => TrafficQualityStateContract.Invalid,
+        TrafficQualityState.Duplicate => TrafficQualityStateContract.Duplicate,
+        _ => throw UnsupportedDomainEnum(nameof(TrafficQualityState), value),
+    };
+
+    public static InteractionEventKindContract ToContract(InteractionEventKind value) => value switch
     {
         InteractionEventKind.SearchResultsViewed => InteractionEventKindContract.SearchResultsViewed,
         InteractionEventKind.ListingImpression => InteractionEventKindContract.ListingImpression,
@@ -136,17 +147,6 @@ internal static class AnalyticsContractMapper
         _ => throw UnsupportedDomainEnum(nameof(InteractionEventKind), value),
     };
 
-    private static TrafficQualityStateContract ToContract(TrafficQualityState value) => value switch
-    {
-        TrafficQualityState.Accepted => TrafficQualityStateContract.Accepted,
-        TrafficQualityState.SuspectedBot => TrafficQualityStateContract.SuspectedBot,
-        TrafficQualityState.KnownBot => TrafficQualityStateContract.KnownBot,
-        TrafficQualityState.RateLimited => TrafficQualityStateContract.RateLimited,
-        TrafficQualityState.Invalid => TrafficQualityStateContract.Invalid,
-        TrafficQualityState.Duplicate => TrafficQualityStateContract.Duplicate,
-        _ => throw UnsupportedDomainEnum(nameof(TrafficQualityState), value),
-    };
-
     public static AggregateReadinessStateContract ToContract(AggregateReadinessState value) => value switch
     {
         AggregateReadinessState.Complete => AggregateReadinessStateContract.Complete,
@@ -156,16 +156,25 @@ internal static class AnalyticsContractMapper
         _ => throw UnsupportedDomainEnum(nameof(AggregateReadinessState), value),
     };
 
-    private static AnalyticsCommandException UnsupportedContractEnum<T>(string contractName, T value)
-        where T : struct, Enum =>
+    private static AnalyticsCommandException UnsupportedContractEnum<TEnum>(
+        string enumName,
+        TEnum value)
+        where TEnum : struct, Enum =>
         new(
-            "Analytics.Transport",
+            "Analytics.Contracts",
             "ANALYTICS_CONTRACT_ENUM_UNSUPPORTED",
             400,
-            $"Contract enum '{contractName}' contains unsupported value '{value}'.",
-            "Send a value defined by the current Analytics contract.");
+            $"Contract enum '{enumName}' contains unsupported value '{value}'.",
+            "Use one of the documented string enum values.");
 
-    private static InvalidOperationException UnsupportedDomainEnum<T>(string domainName, T value)
-        where T : struct, Enum =>
-        new($"Analytics domain enum '{domainName}' contains unsupported value '{value}'.");
+    private static AnalyticsCommandException UnsupportedDomainEnum<TEnum>(
+        string enumName,
+        TEnum value)
+        where TEnum : struct, Enum =>
+        new(
+            "Analytics.Contracts",
+            "ANALYTICS_DOMAIN_ENUM_UNSUPPORTED",
+            500,
+            $"Domain enum '{enumName}' contains unsupported value '{value}'.",
+            "Stop the response and align the Analytics domain-to-contract mapping.");
 }

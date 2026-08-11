@@ -9,15 +9,112 @@ public enum InteractionEventRegistrationState
     DigestConflict = 3,
 }
 
-/// <summary>Returns the exact persisted event selected by one semantic idempotency key.</summary>
+/// <summary>
+/// Minimal immutable receipt retained for semantic idempotency after raw interaction context is minimized.
+/// </summary>
+public sealed record PersistedInteractionEventReceipt
+{
+    private PersistedInteractionEventReceipt(
+        Guid eventId,
+        InteractionEventSemanticKey semanticKey,
+        string payloadDigest,
+        TrafficQualityState qualityState,
+        DateTimeOffset receivedAtUtc,
+        Guid publicReadRevisionId,
+        Guid? listingId)
+    {
+        EventId = eventId;
+        SemanticKey = semanticKey;
+        PayloadDigest = payloadDigest;
+        QualityState = qualityState;
+        ReceivedAtUtc = receivedAtUtc;
+        PublicReadRevisionId = publicReadRevisionId;
+        ListingId = listingId;
+    }
+
+    public Guid EventId { get; }
+
+    public InteractionEventSemanticKey SemanticKey { get; }
+
+    public string PayloadDigest { get; }
+
+    public TrafficQualityState QualityState { get; }
+
+    public DateTimeOffset ReceivedAtUtc { get; }
+
+    public Guid PublicReadRevisionId { get; }
+
+    public Guid? ListingId { get; }
+
+    public static PersistedInteractionEventReceipt FromDomain(InteractionEvent interactionEvent)
+    {
+        ArgumentNullException.ThrowIfNull(interactionEvent);
+        return Create(
+            interactionEvent.Id,
+            interactionEvent.SemanticKey,
+            interactionEvent.PayloadDigest,
+            interactionEvent.QualityState,
+            interactionEvent.ReceivedAtUtc,
+            interactionEvent.PublicReadRevisionId,
+            interactionEvent.ListingId);
+    }
+
+    public static PersistedInteractionEventReceipt Create(
+        Guid eventId,
+        InteractionEventSemanticKey semanticKey,
+        string payloadDigest,
+        TrafficQualityState qualityState,
+        DateTimeOffset receivedAtUtc,
+        Guid publicReadRevisionId,
+        Guid? listingId)
+    {
+        AnalyticsDomainRules.RequireIdentifier(eventId, nameof(eventId));
+        ArgumentNullException.ThrowIfNull(semanticKey);
+        if (string.IsNullOrEmpty(payloadDigest) ||
+            payloadDigest.Length != 64 ||
+            payloadDigest.Any(character =>
+                !((character >= '0' && character <= '9') ||
+                  (character >= 'a' && character <= 'f'))))
+        {
+            throw new AnalyticsDomainException(
+                "ANALYTICS_EVENT_RECEIPT_DIGEST_INVALID",
+                "Persisted interaction receipt requires a lowercase SHA-256 payload digest.");
+        }
+
+        if (!Enum.IsDefined(qualityState))
+        {
+            throw new AnalyticsDomainException(
+                "ANALYTICS_EVENT_RECEIPT_QUALITY_INVALID",
+                $"Persisted interaction receipt quality state '{qualityState}' is unsupported.");
+        }
+
+        AnalyticsDomainRules.RequireUtc(receivedAtUtc, nameof(receivedAtUtc));
+        AnalyticsDomainRules.RequireIdentifier(publicReadRevisionId, nameof(publicReadRevisionId));
+        if (listingId is { } actualListingId)
+        {
+            AnalyticsDomainRules.RequireIdentifier(actualListingId, nameof(listingId));
+        }
+
+        return new PersistedInteractionEventReceipt(
+            eventId,
+            semanticKey,
+            payloadDigest,
+            qualityState,
+            receivedAtUtc,
+            publicReadRevisionId,
+            listingId);
+    }
+}
+
+/// <summary>Returns the exact persisted receipt selected by one semantic idempotency key.</summary>
 public sealed record InteractionEventRegistrationResult(
     InteractionEventRegistrationState State,
-    InteractionEvent PersistedEvent);
+    PersistedInteractionEventReceipt Receipt);
 
 /// <summary>Persists accepted interaction events with atomic semantic idempotency.</summary>
 public interface IAnalyticsEventStore
 {
-    public Task<InteractionEvent?> GetAsync(
+    public Task<PersistedInteractionEventReceipt?> GetAsync(
         InteractionEventSemanticKey semanticKey,
         CancellationToken cancellationToken);
 

@@ -15,7 +15,7 @@ internal sealed class EfAnalyticsRepository(
     private const string SemanticEventKeyConstraint =
         "ux_analytics_interaction_event_semantic_key";
 
-    public async Task<InteractionEvent?> GetAsync(
+    public async Task<PersistedInteractionEventReceipt?> GetAsync(
         InteractionEventSemanticKey semanticKey,
         CancellationToken cancellationToken)
     {
@@ -29,7 +29,7 @@ internal sealed class EfAnalyticsRepository(
                 cancellationToken);
         return row is null
             ? null
-            : await RestoreEventAsync(row, cancellationToken);
+            : ToReceipt(row);
     }
 
     public async Task<InteractionEventRegistrationResult> RegisterAsync(
@@ -53,7 +53,7 @@ internal sealed class EfAnalyticsRepository(
             await dbContext.SaveChangesAsync(cancellationToken);
             return new InteractionEventRegistrationResult(
                 InteractionEventRegistrationState.Stored,
-                interactionEvent);
+                PersistedInteractionEventReceipt.FromDomain(interactionEvent));
         }
         catch (DbUpdateException exception) when (
             IsUniqueViolation(exception, SemanticEventKeyConstraint))
@@ -229,53 +229,28 @@ internal sealed class EfAnalyticsRepository(
         return rows.Select(RestoreMetrics).ToArray();
     }
 
-    private async Task<InteractionEvent> RestoreEventAsync(
-        AnalyticsInteractionEventRow row,
-        CancellationToken cancellationToken)
+    private static PersistedInteractionEventReceipt ToReceipt(
+        AnalyticsInteractionEventRow row)
     {
-        var parameterRows = await dbContext.InteractionCampaignParameters
-            .AsNoTracking()
-            .Where(parameter => parameter.EventId == row.Id)
-            .OrderBy(parameter => parameter.ParameterKey)
-            .ToArrayAsync(cancellationToken);
-        var parameters = parameterRows.ToDictionary(
-            parameter => parameter.ParameterKey,
-            parameter => parameter.ParameterValue,
-            StringComparer.Ordinal);
         try
         {
-            var interactionEvent = InteractionEvent.CreateAccepted(
+            return PersistedInteractionEventReceipt.Create(
                 row.Id,
-                row.ClientEventId,
-                (InteractionEventKind)row.EventKind,
-                row.CatalogKey,
-                row.ListingId,
-                row.PublicReadRevisionId,
-                row.OccurredAtUtc,
+                InteractionEventSemanticKey.Create(
+                    row.ClientEventId,
+                    (InteractionEventKind)row.EventKind),
+                row.PayloadDigest,
+                (TrafficQualityState)row.QualityState,
                 row.ReceivedAtUtc,
-                row.PageContext,
-                PlacementContext.Create(
-                    (PlacementExposureKind)row.PlacementExposureKind,
-                    row.PlacementId,
-                    row.PlacementScopeKey),
-                (ReferrerClass)row.ReferrerClass,
-                parameters,
-                (ConsentMode)row.ConsentMode,
-                row.PayloadDigest);
-            var qualityState = (TrafficQualityState)row.QualityState;
-            if (qualityState != TrafficQualityState.Accepted)
-            {
-                interactionEvent.ClassifyTraffic(qualityState);
-            }
-
-            return interactionEvent;
+                row.PublicReadRevisionId,
+                row.ListingId);
         }
         catch (AnalyticsDomainException exception)
         {
             throw PersistenceCorruption(
-                "ANALYTICS_EVENT_ROW_CORRUPT",
-                $"Persisted interaction event '{row.Id:D}' violates the Analytics domain contract: {exception.Message}",
-                "Stop interaction reads and repair the persisted event from a verified source.",
+                "ANALYTICS_EVENT_RECEIPT_ROW_CORRUPT",
+                $"Persisted interaction receipt '{row.Id:D}' violates the Analytics idempotency contract: {exception.Message}",
+                "Stop interaction intake and repair the persisted receipt from a verified source.",
                 exception);
         }
     }
@@ -378,21 +353,10 @@ internal sealed class EfAnalyticsRepository(
             requiredAction,
             innerException);
 
-    private sealed class AnalyticsPersistenceCorruptionException : AnalyticsCommandException
-    {
-        public AnalyticsPersistenceCorruptionException(
-            string code,
-            string message,
-            string requiredAction,
-            Exception innerException)
-            : base(
-                "Analytics.Persistence",
-                code,
-                500,
-                message,
-                requiredAction)
+    private static bool IsUniqueViolation(DbUpdateException exception, string constraintName) =>
+        exception.InnerException is PostgresException
         {
-            Data[nameof(innerException)] = innerException;
-        }
-    }
+            SqlState: PostgresErrorCodes.UniqueViolation,
+        } postgresException &&
+        string.Equals(postgresException.ConstraintName, constraintName, StringComparison.Ordinal);
 }
