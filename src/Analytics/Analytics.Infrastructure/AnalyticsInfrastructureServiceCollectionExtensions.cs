@@ -43,6 +43,8 @@ public static class AnalyticsInfrastructureServiceCollectionExtensions
         services.AddScoped<
             IAnalyticsAggregationOperationStore,
             PostgresAnalyticsAggregationOperationStore>();
+        services.AddScoped<IAnalyticsRetentionStore>(_ =>
+            new PostgresAnalyticsRetentionStore(connectionString));
         services.AddScoped<AnalyticsReadinessProbe>();
         services.AddSingleton<IAnalyticsIdSource, UuidV7AnalyticsIdSource>();
         return services;
