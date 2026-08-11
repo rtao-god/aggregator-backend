@@ -229,6 +229,57 @@ internal sealed class EfAnalyticsRepository(
         return rows.Select(RestoreMetrics).ToArray();
     }
 
+    private async Task<InteractionEvent> RestoreEventAsync(
+        AnalyticsInteractionEventRow row,
+        CancellationToken cancellationToken)
+    {
+        var parameterRows = await dbContext.InteractionCampaignParameters
+            .AsNoTracking()
+            .Where(parameter => parameter.EventId == row.Id)
+            .OrderBy(parameter => parameter.ParameterKey)
+            .ToArrayAsync(cancellationToken);
+        var parameters = parameterRows.ToDictionary(
+            parameter => parameter.ParameterKey,
+            parameter => parameter.ParameterValue,
+            StringComparer.Ordinal);
+        try
+        {
+            var interactionEvent = InteractionEvent.CreateAccepted(
+                row.Id,
+                row.ClientEventId,
+                (InteractionEventKind)row.EventKind,
+                row.CatalogKey,
+                row.ListingId,
+                row.PublicReadRevisionId,
+                row.OccurredAtUtc,
+                row.ReceivedAtUtc,
+                row.PageContext,
+                PlacementContext.Create(
+                    (PlacementExposureKind)row.PlacementExposureKind,
+                    row.PlacementId,
+                    row.PlacementScopeKey),
+                (ReferrerClass)row.ReferrerClass,
+                parameters,
+                (ConsentMode)row.ConsentMode,
+                row.PayloadDigest);
+            var qualityState = (TrafficQualityState)row.QualityState;
+            if (qualityState != TrafficQualityState.Accepted)
+            {
+                interactionEvent.ClassifyTraffic(qualityState);
+            }
+
+            return interactionEvent;
+        }
+        catch (AnalyticsDomainException exception)
+        {
+            throw PersistenceCorruption(
+                "ANALYTICS_EVENT_ROW_CORRUPT",
+                $"Persisted interaction event '{row.Id:D}' violates the Analytics domain contract: {exception.Message}",
+                "Stop interaction reads and repair the persisted event from a verified source.",
+                exception);
+        }
+    }
+
     private static AnalyticsInteractionEventRow ToRow(InteractionEvent interactionEvent) =>
         new()
         {
