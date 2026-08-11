@@ -4,7 +4,7 @@ Status: in development
 
 ## Owner
 
-Analytics is the canonical owner of accepted public interaction events, semantic idempotency, traffic-quality state, public-reference validation, listing-metrics authorization projections, durable daily aggregation runs, date-level aggregate readiness, Analytics-approved Promotion usage revisions and their durable outbox, and owner-facing daily and summary listing metrics. A click remains an interaction; it is never renamed to a lead or conversion without a separate proven source contract.
+Analytics is the canonical owner of accepted public interaction events, semantic idempotency, traffic-quality state, public-reference validation, listing-metrics authorization projections, durable daily aggregation runs, date-level aggregate readiness, raw-event retention/minimization, Analytics-approved Promotion usage revisions and their durable outbox, and owner-facing daily and summary listing metrics. A click remains an interaction; it is never renamed to a lead or conversion without a separate proven source contract.
 
 ## Projects
 
@@ -13,8 +13,8 @@ Analytics is the canonical owner of accepted public interaction events, semantic
 - `Analytics.Application`: strict mapping of producer-owned Query activation events and Catalog listing-access events, canonical membership-digest validation, exact public-read and sponsored-placement interaction validation, anti-abuse verification port, explicit bounded batch outcomes, atomic event and access-projection registration contracts, lease-bound closed-range aggregate orchestration, deterministic sponsored-usage derivation and canonical outbox-envelope creation, deterministic listing summary ownership, typed failure translation, and fail-closed aggregate coverage/status reads.
 - `Analytics.Infrastructure`: EF Core/PostgreSQL persistence for accepted events, immutable public-read/listing/placement references, monotonic activation checkpoints, exact Query and Catalog inbox results, grant-scoped listing-access projections, active/unrevoked/unexpired report authorization, lease-bound aggregate runs, immutable date results, current date-readiness pointers, complete daily aggregates, revisioned Promotion usage streams, transactional Analytics outbox rows, UUIDv7 identity, and read-only DB readiness.
 - `Analytics.Api`: public anti-abuse proof plus single and bounded batch interaction intake; authenticated daily/summary listing metrics and protected aggregation status; strict JSON, typed access failures, resource authorization, bounded request/rate limits, and read-only health.
-- `Analytics.Worker`: strict RabbitMQ consumers for Query public-read activations and Catalog listing-access changes, bounded rebuild of closed UTC daily aggregate ranges, and publisher-confirmed delivery of Analytics-owned Promotion usage events from the durable outbox. Consumers and producer share one host-owned broker transport while retaining independent queue and dispatcher contracts.
-- `Analytics.Migrations`: one-shot owner migrations for events, access projections, messaging inbox/checkpoints, aggregates, durable aggregate runs, immutable date results, readiness pointers, revisioned Promotion usage, and the Analytics outbox. API and worker startup never apply DDL.
+- `Analytics.Worker`: strict RabbitMQ consumers for Query public-read activations and Catalog listing-access changes, bounded rebuild of closed UTC daily aggregate ranges, bounded aggregate-closed raw-event retention, and publisher-confirmed delivery of Analytics-owned Promotion usage events from the durable outbox. Consumers and producer share one host-owned broker transport while retaining independent queue and dispatcher contracts.
+- `Analytics.Migrations`: one-shot owner migrations for events, access projections, messaging inbox/checkpoints, aggregates, durable aggregate runs, immutable date results, readiness pointers, raw-event retention state/audit, revisioned Promotion usage, and the Analytics outbox. API and worker startup never apply DDL.
 
 The obsolete parallel `AnalyticsRuntime*` contracts, service, persistence path, tests, and source generator were removed. They duplicated event and metric ownership, fabricated missing metrics as zero, and exposed a second incompatible wire contract.
 
@@ -129,6 +129,25 @@ Analytics owns traffic-quality filtering and the accepted usage counts. Promotio
 The stable stream identity is one exact placement and one UTC day. The first committed revision is `1`; later corrections advance by exactly one and preserve placement, listing, Catalog, and window identity. Same source digest with different counts is corruption. Usage revision, current stream, outbox row, and aggregation-run completion are committed in one serializable Analytics transaction. Broker failure after commit leaves the outbox row pending; it does not regress the completed aggregate.
 
 The outbox dispatcher uses the worker's existing RabbitMQ URI and event exchange. A separate Analytics outbox broker or exchange is not configurable. Delivery is at least once; Promotion supplies inbox/idempotency and revision ordering.
+
+## Raw-event retention boundary
+
+Analytics retains accepted raw interaction context only for an explicit bounded period. Retention is a worker-owned maintenance path and is never reachable from GET, health, readiness, or report reads.
+
+```text
+explicit retention policy
+→ select only events older than cutoff whose UTC dates have complete aggregate readiness
+→ claim a bounded batch under a retention operation identity
+→ preserve semantic idempotency receipt and aggregate-driving identity
+→ remove campaign parameters and raw page/scope context
+→ mark the event as minimized
+→ write immutable retention audit
+→ commit atomically
+```
+
+The semantic event key and canonical payload digest remain available after minimization so an old client retry cannot create a second accepted event. A retained row is explicitly typed as minimized and is not valid input for a historical aggregate rebuild; attempts to rebuild a range containing minimized events fail with owner context instead of fabricating completeness. Retention never runs before the exact UTC date has a current complete `aggregate_readiness` proof.
+
+Policy values are required worker configuration; there is no silent duration default. Batch size and schedule are bounded. A failed batch retains previously committed batches and resumes from persisted retention state.
 
 ## Persistence and migration boundary
 
