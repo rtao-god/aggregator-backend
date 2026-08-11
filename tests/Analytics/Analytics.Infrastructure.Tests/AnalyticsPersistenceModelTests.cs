@@ -34,9 +34,26 @@ public sealed class AnalyticsPersistenceModelTests
         Assert.Contains("ck_analytics_interaction_event_placement_shape", checkNames);
         Assert.Contains("ck_analytics_interaction_event_time_bounds", checkNames);
         Assert.Contains("ck_analytics_interaction_event_digest", checkNames);
+        Assert.Contains("ck_analytics_interaction_event_retention_state", checkNames);
+        Assert.Contains("ck_analytics_interaction_event_retention_shape", checkNames);
         Assert.Equal(
             200,
             interactionEvent.FindProperty("PlacementScopeKey")?.GetMaxLength());
+        var retentionState = Assert.IsAssignableFrom<IProperty>(
+            interactionEvent.FindProperty("RetentionState"));
+        Assert.Equal(typeof(short), retentionState.GetTypeMapping().Converter?.ProviderClrType);
+        Assert.True(interactionEvent.FindProperty("RetainedAtUtc")?.IsNullable);
+        Assert.True(interactionEvent.FindProperty("RetentionOperationId")?.IsNullable);
+        Assert.Contains(
+            interactionEvent.GetIndexes(),
+            index => string.Equals(
+                    index.GetDatabaseName(),
+                    "ix_analytics_interaction_event_retention_operation",
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    index.GetFilter(),
+                    "retention_operation_id IS NOT NULL",
+                    StringComparison.Ordinal));
         var campaignForeignKey = Assert.Single(campaignParameter.GetForeignKeys());
         Assert.Equal(DeleteBehavior.Restrict, campaignForeignKey.DeleteBehavior);
     }
