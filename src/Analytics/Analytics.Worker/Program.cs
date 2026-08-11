@@ -45,6 +45,12 @@ public static class Program
             DeadLetterExchange = publicReadOptions.DeadLetterExchange,
         };
         listingAccessOptions.Validate();
+        var retentionOptions = builder.Configuration
+            .GetSection(AnalyticsRetentionWorkerOptions.SectionName)
+            .Get<AnalyticsRetentionWorkerOptions>()
+            ?? throw new InvalidOperationException(
+                $"Configuration section '{AnalyticsRetentionWorkerOptions.SectionName}' is required.");
+        retentionOptions.Validate();
         var analyticsConnectionString = builder.Configuration.GetConnectionString("Analytics")
             ?? throw new InvalidOperationException(
                 "Configuration value 'ConnectionStrings:Analytics' is required.");
@@ -72,6 +78,7 @@ public static class Program
         builder.Services.AddSingleton(aggregationOptions);
         builder.Services.AddSingleton(publicReadOptions);
         builder.Services.AddSingleton(listingAccessOptions);
+        builder.Services.AddSingleton(retentionOptions);
         builder.Services.AddAnalyticsApplication();
         builder.Services.AddAnalyticsInfrastructure(builder.Configuration);
         builder.Services.AddPlatformObservability(
@@ -81,6 +88,7 @@ public static class Program
         builder.Services.AddHostedService<AnalyticsAggregationWorker>();
         builder.Services.AddHostedService<AnalyticsPublicReadProjectionWorker>();
         builder.Services.AddHostedService<AnalyticsListingAccessProjectionWorker>();
+        builder.Services.AddHostedService<AnalyticsRetentionWorker>();
         return builder.Build();
     }
 }
