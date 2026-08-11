@@ -92,27 +92,27 @@ public sealed class SubmitInteractionEventService(
 
         var registration = await eventStore.RegisterAsync(interactionEvent, cancellationToken);
         ArgumentNullException.ThrowIfNull(registration);
-        ArgumentNullException.ThrowIfNull(registration.Receipt);
+        ArgumentNullException.ThrowIfNull(registration.PersistedReceipt);
         return registration.State switch
         {
             InteractionEventRegistrationState.Stored => ResolveStored(
-                registration.Receipt,
+                registration.PersistedReceipt,
                 interactionEvent,
                 InteractionAcceptanceStateContract.Accepted),
             InteractionEventRegistrationState.AlreadyApplied => ResolveStored(
-                registration.Receipt,
+                registration.PersistedReceipt,
                 interactionEvent,
                 InteractionAcceptanceStateContract.AlreadyApplied),
             InteractionEventRegistrationState.DigestConflict => throw DigestConflict(
                 interactionEvent.SemanticKey,
                 interactionEvent.PayloadDigest,
-                registration.Receipt.PayloadDigest),
+                registration.PersistedReceipt.PayloadDigest),
             _ => throw InvalidRegistrationResult(registration.State),
         };
     }
 
     private static InteractionEventResponse ResolveExisting(
-        PersistedInteractionEventReceipt existing,
+        InteractionEventReceipt existing,
         InteractionEventSemanticKey expectedKey,
         string requestDigest)
     {
@@ -128,7 +128,7 @@ public sealed class SubmitInteractionEventService(
     }
 
     private static InteractionEventResponse ResolveStored(
-        PersistedInteractionEventReceipt persisted,
+        InteractionEventReceipt persisted,
         InteractionEvent requested,
         InteractionAcceptanceStateContract acceptanceState)
     {
@@ -145,7 +145,7 @@ public sealed class SubmitInteractionEventService(
     }
 
     private static void EnsurePersistedIdentity(
-        PersistedInteractionEventReceipt persisted,
+        InteractionEventReceipt persisted,
         InteractionEventSemanticKey expectedKey)
     {
         if (persisted.SemanticKey != expectedKey)
@@ -178,8 +178,8 @@ public sealed class SubmitInteractionEventService(
             case PublicReadMembershipState.UnknownRevision:
                 throw MembershipFailure(
                     "ANALYTICS_PUBLIC_READ_REVISION_UNKNOWN",
-                    "The supplied public-read revision is not known to Analytics.",
-                    "Replay the exact Query public-read activation before accepting interactions.",
+                    "The supplied public-read revision is unknown to Analytics.",
+                    "Wait for the Analytics public-reference projection to consume the exact Query activation, then retry.",
                     membership,
                     interactionEvent);
             case PublicReadMembershipState.CatalogMismatch:
@@ -189,61 +189,61 @@ public sealed class SubmitInteractionEventService(
                     "Send the catalog identity published with the exact public-read revision.",
                     membership,
                     interactionEvent);
-            case PublicReadMembershipState.ListingRequired:
-                throw MembershipFailure(
-                    "ANALYTICS_PUBLIC_READ_LISTING_REQUIRED",
-                    "The interaction kind or sponsored context requires a listing identity.",
-                    "Send the exact public listing identity from the active Query response.",
-                    membership,
-                    interactionEvent);
             case PublicReadMembershipState.ListingNotPublic:
                 throw MembershipFailure(
-                    "ANALYTICS_PUBLIC_READ_LISTING_UNKNOWN",
+                    "ANALYTICS_PUBLIC_LISTING_UNKNOWN",
                     "The supplied listing is not public in the exact public-read revision.",
-                    "Use a listing identity included in the selected Query public-read revision.",
+                    "Send an interaction only for a listing present after the revision's safety suppression.",
+                    membership,
+                    interactionEvent);
+            case PublicReadMembershipState.ListingRequired:
+                throw MembershipFailure(
+                    "ANALYTICS_PUBLIC_LISTING_REQUIRED",
+                    "The interaction kind requires a listing reference in the public-read revision.",
+                    "Send the exact public listing identity associated with the interaction.",
                     membership,
                     interactionEvent);
             case PublicReadMembershipState.SponsoredPlacementNotPublic:
                 throw MembershipFailure(
                     "ANALYTICS_SPONSORED_PLACEMENT_UNKNOWN",
-                    "The supplied sponsored placement is not public in the exact public-read revision.",
-                    "Use the exact sponsored placement identity included in the Query response.",
+                    "The supplied sponsored placement is not present in the exact public-read revision.",
+                    "Send the Query-owned placement identity published with the exact public-read revision.",
                     membership,
                     interactionEvent);
             case PublicReadMembershipState.SponsoredPlacementListingMismatch:
                 throw MembershipFailure(
                     "ANALYTICS_SPONSORED_PLACEMENT_LISTING_MISMATCH",
-                    "The sponsored placement belongs to another listing.",
-                    "Send the listing identity bound to the exact sponsored placement.",
+                    "The supplied sponsored placement belongs to another public listing.",
+                    "Send the listing identity bound to the exact Query sponsored placement reference.",
                     membership,
                     interactionEvent);
             case PublicReadMembershipState.SponsoredPlacementScopeMismatch:
                 throw MembershipFailure(
                     "ANALYTICS_SPONSORED_PLACEMENT_SCOPE_MISMATCH",
-                    "The sponsored placement scope does not match the Query projection.",
-                    "Send the exact sponsored scope key from the selected Query response.",
+                    "The supplied sponsored placement scope does not match the exact Query reference.",
+                    "Send the scope key published for the exact sponsored placement.",
                     membership,
                     interactionEvent);
             case PublicReadMembershipState.SponsoredPlacementInactive:
                 throw MembershipFailure(
                     "ANALYTICS_SPONSORED_PLACEMENT_INACTIVE",
                     "The sponsored placement was not active at the interaction occurrence time.",
-                    "Submit only interactions attributed to the Query-owned placement interval.",
+                    "Do not attribute interactions outside the Query-owned placement interval.",
                     membership,
                     interactionEvent);
             default:
                 throw new AnalyticsCommandException(
                     "Analytics.PublicReference",
-                    "ANALYTICS_PUBLIC_READ_MEMBERSHIP_STATE_INVALID",
+                    "ANALYTICS_PUBLIC_REFERENCE_RESULT_INVALID",
                     500,
-                    $"Analytics public-read membership returned unsupported state '{membership.State}'.",
-                    "Stop interaction intake and align the public-read projection result contract.");
+                    $"Public-reference store returned unsupported state '{membership.State}'.",
+                    "Stop interaction intake and repair the Analytics public-reference projection adapter.");
         }
     }
 
     private static AnalyticsCommandException MembershipFailure(
         string code,
-        string detail,
+        string message,
         string requiredAction,
         PublicReadMembershipResult membership,
         InteractionEvent interactionEvent) =>
@@ -251,17 +251,17 @@ public sealed class SubmitInteractionEventService(
             "Analytics.PublicReference",
             code,
             422,
-            detail,
+            message,
             requiredAction,
             new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["publicReadRevisionId"] = interactionEvent.PublicReadRevisionId,
-                ["catalogKey"] = interactionEvent.CatalogKey,
-                ["listingId"] = interactionEvent.ListingId,
-                ["placementId"] = interactionEvent.PlacementContext.PlacementId,
-                ["requestedPlacementScopeKey"] = interactionEvent.PlacementContext.ScopeKey,
+                ["requestedCatalogKey"] = interactionEvent.CatalogKey,
+                ["requestedListingId"] = interactionEvent.ListingId,
                 ["actualCatalogKey"] = membership.ActualCatalogKey,
                 ["actualListingId"] = membership.ActualListingId,
+                ["requestedPlacementId"] = interactionEvent.PlacementContext.PlacementId,
+                ["requestedPlacementScopeKey"] = interactionEvent.PlacementContext.ScopeKey,
                 ["actualPlacementId"] = membership.ActualPlacementId,
                 ["actualPlacementListingId"] = membership.ActualPlacementListingId,
                 ["actualPlacementScopeKey"] = membership.ActualPlacementScopeKey,
@@ -269,20 +269,20 @@ public sealed class SubmitInteractionEventService(
 
     private static AnalyticsCommandException DigestConflict(
         InteractionEventSemanticKey semanticKey,
-        string requestedDigest,
-        string existingDigest) =>
+        string requestDigest,
+        string persistedDigest) =>
         new(
             "Analytics.Events",
             "ANALYTICS_EVENT_IDEMPOTENCY_CONFLICT",
             409,
-            "The interaction semantic key already exists with a different canonical payload digest.",
-            "Reuse the exact original payload or submit a new client event identity.",
+            "The semantic interaction identity already exists with another payload digest.",
+            "Reuse the original payload or submit a new client event identity.",
             new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["clientEventId"] = semanticKey.ClientEventId,
                 ["eventKind"] = semanticKey.Kind.ToString(),
-                ["requestedDigest"] = requestedDigest,
-                ["existingDigest"] = existingDigest,
+                ["requestDigest"] = requestDigest,
+                ["persistedDigest"] = persistedDigest,
             });
 
     private static AnalyticsCommandException InvalidEvent(AnalyticsDomainException exception) =>
@@ -291,15 +291,14 @@ public sealed class SubmitInteractionEventService(
             exception.Code,
             422,
             exception.Message,
-            "Correct the interaction payload and submit it under the same semantic identity only when the canonical payload is unchanged.",
-            innerException: exception);
+            "Correct the interaction event to satisfy the Analytics owner contract.");
 
     private static AnalyticsCommandException InvalidRegistrationResult(
         InteractionEventRegistrationState state) =>
         new(
             "Analytics.Persistence",
-            "ANALYTICS_EVENT_REGISTRATION_STATE_INVALID",
+            "ANALYTICS_EVENT_REGISTRATION_RESULT_INVALID",
             500,
             $"Analytics event store returned unsupported registration state '{state}'.",
-            "Stop interaction intake and repair the event-store result mapping.");
+            "Stop interaction intake and repair the Analytics event-store adapter.");
 }
