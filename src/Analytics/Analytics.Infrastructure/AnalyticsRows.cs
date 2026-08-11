@@ -1,11 +1,5 @@
 namespace Aggregator.Analytics.Infrastructure;
 
-internal enum AnalyticsInteractionRetentionState : short
-{
-    Raw = 1,
-    Minimized = 2,
-}
-
 internal sealed class AnalyticsInteractionEventRow
 {
     public Guid Id { get; set; }
@@ -26,7 +20,7 @@ internal sealed class AnalyticsInteractionEventRow
 
     public DateTimeOffset ReceivedAtUtc { get; set; }
 
-    public required string PageContext { get; set; }
+    public string? PageContext { get; set; }
 
     public int PlacementExposureKind { get; set; }
 
@@ -44,8 +38,7 @@ internal sealed class AnalyticsInteractionEventRow
 
     public required string PayloadDigest { get; set; }
 
-    public AnalyticsInteractionRetentionState RetentionState { get; set; } =
-        AnalyticsInteractionRetentionState.Raw;
+    public int RetentionState { get; set; }
 
     public DateTimeOffset? RetainedAtUtc { get; set; }
 
@@ -151,9 +144,15 @@ internal sealed class AnalyticsInboxMessageRow
 
     public AnalyticsPublicReadReferenceRow PublicReadReference { get; set; } = null!;
 
-    public required string ProjectionDigest { get; set; }
-
     public DateTimeOffset ReceivedAtUtc { get; set; }
+
+    public required string CorrelationId { get; set; }
+
+    public int Disposition { get; set; }
+
+    public required string ResultProjectionDigest { get; set; }
+
+    public DateTimeOffset ProcessedAtUtc { get; set; }
 }
 
 internal sealed class AnalyticsDailyListingMetricRow
@@ -205,19 +204,17 @@ internal sealed class AnalyticsAggregateRunRow
 
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
-    public required string SourceDigest { get; set; }
-
-    public int MaterializedMetricCount { get; set; }
-
-    public int RemovedStaleMetricCount { get; set; }
-
-    public int MaterializedDayCount { get; set; }
-
-    public string? LeaseToken { get; set; }
-
-    public string? LeaseOwner { get; set; }
+    public Guid? LeaseToken { get; set; }
 
     public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+
+    public string? SourceDigest { get; set; }
+
+    public int? MaterializedDayCount { get; set; }
+
+    public int? MaterializedMetricCount { get; set; }
+
+    public int? RemovedStaleMetricCount { get; set; }
 
     public string? FailureCode { get; set; }
 
@@ -247,7 +244,7 @@ internal sealed class AnalyticsAggregateReadinessRow
 
     public Guid RunId { get; set; }
 
-    public AnalyticsAggregateRunRow Run { get; set; } = null!;
+    public AnalyticsAggregateRunItemRow RunItem { get; set; } = null!;
 
     public required string SourceDigest { get; set; }
 

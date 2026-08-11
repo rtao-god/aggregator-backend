@@ -252,6 +252,7 @@ internal sealed class PostgresAnalyticsRetentionStore(string connectionString) :
                 payload_digest,
                 occurred_at_utc,
                 campaign_parameter_count,
+                had_page_context,
                 had_placement_scope,
                 retained_at_utc
             )
@@ -266,6 +267,7 @@ internal sealed class PostgresAnalyticsRetentionStore(string connectionString) :
                        FROM events.interaction_event_campaign_parameter AS parameter
                        WHERE parameter.event_id = interaction.id
                    ),
+                   interaction.page_context IS NOT NULL,
                    interaction.placement_scope_key IS NOT NULL,
                    @retained_at_utc
             FROM events.interaction_event AS interaction
@@ -320,7 +322,8 @@ internal sealed class PostgresAnalyticsRetentionStore(string connectionString) :
     {
         const string sql = """
             UPDATE events.interaction_event
-            SET placement_scope_key = NULL,
+            SET page_context = NULL,
+                placement_scope_key = NULL,
                 retention_state = 2,
                 retained_at_utc = @retained_at_utc,
                 retention_operation_id = @operation_id
