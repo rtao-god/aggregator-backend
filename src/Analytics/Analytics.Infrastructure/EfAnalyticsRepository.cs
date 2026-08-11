@@ -1,3 +1,4 @@
+using System.Data;
 using Aggregator.Analytics.Application;
 using Aggregator.Analytics.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ internal sealed class EfAnalyticsRepository(
     private const string SemanticEventKeyConstraint =
         "ux_analytics_interaction_event_semantic_key";
 
-    public async Task<InteractionEventReceipt?> GetAsync(
+    public async Task<PersistedInteractionEventReceipt?> GetAsync(
         InteractionEventSemanticKey semanticKey,
         CancellationToken cancellationToken)
     {
@@ -52,7 +53,7 @@ internal sealed class EfAnalyticsRepository(
             await dbContext.SaveChangesAsync(cancellationToken);
             return new InteractionEventRegistrationResult(
                 InteractionEventRegistrationState.Stored,
-                InteractionEventReceipt.FromEvent(interactionEvent));
+                PersistedInteractionEventReceipt.FromDomain(interactionEvent));
         }
         catch (DbUpdateException exception) when (
             IsUniqueViolation(exception, SemanticEventKeyConstraint))
@@ -228,11 +229,12 @@ internal sealed class EfAnalyticsRepository(
         return rows.Select(RestoreMetrics).ToArray();
     }
 
-    private static InteractionEventReceipt ToReceipt(AnalyticsInteractionEventRow row)
+    private static PersistedInteractionEventReceipt ToReceipt(
+        AnalyticsInteractionEventRow row)
     {
         try
         {
-            return InteractionEventReceipt.Create(
+            return PersistedInteractionEventReceipt.Create(
                 row.Id,
                 InteractionEventSemanticKey.Create(
                     row.ClientEventId,
@@ -241,17 +243,14 @@ internal sealed class EfAnalyticsRepository(
                 (TrafficQualityState)row.QualityState,
                 row.ReceivedAtUtc,
                 row.PublicReadRevisionId,
-                row.ListingId,
-                (InteractionEventRetentionState)row.RetentionState,
-                row.RetainedAtUtc,
-                row.RetentionOperationId);
+                row.ListingId);
         }
         catch (AnalyticsDomainException exception)
         {
             throw PersistenceCorruption(
-                "ANALYTICS_EVENT_RECEIPT_CORRUPT",
-                $"Persisted interaction event '{row.Id:D}' cannot produce an exact idempotency receipt: {exception.Message}",
-                "Stop interaction intake and repair the persisted event/retention evidence from a verified source.",
+                "ANALYTICS_EVENT_RECEIPT_ROW_CORRUPT",
+                $"Persisted interaction receipt '{row.Id:D}' violates the Analytics idempotency contract: {exception.Message}",
+                "Stop interaction intake and repair the persisted receipt from a verified source.",
                 exception);
         }
     }
@@ -275,7 +274,7 @@ internal sealed class EfAnalyticsRepository(
             ConsentMode = (int)interactionEvent.ConsentMode,
             QualityState = (int)interactionEvent.QualityState,
             PayloadDigest = interactionEvent.PayloadDigest,
-            RetentionState = (int)InteractionEventRetentionState.Raw,
+            RetentionState = AnalyticsInteractionRetentionState.Raw,
             RetainedAtUtc = null,
             RetentionOperationId = null,
         };
@@ -357,21 +356,10 @@ internal sealed class EfAnalyticsRepository(
             requiredAction,
             innerException);
 
-    private sealed class AnalyticsPersistenceCorruptionException : AnalyticsCommandException
-    {
-        public AnalyticsPersistenceCorruptionException(
-            string code,
-            string message,
-            string requiredAction,
-            Exception innerException)
-            : base(
-                "Analytics.Persistence",
-                code,
-                500,
-                message,
-                requiredAction)
+    private static bool IsUniqueViolation(DbUpdateException exception, string constraintName) =>
+        exception.InnerException is PostgresException
         {
-            Data[nameof(innerException)] = innerException;
-        }
-    }
+            SqlState: PostgresErrorCodes.UniqueViolation,
+        } postgresException &&
+        string.Equals(postgresException.ConstraintName, constraintName, StringComparison.Ordinal);
 }

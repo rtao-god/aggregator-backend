@@ -66,12 +66,20 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 table.HasCheckConstraint(
                     "ck_analytics_interaction_event_digest",
                     "payload_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_interaction_event_retention_state",
+                    "retention_state IN (1, 2)");
+                table.HasCheckConstraint(
+                    "ck_analytics_interaction_event_retention_shape",
+                    "(retention_state = 1 AND retained_at_utc IS NULL AND retention_operation_id IS NULL) OR " +
+                    "(retention_state = 2 AND retained_at_utc IS NOT NULL AND retention_operation_id IS NOT NULL)");
             });
             entity.HasKey(row => row.Id);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
             entity.Property(row => row.PageContext).HasMaxLength(120);
             entity.Property(row => row.PlacementScopeKey).HasMaxLength(200);
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.RetentionState).HasConversion<short>();
             entity.HasOne(row => row.PublicReadReference)
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
@@ -96,6 +104,9 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .HasDatabaseName("ux_analytics_interaction_event_semantic_key");
             entity.HasIndex(row => new { row.CatalogKey, row.ListingId, row.OccurredAtUtc });
             entity.HasIndex(row => row.PublicReadRevisionId);
+            entity.HasIndex(row => row.RetentionOperationId)
+                .HasFilter("retention_operation_id IS NOT NULL")
+                .HasDatabaseName("ix_analytics_interaction_event_retention_operation");
         });
 
         modelBuilder.Entity<AnalyticsInteractionCampaignParameterRow>(entity =>
@@ -148,7 +159,6 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(row => row.ListingId);
         });
 
         modelBuilder.Entity<AnalyticsPublicSponsoredPlacementReferenceRow>(entity =>
@@ -156,10 +166,10 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("public_sponsored_placement_reference", "access_projection", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_public_sponsored_scope_type",
+                    "ck_analytics_public_sponsored_placement_scope_type",
                     "scope_type BETWEEN 1 AND 4");
                 table.HasCheckConstraint(
-                    "ck_analytics_public_sponsored_interval",
+                    "ck_analytics_public_sponsored_placement_window",
                     "hard_expiry_at_utc > starts_at_utc");
             });
             entity.HasKey(row => new { row.PublicReadRevisionId, row.PlacementId });
@@ -178,7 +188,6 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
                 .WithMany()
                 .HasForeignKey(row => new { row.PublicReadRevisionId, row.ListingId })
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(row => new { row.PlacementId, row.ListingId });
         });
 
         modelBuilder.Entity<AnalyticsPublicReadActivationCheckpointRow>(entity =>
@@ -203,38 +212,28 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
 
         modelBuilder.Entity<AnalyticsInboxMessageRow>(entity =>
         {
-            entity.ToTable("public_read_activation_inbox", "messaging", table =>
+            entity.ToTable("inbox_message", "access_projection", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_public_read_inbox_revision",
-                    "activation_revision > 0");
-                table.HasCheckConstraint(
-                    "ck_analytics_public_read_inbox_payload_digest",
+                    "ck_analytics_inbox_digest",
                     "payload_digest ~ '^[0-9a-f]{64}$'");
                 table.HasCheckConstraint(
-                    "ck_analytics_public_read_inbox_result_digest",
-                    "result_projection_digest ~ '^[0-9a-f]{64}$'");
+                    "ck_analytics_inbox_activation_revision",
+                    "activation_revision > 0");
                 table.HasCheckConstraint(
-                    "ck_analytics_public_read_inbox_disposition",
-                    "disposition BETWEEN 1 AND 3");
+                    "ck_analytics_inbox_projection_digest",
+                    "projection_digest ~ '^[0-9a-f]{64}$'");
             });
             entity.HasKey(row => row.MessageId);
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
-            entity.Property(row => row.RoutingKey).HasMaxLength(160);
+            entity.Property(row => row.RoutingKey).HasMaxLength(200);
             entity.Property(row => row.ContractIdentity).HasMaxLength(200);
             entity.Property(row => row.PayloadDigest).HasMaxLength(64).IsFixedLength();
-            entity.Property(row => row.CorrelationId).HasMaxLength(128);
-            entity.Property(row => row.ResultProjectionDigest).HasMaxLength(64).IsFixedLength();
+            entity.Property(row => row.ProjectionDigest).HasMaxLength(64).IsFixedLength();
             entity.HasOne(row => row.PublicReadReference)
                 .WithMany()
                 .HasForeignKey(row => row.PublicReadRevisionId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasIndex(row => new
-            {
-                row.CatalogKey,
-                row.ActivationRevision,
-                row.MessageId,
-            });
         });
 
         modelBuilder.Entity<AnalyticsDailyListingMetricRow>(entity =>
@@ -242,26 +241,22 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("daily_listing_metric", "aggregates", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_daily_metric_source_count",
-                    "source_read_revision_count >= 0");
+                    "ck_analytics_daily_metric_source_digest",
+                    "aggregation_source_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_daily_metric_read_revision_count",
+                    "source_read_revision_count > 0");
                 table.HasCheckConstraint(
                     "ck_analytics_daily_metric_readiness",
                     "readiness_state BETWEEN 1 AND 4");
                 table.HasCheckConstraint(
-                    "ck_analytics_daily_metric_digest",
-                    "aggregation_source_digest ~ '^[0-9a-f]{64}$'");
-                table.HasCheckConstraint(
-                    "ck_analytics_daily_metric_value_shape",
-                    "(readiness_state = 1 AND unavailable_reason IS NULL AND organic_impressions IS NOT NULL AND sponsored_impressions IS NOT NULL AND listing_opens IS NOT NULL AND website_clicks IS NOT NULL AND phone_clicks IS NOT NULL AND whats_app_clicks IS NOT NULL AND email_clicks IS NOT NULL AND map_clicks IS NOT NULL AND external_profile_clicks IS NOT NULL) OR (readiness_state <> 1 AND length(btrim(unavailable_reason)) > 0 AND organic_impressions IS NULL AND sponsored_impressions IS NULL AND listing_opens IS NULL AND website_clicks IS NULL AND phone_clicks IS NULL AND whats_app_clicks IS NULL AND email_clicks IS NULL AND map_clicks IS NULL AND external_profile_clicks IS NULL)");
-                table.HasCheckConstraint(
-                    "ck_analytics_daily_metric_nonnegative",
-                    "(organic_impressions IS NULL OR organic_impressions >= 0) AND (sponsored_impressions IS NULL OR sponsored_impressions >= 0) AND (listing_opens IS NULL OR listing_opens >= 0) AND (website_clicks IS NULL OR website_clicks >= 0) AND (phone_clicks IS NULL OR phone_clicks >= 0) AND (whats_app_clicks IS NULL OR whats_app_clicks >= 0) AND (email_clicks IS NULL OR email_clicks >= 0) AND (map_clicks IS NULL OR map_clicks >= 0) AND (external_profile_clicks IS NULL OR external_profile_clicks >= 0)");
+                    "ck_analytics_daily_metric_counts",
+                    "(readiness_state = 1 AND organic_impressions IS NOT NULL AND sponsored_impressions IS NOT NULL AND listing_opens IS NOT NULL AND website_clicks IS NOT NULL AND phone_clicks IS NOT NULL AND whatsapp_clicks IS NOT NULL AND email_clicks IS NOT NULL AND map_clicks IS NOT NULL AND external_profile_clicks IS NOT NULL AND unavailable_reason IS NULL) OR (readiness_state <> 1 AND organic_impressions IS NULL AND sponsored_impressions IS NULL AND listing_opens IS NULL AND website_clicks IS NULL AND phone_clicks IS NULL AND whatsapp_clicks IS NULL AND email_clicks IS NULL AND map_clicks IS NULL AND external_profile_clicks IS NULL AND unavailable_reason IS NOT NULL)");
             });
             entity.HasKey(row => new { row.MetricDate, row.CatalogKey, row.ListingId });
             entity.Property(row => row.CatalogKey).HasMaxLength(100);
             entity.Property(row => row.AggregationSourceDigest).HasMaxLength(64).IsFixedLength();
-            entity.Property(row => row.UnavailableReason).HasMaxLength(1000);
-            entity.HasIndex(row => new { row.ListingId, row.MetricDate });
+            entity.Property(row => row.UnavailableReason).HasMaxLength(500);
         });
 
         modelBuilder.Entity<AnalyticsAggregateRunRow>(entity =>
@@ -269,37 +264,29 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             entity.ToTable("aggregate_run", "aggregates", table =>
             {
                 table.HasCheckConstraint(
-                    "ck_analytics_aggregate_run_id",
-                    "id <> '00000000-0000-0000-0000-000000000000'::uuid");
-                table.HasCheckConstraint(
                     "ck_analytics_aggregate_run_range",
-                    "to_exclusive > from_inclusive AND to_exclusive - from_inclusive <= 31");
+                    "to_exclusive > from_inclusive");
                 table.HasCheckConstraint(
                     "ck_analytics_aggregate_run_state",
                     "state BETWEEN 1 AND 3");
                 table.HasCheckConstraint(
-                    "ck_analytics_aggregate_run_shape",
-                    "(state = 1 AND completed_at_utc IS NULL AND lease_token IS NOT NULL AND lease_expires_at_utc > started_at_utc AND source_digest IS NULL AND materialized_day_count IS NULL AND materialized_metric_count IS NULL AND removed_stale_metric_count IS NULL AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 2 AND completed_at_utc >= started_at_utc AND lease_token IS NULL AND lease_expires_at_utc IS NULL AND source_digest ~ '^[0-9a-f]{64}$' AND materialized_day_count = to_exclusive - from_inclusive AND materialized_metric_count >= 0 AND removed_stale_metric_count >= 0 AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 3 AND completed_at_utc >= started_at_utc AND lease_token IS NULL AND lease_expires_at_utc IS NULL AND source_digest IS NULL AND materialized_day_count IS NULL AND materialized_metric_count IS NULL AND removed_stale_metric_count IS NULL AND length(btrim(failure_code)) > 0 AND length(btrim(failure_detail)) > 0 AND length(btrim(required_action)) > 0)");
+                    "ck_analytics_aggregate_run_source_digest",
+                    "source_digest ~ '^[0-9a-f]{64}$'");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_counts",
+                    "materialized_metric_count >= 0 AND removed_stale_metric_count >= 0 AND materialized_day_count >= 0");
+                table.HasCheckConstraint(
+                    "ck_analytics_aggregate_run_lease",
+                    "(state = 1 AND lease_token IS NOT NULL AND lease_owner IS NOT NULL AND lease_expires_at_utc IS NOT NULL AND completed_at_utc IS NULL AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 2 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at_utc IS NULL AND completed_at_utc IS NOT NULL AND failure_code IS NULL AND failure_detail IS NULL AND required_action IS NULL) OR (state = 3 AND lease_token IS NULL AND lease_owner IS NULL AND lease_expires_at_utc IS NULL AND completed_at_utc IS NOT NULL AND failure_code IS NOT NULL AND failure_detail IS NOT NULL AND required_action IS NOT NULL)");
             });
             entity.HasKey(row => row.Id);
             entity.Property(row => row.SourceDigest).HasMaxLength(64).IsFixedLength();
-            entity.Property(row => row.FailureCode).HasMaxLength(160);
+            entity.Property(row => row.LeaseToken).HasMaxLength(128);
+            entity.Property(row => row.LeaseOwner).HasMaxLength(200);
+            entity.Property(row => row.FailureCode).HasMaxLength(200);
             entity.Property(row => row.FailureDetail).HasMaxLength(2000);
-            entity.Property(row => row.RequiredAction).HasMaxLength(2000);
-            entity.HasIndex(row => row.State)
-                .IsUnique()
-                .HasFilter("state = 1")
-                .HasDatabaseName("ux_analytics_aggregate_run_rebuilding");
-            entity.HasIndex(row => row.StartedAtUtc)
-                .IsDescending()
-                .HasDatabaseName("ix_analytics_aggregate_run_started_at_utc");
-            entity.HasIndex(row => new
-                {
-                    row.FromInclusive,
-                    row.ToExclusive,
-                    row.StartedAtUtc,
-                })
-                .HasDatabaseName("ix_analytics_aggregate_run_range");
+            entity.Property(row => row.RequiredAction).HasMaxLength(1000);
+            entity.HasIndex(row => new { row.FromInclusive, row.ToExclusive, row.StartedAtUtc });
         });
 
         modelBuilder.Entity<AnalyticsAggregateRunItemRow>(entity =>
@@ -334,40 +321,36 @@ public sealed class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> opti
             });
             entity.HasKey(row => row.MetricDate);
             entity.Property(row => row.SourceDigest).HasMaxLength(64).IsFixedLength();
-            entity.HasOne(row => row.RunItem)
+            entity.HasOne(row => row.Run)
                 .WithMany()
-                .HasForeignKey(row => new { row.RunId, row.MetricDate })
+                .HasForeignKey(row => row.RunId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
-
-        ApplySnakeCaseColumns(modelBuilder);
     }
 
-    private static void ApplySnakeCaseColumns(ModelBuilder modelBuilder)
+    public static string ComputeModelDigest()
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        var builder = new DbContextOptionsBuilder<AnalyticsDbContext>()
+            .UseNpgsql("Host=localhost;Database=analytics_model;Username=model;Password=model");
+        using var context = new AnalyticsDbContext(builder.Options);
+        var representation = new StringBuilder();
+        foreach (var entity in context.Model.GetEntityTypes().OrderBy(item => item.Name, StringComparer.Ordinal))
         {
-            foreach (var property in entityType.GetProperties())
+            representation.Append(entity.Name).Append('\n');
+            foreach (var property in entity.GetProperties().OrderBy(item => item.Name, StringComparer.Ordinal))
             {
-                property.SetColumnName(ToSnakeCase(property.Name));
+                representation.Append(property.Name)
+                    .Append(':')
+                    .Append(property.ClrType.FullName)
+                    .Append(':')
+                    .Append(property.IsNullable)
+                    .Append('\n');
             }
         }
-    }
 
-    private static string ToSnakeCase(string value)
-    {
-        var builder = new StringBuilder(value.Length + 8);
-        for (var index = 0; index < value.Length; index++)
-        {
-            var character = value[index];
-            if (char.IsUpper(character) && index > 0)
-            {
-                builder.Append('_');
-            }
-
-            builder.Append(char.ToLowerInvariant(character));
-        }
-
-        return builder.ToString();
+        return Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    Encoding.UTF8.GetBytes(representation.ToString())))
+            .ToLowerInvariant();
     }
 }
