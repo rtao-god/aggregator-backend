@@ -37,6 +37,12 @@ internal sealed class AnalyticsInteractionEventRow
     public int QualityState { get; set; }
 
     public required string PayloadDigest { get; set; }
+
+    public int RetentionState { get; set; }
+
+    public DateTimeOffset? RetainedAtUtc { get; set; }
+
+    public Guid? RetentionOperationId { get; set; }
 }
 
 internal sealed class AnalyticsInteractionCampaignParameterRow
